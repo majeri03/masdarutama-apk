@@ -13,6 +13,7 @@ import {
   Alert,
 } from 'react-native';
 import { useAuthStore } from '../stores/auth.store';
+import { masterService } from '../services/master.service';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
@@ -23,7 +24,21 @@ export const LoginScreen: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [storeName, setStoreName] = useState('TB Masdar Utama');
   const { login, isLoading } = useAuthStore();
+
+  const loadLogoAndSettings = async () => {
+    try {
+      const res = await masterService.getPublicSettings();
+      if (res.success && res.data) {
+        if (res.data.logoUrl) setLogoUrl(res.data.logoUrl);
+        if (res.data.name) setStoreName(res.data.name);
+      }
+    } catch (e) {
+      console.warn('[LOGIN] Error fetching public settings:', e);
+    }
+  };
 
   const checkBiometricsAndCredentials = async () => {
     try {
@@ -56,6 +71,7 @@ export const LoginScreen: React.FC = () => {
 
   React.useEffect(() => {
     checkBiometricsAndCredentials();
+    loadLogoAndSettings();
   }, []);
 
   const triggerBiometricAuth = async (targetEmail = email, targetPassword = password) => {
@@ -112,9 +128,17 @@ export const LoginScreen: React.FC = () => {
             {/* Logo and Header text */}
             <View style={styles.header}>
               <View style={styles.logoBg}>
-                <Ionicons name="storefront-outline" size={40} color="#FFFFFF" />
+                {logoUrl ? (
+                  <Image
+                    source={{ uri: logoUrl }}
+                    style={{ width: '100%', height: '100%', borderRadius: BorderRadius.xl }}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <Ionicons name="storefront-outline" size={40} color="#FFFFFF" />
+                )}
               </View>
-              <Text style={styles.title}>TB Masdar Utama</Text>
+              <Text style={styles.title}>{storeName}</Text>
               <Text style={styles.subtitle}>Point of Sale & Inventory Management</Text>
             </View>
 

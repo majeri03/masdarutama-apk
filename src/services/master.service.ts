@@ -155,4 +155,13 @@ export const masterService = {
       return { success: false, error: error.response?.data?.error || 'Gagal membuat sub-kategori' };
     }
   },
+
+  async getPublicSettings(): Promise<ApiResponse<{ name: string; tagline: string | null; logoUrl: string | null }>> {
+    try {
+      const response = await api.get<ApiResponse<any>>('/api/settings/public');
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal memuat info logo toko' };
+    }
+  },
 };

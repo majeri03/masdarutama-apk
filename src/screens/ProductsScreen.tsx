@@ -12,6 +12,7 @@ import {
   Alert,
   Switch,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -34,6 +35,17 @@ export const ProductsScreen: React.FC = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setPage(1);
+    await Promise.all([
+      loadInitialData(),
+      loadProducts(searchQuery, selectedCategory as any, 1, true),
+    ]);
+    setRefreshing(false);
+  };
 
   // Detail Modal State
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -623,6 +635,13 @@ export const ProductsScreen: React.FC = () => {
           }}
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={Colors.primaryStart}
+            />
+          }
           ListFooterComponent={
             loadingMore ? (
               <ActivityIndicator size="small" color={Colors.primary} style={{ padding: 16 }} />
@@ -643,8 +662,8 @@ export const ProductsScreen: React.FC = () => {
             </View>
 
             {selectedProduct && (
-              <View style={{ flex: 1, width: '100%' }}>
-                <ScrollView style={{ flex: 1, marginBottom: Spacing.md }} contentContainerStyle={styles.modalContent}>
+              <View style={{ width: '100%', flexShrink: 1 }}>
+                <ScrollView style={{ width: '100%', flexShrink: 1, marginBottom: Spacing.md }} contentContainerStyle={styles.modalContent}>
                   {(() => {
                     const imgUrl = selectedProduct.productImages && selectedProduct.productImages.length > 0
                       ? selectedProduct.productImages[0].imageUrl
