@@ -18,12 +18,23 @@
         "foregroundImage": "./assets/logomasdarutama.png",
         "backgroundColor": "#0F0F23"
       },
-      "package": "com.tbmasdarutama.mobile"
+      "package": "com.tbmasdarutama.mobile",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "plugins": [
       "expo-secure-store",
       "expo-local-authentication",
       "expo-audio"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6e4aad91-e3dc-44f4-97f3-0f332f02dd6e"
+      }
+    }
   }
 }
