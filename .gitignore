@@ -1,0 +1,9 @@
+# Mengabaikan folder yang tidak perlu
+node_modules/
+.expo/
+dist/
+.env
+
+# Mengabaikan file sistem/editor
+.DS_Store
+*.log

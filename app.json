@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "TB Masdar Utama Mobile",
+    "slug": "tb-masdarutama-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/logomasdarutama.png",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0F0F23"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logomasdarutama.png",
+        "backgroundColor": "#0F0F23"
+      },
+      "package": "com.tbmasdarutama.mobile"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-audio"
+    ]
+  }
+}
