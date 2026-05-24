@@ -13,7 +13,10 @@ import {
   Switch,
   Image,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -79,7 +82,7 @@ export const ProductsScreen: React.FC = () => {
   const [newSubCategoryName, setNewSubCategoryName] = useState('');
   const [newSubCategoryDesc, setNewSubCategoryDesc] = useState('');
   const [savingSubCategory, setSavingSubCategory] = useState(false);
-  
+
   // Units in Form State
   const [formProductUnits, setFormProductUnits] = useState<{
     unitId: string;
@@ -204,7 +207,7 @@ export const ProductsScreen: React.FC = () => {
     setFormMinStock(String(product.minStock));
     setFormIsActive(product.isActive);
     setFormImageUrl(product.productImages && product.productImages.length > 0 ? product.productImages[0].imageUrl : null);
-    
+
     // Map units to match form format
     const mappedUnits = (product.productUnits || []).map((pu) => ({
       unitId: pu.unitId,
@@ -214,7 +217,7 @@ export const ProductsScreen: React.FC = () => {
       isPrimary: pu.isPrimary,
     }));
     setFormProductUnits(mappedUnits);
-    
+
     setShowDetailModal(false);
     setShowFormModal(true);
   };
@@ -279,7 +282,7 @@ export const ProductsScreen: React.FC = () => {
     }
 
     let updatedUnits = [...formProductUnits];
-    
+
     // If this is primary, clear previous primary flags
     if (tempIsPrimary) {
       updatedUnits = updatedUnits.map((u) => ({ ...u, isPrimary: false }));
@@ -396,7 +399,7 @@ export const ProductsScreen: React.FC = () => {
         setShowAddCategoryModal(false);
         setNewCategoryName('');
         setNewCategoryDesc('');
-        
+
         // Reload initial data
         const catRes = await productService.getCategories();
         if (catRes.success && catRes.data) {
@@ -434,7 +437,7 @@ export const ProductsScreen: React.FC = () => {
         Alert.alert('Sukses', `Sub-kategori "${res.data.name}" berhasil dibuat!`);
         setShowAddSubCategoryModal(false);
         setNewSubCategoryName('');
-        
+
         // Reload initial data
         const catRes = await productService.getCategories();
         if (catRes.success && catRes.data) {
@@ -653,7 +656,8 @@ export const ProductsScreen: React.FC = () => {
       {/* --- DETAIL MODAL --- */}
       <Modal visible={showDetailModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <GlassCard padding={24} style={styles.detailModal}>
+          <View style={styles.detailModal}>
+            {/* Header — fixed at top */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Detail Produk</Text>
               <TouchableOpacity onPress={() => setShowDetailModal(false)}>
@@ -661,107 +665,112 @@ export const ProductsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
+            {/* Scrollable content */}
             {selectedProduct && (
-              <View style={{ width: '100%', flexShrink: 1 }}>
-                <ScrollView style={{ width: '100%', flexShrink: 1, marginBottom: Spacing.md }} contentContainerStyle={styles.modalContent}>
-                  {(() => {
-                    const imgUrl = selectedProduct.productImages && selectedProduct.productImages.length > 0
-                      ? selectedProduct.productImages[0].imageUrl
-                      : null;
-                    if (!imgUrl) return null;
-                    return (
-                      <Image
-                        source={{ uri: imgUrl }}
-                        style={{
-                          width: '100%',
-                          height: 200,
-                          borderRadius: BorderRadius.md,
-                          marginBottom: Spacing.md,
-                          backgroundColor: Colors.surfaceLight,
-                        }}
-                        resizeMode="cover"
-                      />
-                    );
-                  })()}
+              <ScrollView
+                style={{ maxHeight: SCREEN_HEIGHT * 0.5 }}
+                contentContainerStyle={styles.modalContent}
+                showsVerticalScrollIndicator={true}
+                bounces={true}
+                nestedScrollEnabled={true}
+              >
+                {(() => {
+                  const imgUrl = selectedProduct.productImages && selectedProduct.productImages.length > 0
+                    ? selectedProduct.productImages[0].imageUrl
+                    : null;
+                  if (!imgUrl) return null;
+                  return (
+                    <Image
+                      source={{ uri: imgUrl }}
+                      style={{
+                        width: '100%',
+                        height: 200,
+                        borderRadius: BorderRadius.md,
+                        marginBottom: Spacing.md,
+                        backgroundColor: Colors.surfaceLight,
+                      }}
+                      resizeMode="cover"
+                    />
+                  );
+                })()}
 
-                  <View style={styles.detailGroup}>
-                    <Text style={styles.detailLabel}>Nama Produk</Text>
-                    <Text style={styles.detailText}>{selectedProduct.name}</Text>
-                  </View>
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Nama Produk</Text>
+                  <Text style={styles.detailText}>{selectedProduct.name}</Text>
+                </View>
 
-                  <View style={styles.detailGroup}>
-                    <Text style={styles.detailLabel}>Kode Produk (SKU)</Text>
-                    <Text style={styles.detailText}>{selectedProduct.code}</Text>
-                  </View>
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Kode Produk (SKU)</Text>
+                  <Text style={styles.detailText}>{selectedProduct.code}</Text>
+                </View>
 
-                  <View style={styles.detailGroup}>
-                    <Text style={styles.detailLabel}>Barcode</Text>
-                    <Text style={styles.detailText}>{selectedProduct.barcode || '-'}</Text>
-                  </View>
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Barcode</Text>
+                  <Text style={styles.detailText}>{selectedProduct.barcode || '-'}</Text>
+                </View>
 
-                  <View style={styles.detailGroup}>
-                    <Text style={styles.detailLabel}>Kategori</Text>
-                    <Text style={styles.detailText}>
-                      {selectedProduct.category?.name || 'Umum'}
-                      {selectedProduct.subCategory && ` / ${selectedProduct.subCategory.name}`}
-                    </Text>
-                  </View>
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Kategori</Text>
+                  <Text style={styles.detailText}>
+                    {selectedProduct.category?.name || 'Umum'}
+                    {selectedProduct.subCategory && ` / ${selectedProduct.subCategory.name}`}
+                  </Text>
+                </View>
 
-                  <View style={styles.detailGroup}>
-                    <Text style={styles.detailLabel}>Deskripsi</Text>
-                    <Text style={styles.detailText}>
-                      {selectedProduct.description || 'Tidak ada deskripsi.'}
-                    </Text>
-                  </View>
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Deskripsi</Text>
+                  <Text style={styles.detailText}>
+                    {selectedProduct.description || 'Tidak ada deskripsi.'}
+                  </Text>
+                </View>
 
-                  <View style={styles.detailGroup}>
-                    <Text style={styles.detailLabel}>Batas Minimum Stok</Text>
-                    <Text style={styles.detailText}>{selectedProduct.minStock} unit</Text>
-                  </View>
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Batas Minimum Stok</Text>
+                  <Text style={styles.detailText}>{selectedProduct.minStock} unit</Text>
+                </View>
 
-                  {/* Units List */}
-                  <Text style={styles.subTitle}>Daftar Satuan Penjualan</Text>
-                  <View style={styles.unitsContainer}>
-                    {selectedProduct.productUnits?.map((pu) => (
-                      <View key={pu.id} style={styles.unitRow}>
-                        <View style={styles.unitLeft}>
-                          <Ionicons name="pricetag-outline" size={16} color={Colors.primaryStart} />
-                          <Text style={styles.unitRowName}>
-                            {pu.unit?.name} {pu.isPrimary && '(Utama)'}
-                          </Text>
-                        </View>
-                        <View style={styles.unitRight}>
-                          <Text style={styles.unitPriceText}>
-                            Rp {pu.sellPrice.toLocaleString('id-ID')}
-                          </Text>
-                          {!isAdmin() ? null : (
-                            <Text style={{ fontSize: 10, color: Colors.textTertiary, textAlign: 'right' }}>
-                              Beli: Rp {pu.buyPrice.toLocaleString('id-ID')}
-                            </Text>
-                          )}
-                        </View>
+                {/* Units List */}
+                <Text style={styles.subTitle}>Daftar Satuan Penjualan</Text>
+                <View style={styles.unitsContainer}>
+                  {selectedProduct.productUnits?.map((pu) => (
+                    <View key={pu.id} style={styles.unitRow}>
+                      <View style={styles.unitLeft}>
+                        <Ionicons name="pricetag-outline" size={16} color={Colors.primaryStart} />
+                        <Text style={styles.unitRowName}>
+                          {pu.unit?.name} {pu.isPrimary && '(Utama)'}
+                        </Text>
                       </View>
-                    ))}
-                  </View>
-                  
-                  {/* Admin-only CRUD actions */}
-                  {isAdmin() && (
-                    <View style={styles.adminActions}>
-                      <GradientButton
-                        title="Edit Produk"
-                        onPress={() => handleOpenEditForm(selectedProduct)}
-                        variant="primary"
-                        style={{ flex: 1 }}
-                      />
-                      <TouchableOpacity
-                        style={styles.deleteBtn}
-                        onPress={() => handleDeleteProduct(selectedProduct)}
-                      >
-                        <Ionicons name="trash-outline" size={20} color={Colors.error} />
-                      </TouchableOpacity>
+                      <View style={styles.unitRight}>
+                        <Text style={styles.unitPriceText}>
+                          Rp {pu.sellPrice.toLocaleString('id-ID')}
+                        </Text>
+                        {!isAdmin() ? null : (
+                          <Text style={{ fontSize: 10, color: Colors.textTertiary, textAlign: 'right' }}>
+                            Beli: Rp {pu.buyPrice.toLocaleString('id-ID')}
+                          </Text>
+                        )}
+                      </View>
                     </View>
-                  )}
-                </ScrollView>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+
+            {/* Action buttons pinned at bottom — always visible */}
+            {selectedProduct && isAdmin() && (
+              <View style={styles.adminActions}>
+                <GradientButton
+                  title="Edit Produk"
+                  onPress={() => handleOpenEditForm(selectedProduct)}
+                  variant="primary"
+                  style={{ flex: 1 }}
+                />
+                <TouchableOpacity
+                  style={styles.deleteBtn}
+                  onPress={() => handleDeleteProduct(selectedProduct)}
+                >
+                  <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                </TouchableOpacity>
               </View>
             )}
 
@@ -773,9 +782,9 @@ export const ProductsScreen: React.FC = () => {
               }}
               variant="outline"
               fullWidth
-              style={styles.closeBtn}
+              style={{ marginTop: Spacing.md }}
             />
-          </GlassCard>
+          </View>
         </View>
       </Modal>
 
@@ -792,7 +801,10 @@ export const ProductsScreen: React.FC = () => {
             <View style={{ width: 24 }} />
           </View>
 
-          <ScrollView contentContainerStyle={styles.formContent}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.formContent}
+          >
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Nama Produk *</Text>
               <TextInput
@@ -1390,7 +1402,11 @@ const styles = StyleSheet.create({
   detailModal: {
     width: '100%',
     maxWidth: 400,
-    maxHeight: '85%',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    ...Shadow.card,
+    overflow: 'hidden',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1459,13 +1475,10 @@ const styles = StyleSheet.create({
     color: Colors.success,
     fontWeight: FontWeight.semibold,
   },
-  closeBtn: {
-    marginTop: Spacing.xl,
-  },
   adminActions: {
     flexDirection: 'row',
     gap: Spacing.md,
-    marginTop: Spacing.xl,
+    marginTop: Spacing.md,
     alignItems: 'center',
   },
   deleteBtn: {
@@ -1477,7 +1490,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  
+
   // ── Form Container Styles ──
   formContainer: {
     flex: 1,
