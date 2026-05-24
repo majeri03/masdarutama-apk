@@ -5,7 +5,7 @@
 
 // Development: use your local network IP or ngrok URL
 // Production: use your deployed domain
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.18.3:3000';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://masdarutama.tech';
 
 export const API_ENDPOINTS = {
   // Auth
@@ -55,6 +55,11 @@ export const API_ENDPOINTS = {
   REPORT_FINANCIAL: '/api/reports/financial',
   REPORT_INVENTORY: '/api/reports/inventory',
   REPORT_DEBTS: '/api/reports/debts',
+
+  // WA Orders
+  WA_ORDERS: '/api/wa-orders',
+  WA_ORDER_CONFIRM: (id: string) => `/api/wa-orders/${id}/confirm`,
+  WA_ORDER_REJECT: (id: string) => `/api/wa-orders/${id}/reject`,
 
   // Settings
   STORE_SETTINGS: '/api/settings',

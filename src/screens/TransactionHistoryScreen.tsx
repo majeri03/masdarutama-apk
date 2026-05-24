@@ -23,6 +23,7 @@ import { GlassCard, GradientButton } from '../components/ui';
 import { salesService } from '../services/sales.service';
 import type { Sale, PaymentMethod, SaleStatus } from '../types';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
+import { useRoute } from '@react-navigation/native';
 
 // Badge warna untuk status pembayaran
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string; icon: string }> = {
@@ -50,6 +51,15 @@ interface FilterState {
 }
 
 export const TransactionHistoryScreen: React.FC = () => {
+  const route = useRoute<any>();
+  const [activeCustomerId, setActiveCustomerId] = useState<string | undefined>(route.params?.customerId);
+
+  useEffect(() => {
+    if (route.params?.customerId) {
+      setActiveCustomerId(route.params.customerId);
+    }
+  }, [route.params?.customerId]);
+
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -90,6 +100,7 @@ export const TransactionHistoryScreen: React.FC = () => {
           dateFrom: filters.dateFrom || undefined,
           dateTo: filters.dateTo || undefined,
           sortOrder: filters.sortOrder,
+          customerId: activeCustomerId || undefined,
           page: pageNum,
           limit: 15,
         });
@@ -114,13 +125,13 @@ export const TransactionHistoryScreen: React.FC = () => {
         setLoadingMore(false);
       }
     },
-    [filters]
+    [filters, activeCustomerId]
   );
 
   useEffect(() => {
     setPage(1);
     fetchSales(1, true);
-  }, [filters]);
+  }, [filters, activeCustomerId]);
 
   const onRefresh = () => {
     setPage(1);
@@ -306,6 +317,19 @@ export const TransactionHistoryScreen: React.FC = () => {
           ) : null}
           <TouchableOpacity onPress={resetFilters}>
             <Text style={styles.clearFilter}>Hapus semua</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Active Customer Filter */}
+      {activeCustomerId && (
+        <View style={styles.activeFilters}>
+          <Text style={styles.activeFiltersLabel}>Pelanggan Terpilih:</Text>
+          <View style={styles.chip}>
+            <Text style={styles.chipText}>Satu Pelanggan</Text>
+          </View>
+          <TouchableOpacity onPress={() => setActiveCustomerId(undefined)}>
+            <Text style={styles.clearFilter}>Lihat Semua Pelanggan</Text>
           </TouchableOpacity>
         </View>
       )}

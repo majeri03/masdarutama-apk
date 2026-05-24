@@ -66,7 +66,8 @@ export const deliveryService = {
 
   async updateDeliveryStatus(payload: UpdateDeliveryStatusPayload): Promise<ApiResponse<any>> {
     try {
-      const response = await api.put<ApiResponse<any>>(API_ENDPOINTS.DELIVERY_ORDERS, payload);
+      const { id, ...body } = payload;
+      const response = await api.put<ApiResponse<any>>(API_ENDPOINTS.DELIVERY_ORDER_DETAIL(id), body);
       return response.data;
     } catch (error: any) {
       return { success: false, error: error.response?.data?.error || 'Gagal memperbarui status pengiriman' };

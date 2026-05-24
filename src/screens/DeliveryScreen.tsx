@@ -252,12 +252,8 @@ export const DeliveryScreen: React.FC = () => {
         Alert.alert('Sukses', res.message || 'Status pengiriman berhasil diperbarui!');
         setShowStatusModal(false);
         setReceivedBy('');
-        // Refresh detail modal
-        if (res.data) {
-          setSelectedDO(res.data as DeliveryOrder);
-        } else {
-          setShowDetailsModal(false);
-        }
+        setShowDetailsModal(false);
+        setSelectedDO(null);
         loadData();
       } else {
         Alert.alert('Gagal', res.error || 'Gagal memperbarui status.');
@@ -530,7 +526,7 @@ export const DeliveryScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.navigate('Dashboard')} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>PENGIRIMAN & SURAT JALAN</Text>
@@ -683,16 +679,18 @@ export const DeliveryScreen: React.FC = () => {
 
               {/* Action Buttons */}
               <View style={{ gap: Spacing.md, marginTop: Spacing.xl, marginBottom: Spacing['3xl'] }}>
-                <GradientButton
-                  title="Ubah Status Pengiriman"
-                  onPress={() => {
-                    setNewStatus(selectedDO.status);
-                    setShowStatusModal(true);
-                  }}
-                  variant="primary"
-                  fullWidth
-                  icon={<Ionicons name="git-branch-outline" size={20} color="#FFFFFF" />}
-                />
+                {selectedDO.status !== 'DELIVERED' && selectedDO.status !== 'CANCELLED' && (
+                  <GradientButton
+                    title="Ubah Status Pengiriman"
+                    onPress={() => {
+                      setNewStatus(selectedDO.status);
+                      setShowStatusModal(true);
+                    }}
+                    variant="primary"
+                    fullWidth
+                    icon={<Ionicons name="git-branch-outline" size={20} color="#FFFFFF" />}
+                  />
+                )}
                 <View style={styles.rowBetween}>
                   <GradientButton
                     title="Cetak Surat Jalan"

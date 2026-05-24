@@ -96,7 +96,7 @@ export const masterService = {
   // ==================== UNITS ====================
   async getUnits(): Promise<ApiResponse<{ units: Unit[] }>> {
     try {
-      const response = await api.get<ApiResponse<any>>(API_ENDPOINTS.UNITS);
+      const response = await api.get<ApiResponse<any>>(`${API_ENDPOINTS.UNITS}?limit=100`);
       if (response.data.success) {
         const rawData = response.data.data;
         const unitsList = Array.isArray(rawData) ? rawData : rawData?.units || [];

@@ -114,6 +114,20 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
     });
   };
 
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={{ marginRight: 16 }}>
+          {storeLogo ? (
+            <Image source={{ uri: storeLogo }} style={{ width: 36, height: 36, borderRadius: 8 }} resizeMode="contain" />
+          ) : (
+            <Image source={require('../../assets/logomasdarutama.png')} style={{ width: 36, height: 36, borderRadius: 8 }} resizeMode="contain" />
+          )}
+        </View>
+      ),
+    });
+  }, [navigation, storeLogo]);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -143,11 +157,6 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
             <Text style={styles.dateText}>{getTodayFormatted()}</Text>
           </View>
         </View>
-        {storeLogo ? (
-          <Image source={{ uri: storeLogo }} style={styles.storeLogo} resizeMode="contain" />
-        ) : (
-          <Image source={require('../../assets/logomasdarutama.png')} style={styles.storeLogo} resizeMode="contain" />
-        )}
       </View>
 
       {/* Metrics Row (Stat Cards) */}
@@ -262,6 +271,8 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
           </GlassCard>
         </TouchableOpacity>
       </View>
+
+
 
       {/* Low Stock Alerts */}
       <View style={styles.alertHeaderRow}>

@@ -6,7 +6,6 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL, SECURE_STORE_KEYS } from '../constants/api';
 import type { ApiResponse } from '../types';
-
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,

@@ -9,8 +9,8 @@ import {
   Dimensions,
   Animated,
   ScrollView,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSidebarStore } from '../../stores/sidebar.store';
 import { useAuthStore } from '../../stores/auth.store';
@@ -101,7 +101,9 @@ export const SidebarDrawer: React.FC = () => {
     { name: 'Purchase', label: 'Purchase Order (PO)', icon: 'cart-outline' },
     { name: 'Debt', label: 'Manajemen Utang & Piutang', icon: 'journal-outline' },
     { name: 'InvoiceLayout', label: 'Desain & Layout Invoice', icon: 'color-palette-outline' },
+    { name: 'WaOrders', label: 'Orderan WhatsApp', icon: 'logo-whatsapp' },
     { name: 'History', label: 'Riwayat Transaksi', icon: 'receipt-outline' },
+    { name: 'Customers', label: 'Pelanggan', icon: 'people-outline' },
     { name: 'Reports', label: 'Laporan Keuangan', icon: 'bar-chart-outline' },
     { name: 'Settings', label: 'Pengaturan Toko', icon: 'settings-outline' },
   ];

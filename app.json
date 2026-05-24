@@ -3,6 +3,15 @@
     "name": "TB Masdar Utama Mobile",
     "slug": "tb-masdarutama-mobile",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6e4aad91-e3dc-44f4-97f3-0f332f02dd6e",
+      "enabled": true,
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/logomasdarutama.png",
@@ -19,6 +28,7 @@
         "backgroundColor": "#0F0F23"
       },
       "package": "com.tbmasdarutama.mobile",
+      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT",
@@ -29,7 +39,8 @@
     "plugins": [
       "expo-secure-store",
       "expo-local-authentication",
-      "expo-audio"
+      "expo-audio",
+      "expo-updates"
     ],
     "extra": {
       "eas": {

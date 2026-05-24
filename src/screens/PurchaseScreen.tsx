@@ -407,7 +407,7 @@ export const PurchaseScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.navigate('Dashboard')} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>MANAJEMEN PO BARANG</Text>
@@ -621,7 +621,7 @@ export const PurchaseScreen: React.FC = () => {
             <View style={{ width: 24 }} />
           </View>
 
-          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={styles.modalScroll} contentContainerStyle={styles.modalContent}>
             <GlassCard padding={16} style={styles.createCard}>
               <Text style={styles.formGroupTitle}>Informasi PO</Text>
 
@@ -737,7 +737,7 @@ export const PurchaseScreen: React.FC = () => {
                     overflow: 'hidden',
                     marginTop: 4,
                   }}>
-                    <ScrollView nestedScrollEnabled>
+                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
                       {products.map((p) => (
                         <TouchableOpacity
                           key={p.id}

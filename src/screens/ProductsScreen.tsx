@@ -15,6 +15,8 @@ import {
   RefreshControl,
   Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 import { Ionicons } from '@expo/vector-icons';
@@ -70,6 +72,26 @@ export const ProductsScreen: React.FC = () => {
   const [formIsActive, setFormIsActive] = useState(true);
   const [formImageUrl, setFormImageUrl] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Scanner States
+  const [showScanner, setShowScanner] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+
+  const openScanner = () => {
+    if (!permission) {
+      requestPermission();
+    } else if (!permission.granted) {
+      Alert.alert('Izin Kamera', 'Aplikasi membutuhkan izin untuk menggunakan kamera.');
+      requestPermission();
+      return;
+    }
+    setShowScanner(true);
+  };
+
+  const handleBarcodeScanned = ({ type, data }: { type: string; data: string }) => {
+    setFormBarcode(data);
+    setShowScanner(false);
+  };
 
   // Add Category Modal State
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
@@ -790,7 +812,7 @@ export const ProductsScreen: React.FC = () => {
 
       {/* --- FORM MODAL (ADD / EDIT) --- */}
       <Modal visible={showFormModal} animationType="slide">
-        <View style={styles.formContainer}>
+        <SafeAreaView style={styles.formContainer}>
           <View style={styles.formHeader}>
             <TouchableOpacity onPress={() => setShowFormModal(false)}>
               <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
@@ -818,13 +840,21 @@ export const ProductsScreen: React.FC = () => {
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Barcode (Opsional)</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Scan / Ketik Barcode"
-                placeholderTextColor={Colors.textTertiary}
-                value={formBarcode}
-                onChangeText={setFormBarcode}
-              />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TextInput
+                  style={[styles.textInput, { flex: 1 }]}
+                  placeholder="Scan / Ketik Barcode"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={formBarcode}
+                  onChangeText={setFormBarcode}
+                />
+                <TouchableOpacity
+                  style={{ marginLeft: 12, backgroundColor: Colors.primaryStart + '15', padding: 12, borderRadius: BorderRadius.md }}
+                  onPress={openScanner}
+                >
+                  <Ionicons name="barcode-outline" size={24} color={Colors.primaryStart} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.inputGroup}>
@@ -1074,7 +1104,7 @@ export const ProductsScreen: React.FC = () => {
               fullWidth
             />
           </View>
-        </View>
+        </SafeAreaView>
 
         {/* --- ADD UNIT INNER MODAL --- */}
         <Modal visible={showAddUnitForm} transparent animationType="fade">
@@ -1266,6 +1296,29 @@ export const ProductsScreen: React.FC = () => {
           </View>
         </Modal>
       </Modal>
+
+      {/* --- SCANNER MODAL --- */}
+      <Modal visible={showScanner} transparent animationType="fade" onRequestClose={() => setShowScanner(false)}>
+        <View style={styles.scannerOverlay}>
+          <Text style={{ color: '#FFFFFF', marginBottom: Spacing.xl, fontSize: FontSize.md }}>Arahkan ke Barcode</Text>
+          <View style={styles.scannerFrame}>
+            {showScanner && permission?.granted && (
+              <CameraView
+                style={{ flex: 1 }}
+                facing="back"
+                onBarcodeScanned={handleBarcodeScanned}
+              />
+            )}
+          </View>
+          <TouchableOpacity
+            style={{ marginTop: Spacing['3xl'], backgroundColor: Colors.error, paddingHorizontal: 24, paddingVertical: 12, borderRadius: BorderRadius.md }}
+            onPress={() => setShowScanner(false)}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>Batal Scan</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
     </View>
   );
 };
@@ -1642,5 +1695,20 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 360,
     gap: Spacing.md,
+  },
+  scannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scannerFrame: {
+    width: 250,
+    height: 250,
+    borderWidth: 2,
+    borderColor: Colors.primaryStart,
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+    borderRadius: 16,
   },
 });

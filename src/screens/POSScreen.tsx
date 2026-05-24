@@ -667,7 +667,24 @@ export const POSScreen: React.FC = () => {
                     >
                       <Ionicons name="remove" size={16} color="#FFFFFF" />
                     </TouchableOpacity>
-                    <Text style={styles.qtyText}>{item.quantity}</Text>
+                    <TextInput
+                      style={styles.qtyInput}
+                      keyboardType="numeric"
+                      value={String(item.quantity)}
+                      onChangeText={(val) => {
+                        const num = parseInt(val.replace(/[^0-9]/g, ''), 10);
+                        if (!isNaN(num)) {
+                          updateQuantity(item.id, num);
+                        } else if (val === '') {
+                          updateQuantity(item.id, 0);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!item.quantity || item.quantity <= 0) {
+                          updateQuantity(item.id, 1);
+                        }
+                      }}
+                    />
                     <TouchableOpacity
                       style={styles.qtyBtn}
                       onPress={() => updateQuantity(item.id, item.quantity + 1)}
@@ -689,12 +706,14 @@ export const POSScreen: React.FC = () => {
                       borderWidth: 1,
                       borderColor: Colors.border,
                       borderRadius: BorderRadius.sm,
-                      height: 32,
-                      width: 120,
+                      height: 36,
+                      flex: 1,
+                      marginLeft: 12,
                       color: Colors.textPrimary,
                       textAlign: 'right',
                       paddingHorizontal: Spacing.sm,
-                      fontSize: FontSize.xs,
+                      fontSize: FontSize.sm,
+                      fontWeight: 'bold',
                     }}
                     keyboardType="numeric"
                     placeholder="0"
@@ -1437,14 +1456,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.glass,
     borderRadius: BorderRadius.full,
-    height: 32,
-    paddingHorizontal: 4,
+    height: 44,
+    paddingHorizontal: 6,
     borderWidth: 1,
     borderColor: Colors.glassBorder,
   },
   qtyBtn: {
-    width: 24,
-    height: 24,
+    width: 32,
+    height: 32,
     borderRadius: BorderRadius.full,
     backgroundColor: 'rgba(108, 99, 255, 0.12)',
     alignItems: 'center',
@@ -1454,7 +1473,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     color: Colors.textPrimary,
     fontWeight: FontWeight.bold,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.md,
+  },
+  qtyInput: {
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    height: 40,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.bold,
+    fontSize: FontSize.md,
+    textAlign: 'center',
+    minWidth: 60,
   },
   cartItemPriceRow: {
     flexDirection: 'row',
@@ -1501,12 +1530,13 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
     borderColor: Colors.glassBorder,
-    height: 36,
-    width: 100,
+    height: 40,
+    width: 150,
     color: Colors.textPrimary,
     textAlign: 'right',
-    paddingHorizontal: Spacing.sm,
-    fontSize: FontSize.sm,
+    paddingHorizontal: Spacing.md,
+    fontSize: FontSize.md,
+    fontWeight: 'bold',
   },
   grandTotalRow: {
     marginTop: Spacing.sm,

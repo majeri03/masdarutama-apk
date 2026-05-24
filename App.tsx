@@ -24,6 +24,9 @@ import { InvoiceLayoutScreen } from './src/screens/InvoiceLayoutScreen';
 import { DeliveryScreen } from './src/screens/DeliveryScreen';
 import { PurchaseScreen } from './src/screens/PurchaseScreen';
 import { DebtScreen } from './src/screens/DebtScreen';
+import { WaOrdersScreen } from './src/screens/WaOrdersScreen';
+import { WaOrderConfirmScreen } from './src/screens/WaOrderConfirmScreen';
+import { CustomersScreen } from './src/screens/CustomersScreen';
 
 // Import Sidebar Drawer
 import { SidebarDrawer } from './src/components/ui/SidebarDrawer';
@@ -345,6 +348,21 @@ export default function App() {
                 options={{
                   headerShown: false,
                 }}
+              />
+              <Stack.Screen
+                name="WaOrders"
+                component={WaOrdersScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="WaOrderConfirm"
+                component={WaOrderConfirmScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Customers"
+                component={CustomersScreen}
+                options={{ headerShown: false }}
               />
             </>
           )}
