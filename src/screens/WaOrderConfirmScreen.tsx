@@ -7,6 +7,7 @@ import api from '../services/api';
 import { API_ENDPOINTS } from '../constants/api';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { productService } from '../services/product.service';
+import { AppToast } from '../utils/toast';
 import type { Product, Customer } from '../types';
 
 interface MappedItem {
@@ -57,21 +58,20 @@ export const WaOrderConfirmScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    // Initialize mapped items
+    // Initialize mapped items — jika parsedItems dari bot AI sudah ada productId/unitId, pakai langsung
     if (order.parsedItems && Array.isArray(order.parsedItems)) {
       const initialMap = order.parsedItems.map((pi: any) => ({
         originalName: pi.productName || 'Barang Tidak Dikenal',
-        originalUnit: pi.unitName || '',
+        originalUnit: pi.unitName || pi.unit || '',
         quantity: pi.quantity || 1,
-        productId: null,
-        productName: null,
-        unitId: null,
-        unitName: null,
-        availableUnits: []
+        productId: pi.productId || null,
+        productName: pi.productName || null,
+        unitId: pi.unitId || null,
+        unitName: pi.unitName || pi.unit || null,
+        availableUnits: [],
       }));
       setMappedItems(initialMap);
     } else {
-      // If no parsed items, add one empty row
       setMappedItems([{
         originalName: 'Manual Input',
         originalUnit: '',
@@ -88,15 +88,22 @@ export const WaOrderConfirmScreen: React.FC = () => {
       try {
         const [custRes, prodRes] = await Promise.all([
           api.get(API_ENDPOINTS.CUSTOMERS),
-          productService.getProducts({ limit: 500, isActive: true }) // Fetch all active products
+          productService.getProducts({ limit: 500, isActive: true })
         ]);
 
         if (custRes.data.success && custRes.data.data.length > 0) {
           const custData = custRes.data.data;
           setCustomers(custData);
           
+          // Cek apakah ada customer dari bot (customerName di order)
+          const botCustomer = order.customerName 
+            ? custData.find((c: any) => c.name.toLowerCase() === order.customerName?.toLowerCase())
+            : null;
           const umumCust = custData.find((c: any) => c.name.toLowerCase() === 'umum' || c.type === 'UMUM');
-          if (umumCust) {
+          
+          if (botCustomer) {
+            setSelectedCustomerId(botCustomer.id);
+          } else if (umumCust) {
             setSelectedCustomerId(umumCust.id);
           } else {
             setSelectedCustomerId(custData[0].id);
@@ -104,7 +111,32 @@ export const WaOrderConfirmScreen: React.FC = () => {
         }
 
         if (prodRes.success && prodRes.data?.products) {
-          setProducts(prodRes.data.products);
+          const allProducts = prodRes.data.products;
+          setProducts(allProducts);
+
+          // Jika parsedItems sudah punya productId, isi availableUnits-nya dari data produk
+          setMappedItems(prev => prev.map(item => {
+            if (item.productId) {
+              const matchedProd = allProducts.find((p: any) => p.id === item.productId);
+              if (matchedProd) {
+                const isValidUnit = matchedProd.productUnits.some((u: any) => u.unitId === item.unitId);
+                const primaryUnit = matchedProd.productUnits.find((u: any) => u.isPrimary) || matchedProd.productUnits[0];
+                
+                // FIXED BUG: Paksa pakai primaryUnit jika unitId dari bot ngawur (misal: "Sak")
+                const finalUnitId = isValidUnit ? item.unitId : (primaryUnit ? primaryUnit.unitId : null);
+                const finalUnitName = isValidUnit ? item.unitName : (primaryUnit ? primaryUnit.unit.name : null);
+
+                return {
+                  ...item,
+                  productName: item.productName || matchedProd.name,
+                  availableUnits: matchedProd.productUnits,
+                  unitId: finalUnitId,
+                  unitName: finalUnitName,
+                };
+              }
+            }
+            return item;
+          }));
         }
       } catch (err) {
         console.error(err);
@@ -112,6 +144,7 @@ export const WaOrderConfirmScreen: React.FC = () => {
     };
     fetchData();
   }, []);
+
 
   const handleSelectProduct = (product: Product) => {
     if (activeItemIndex === null) return;
@@ -137,14 +170,14 @@ export const WaOrderConfirmScreen: React.FC = () => {
 
   const handleConfirm = async () => {
     if (!selectedCustomerId) {
-      Alert.alert('Error', 'Pilih customer terlebih dahulu');
+      AppToast.error('Peringatan', 'Pilih customer terlebih dahulu');
       return;
     }
 
     // Validate
     const invalidItems = mappedItems.filter(item => !item.productId || !item.unitId);
     if (invalidItems.length > 0) {
-      Alert.alert('Error', 'Silakan pilih produk asli dan satuannya untuk semua baris barang.');
+      AppToast.error('Peringatan', 'Silakan pilih produk asli dan satuannya untuk semua baris barang.');
       return;
     }
 
@@ -165,13 +198,32 @@ export const WaOrderConfirmScreen: React.FC = () => {
 
       const res = await api.post(API_ENDPOINTS.WA_ORDER_CONFIRM(order.id), payload);
       if (res.data.success) {
-        Alert.alert('Sukses', res.data.message);
-        navigation.goBack();
+        const hasDo = createDeliveryOrder && res.data.data?.doNumber;
+        const msgText = hasDo
+          ? `${res.data.message}\n\nNo. Surat Jalan: ${res.data.data.doNumber}\nBuka halaman pengiriman?`
+          : res.data.message;
+
+        Alert.alert(
+          'Sukses',
+          msgText,
+          hasDo
+            ? [
+                { text: 'Tidak', style: 'cancel', onPress: () => navigation.goBack() },
+                {
+                  text: 'Buka',
+                  onPress: () => {
+                    navigation.goBack();
+                    setTimeout(() => navigation.navigate('Delivery'), 300);
+                  },
+                },
+              ]
+            : [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
       } else {
-        Alert.alert('Gagal', res.data.message || 'Terjadi kesalahan');
+        AppToast.error('Gagal', res.data.message || 'Terjadi kesalahan');
       }
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.message || 'Gagal mengkonfirmasi orderan.');
+      AppToast.error('Error', error.response?.data?.message || 'Gagal mengkonfirmasi orderan.');
     } finally {
       setLoading(false);
     }
@@ -191,7 +243,7 @@ export const WaOrderConfirmScreen: React.FC = () => {
               navigation.goBack();
             }
           } catch (e) {
-            Alert.alert('Error', 'Gagal menolak orderan');
+            AppToast.error('Error', 'Gagal menolak orderan');
           } finally {
             setLoading(false);
           }
@@ -259,9 +311,57 @@ export const WaOrderConfirmScreen: React.FC = () => {
                 {mappedItems.map((item, idx) => (
                   <View key={idx} style={styles.mappedItemCard}>
                     <View style={styles.mappedItemHeader}>
-                      <Text style={styles.originalText}>
-                        Teks Asli: <Text style={{ fontWeight: 'bold' }}>{item.quantity} {item.originalUnit} {item.originalName}</Text>
-                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.originalText}>
+                          Teks Asli: <Text style={{ fontWeight: 'bold' }}>{item.originalUnit} {item.originalName}</Text>
+                        </Text>
+                      </View>
+                      {/* Tombol Hapus Item */}
+                      <TouchableOpacity
+                        onPress={() => setMappedItems(prev => prev.filter((_, i) => i !== idx))}
+                        style={{ padding: 4 }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={Colors.error} />
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Editor Kuantitas */}
+                    <View style={styles.qtyRow}>
+                      <Text style={styles.qtyLabel}>Jumlah:</Text>
+                      <TouchableOpacity
+                        style={styles.qtyBtn}
+                        onPress={() => setMappedItems(prev => {
+                          const n = [...prev];
+                          n[idx] = { ...n[idx], quantity: Math.max(1, (n[idx].quantity || 1) - 1) };
+                          return n;
+                        })}
+                      >
+                        <Ionicons name="remove" size={16} color={Colors.primaryStart} />
+                      </TouchableOpacity>
+                      <TextInput
+                        style={styles.qtyInput}
+                        keyboardType="numeric"
+                        value={String(item.quantity || 1)}
+                        onChangeText={(val) => {
+                          const num = parseInt(val) || 1;
+                          setMappedItems(prev => {
+                            const n = [...prev];
+                            n[idx] = { ...n[idx], quantity: Math.max(1, num) };
+                            return n;
+                          });
+                        }}
+                      />
+                      <TouchableOpacity
+                        style={styles.qtyBtn}
+                        onPress={() => setMappedItems(prev => {
+                          const n = [...prev];
+                          n[idx] = { ...n[idx], quantity: (n[idx].quantity || 1) + 1 };
+                          return n;
+                        })}
+                      >
+                        <Ionicons name="add" size={16} color={Colors.primaryStart} />
+                      </TouchableOpacity>
+                      {item.unitName && <Text style={styles.qtyUnitLabel}>{item.unitName}</Text>}
                     </View>
 
                     {item.productId ? (
@@ -508,6 +608,42 @@ const styles = StyleSheet.create({
   unitChipActive: { backgroundColor: Colors.primaryStart, borderColor: Colors.primaryStart },
   unitChipText: { fontSize: FontSize.xs, color: Colors.textSecondary },
   unitChipTextActive: { color: '#fff', fontWeight: 'bold' },
+
+  // Quantity editor
+  qtyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    backgroundColor: Colors.backgroundSecondary,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  qtyLabel: { fontSize: FontSize.xs, color: Colors.textSecondary, marginRight: 4 },
+  qtyBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.primaryStart,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qtyInput: {
+    width: 48,
+    textAlign: 'center',
+    fontSize: FontSize.sm,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 6,
+    paddingVertical: 4,
+    backgroundColor: Colors.surface,
+  },
+  qtyUnitLabel: { fontSize: FontSize.xs, color: Colors.textTertiary, marginLeft: 4 },
 
   footer: {
     flexDirection: 'row',

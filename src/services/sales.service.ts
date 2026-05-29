@@ -47,6 +47,7 @@ export const salesService = {
 
   async getSales(filters: {
     search?: string;
+    customerId?: string;
     page?: number;
     limit?: number;
     status?: string;

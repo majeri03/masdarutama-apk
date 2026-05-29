@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSidebarStore } from '../../stores/sidebar.store';
 import { useAuthStore } from '../../stores/auth.store';
+import { useNotificationStore } from '../../stores/notification.store';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight, Shadow } from '../../constants/theme';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,6 +32,9 @@ interface MenuRoute {
 export const SidebarDrawer: React.FC = () => {
   const { isOpen, closeSidebar } = useSidebarStore();
   const { user, logout } = useAuthStore();
+  const waOrdersPending = useNotificationStore((state) => state.waOrdersPending);
+  const deliveriesPending = useNotificationStore((state) => state.deliveriesPending);
+
   
   // Animation value
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
@@ -93,19 +97,13 @@ export const SidebarDrawer: React.FC = () => {
   };
 
   const routes: MenuRoute[] = [
-    { name: 'Dashboard', label: 'Ikhtisar Toko', icon: 'home-outline' },
-    { name: 'POS', label: 'Terminal Kasir (POS)', icon: 'calculator-outline' },
-    { name: 'Products', label: 'Daftar Produk', icon: 'cube-outline' },
     { name: 'StockOpname', label: 'Stock Opname', icon: 'clipboard-outline' },
     { name: 'Delivery', label: 'Surat Jalan & Pengiriman', icon: 'paper-plane-outline' },
     { name: 'Purchase', label: 'Purchase Order (PO)', icon: 'cart-outline' },
     { name: 'Debt', label: 'Manajemen Utang & Piutang', icon: 'journal-outline' },
     { name: 'InvoiceLayout', label: 'Desain & Layout Invoice', icon: 'color-palette-outline' },
     { name: 'WaOrders', label: 'Orderan WhatsApp', icon: 'logo-whatsapp' },
-    { name: 'History', label: 'Riwayat Transaksi', icon: 'receipt-outline' },
     { name: 'Customers', label: 'Pelanggan', icon: 'people-outline' },
-    { name: 'Reports', label: 'Laporan Keuangan', icon: 'bar-chart-outline' },
-    { name: 'Settings', label: 'Pengaturan Toko', icon: 'settings-outline' },
   ];
 
   if (!isOpen) return null;
@@ -156,24 +154,37 @@ export const SidebarDrawer: React.FC = () => {
                   </View>
                 </View>
 
-                {/* Navigation Items */}
                 <ScrollView style={styles.menuScroll} contentContainerStyle={styles.menuContent}>
                   <Text style={styles.menuSectionTitle}>Navigasi Fitur</Text>
-                  {routes.map((route) => (
-                    <TouchableOpacity
-                      key={route.name}
-                      style={styles.menuItem}
-                      onPress={() => handleNavigate(route.name)}
-                    >
-                      <View style={styles.menuItemLeft}>
-                        <View style={styles.menuIconBg}>
-                          <Ionicons name={route.icon as any} size={20} color={Colors.primaryStart} />
+                  {routes.map((route) => {
+                    // Check for badges
+                    let badgeCount = 0;
+                    if (route.name === 'WaOrders') badgeCount = waOrdersPending;
+                    if (route.name === 'Delivery') badgeCount = deliveriesPending;
+
+                    return (
+                      <TouchableOpacity
+                        key={route.name}
+                        style={styles.menuItem}
+                        onPress={() => handleNavigate(route.name)}
+                      >
+                        <View style={styles.menuItemLeft}>
+                          <View style={styles.menuIconBg}>
+                            <Ionicons name={route.icon as any} size={20} color={Colors.primaryStart} />
+                          </View>
+                          <Text style={styles.menuItemLabel}>{route.label}</Text>
                         </View>
-                        <Text style={styles.menuItemLabel}>{route.label}</Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-                    </TouchableOpacity>
-                  ))}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          {badgeCount > 0 && (
+                            <View style={{ backgroundColor: Colors.error, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 }}>
+                              <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold' }}>{badgeCount > 99 ? '99+' : badgeCount}</Text>
+                            </View>
+                          )}
+                          <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
 
                 {/* Footer Section */}

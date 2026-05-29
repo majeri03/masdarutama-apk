@@ -20,6 +20,7 @@ import { productService } from '../services/product.service';
 import { useAuthStore } from '../stores/auth.store';
 import type { Product } from '../types';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { AppToast } from '../utils/toast';
 
 const MOVEMENT_LABEL: Record<string, string> = {
   IN: 'Stok Masuk',
@@ -142,7 +143,7 @@ export const StockOpnameScreen: React.FC = () => {
 
   const handleOpenAdjustment = () => {
     if (!isAdmin()) {
-      Alert.alert('Akses Ditolak', 'Hanya administrator yang dapat melakukan stock opname.');
+      AppToast.error('Akses Ditolak', 'Hanya administrator yang dapat melakukan stock opname.');
       return;
     }
     setSelectedProduct(null);
@@ -167,7 +168,7 @@ export const StockOpnameScreen: React.FC = () => {
         Alert.alert('Tidak Ditemukan', `Produk dengan barcode "${data}" tidak ditemukan.`);
       }
     } catch (e) {
-      Alert.alert('Error', 'Gagal memproses barcode.');
+      AppToast.error('Error', 'Gagal memproses barcode.');
     } finally {
       setLoadingProducts(false);
     }
@@ -177,7 +178,7 @@ export const StockOpnameScreen: React.FC = () => {
     if (!permission) {
       requestPermission();
     } else if (!permission.granted) {
-      Alert.alert('Izin Kamera', 'Aplikasi membutuhkan izin untuk menggunakan kamera.');
+      AppToast.error('Izin Kamera', 'Aplikasi membutuhkan izin untuk menggunakan kamera.');
       requestPermission();
       return;
     }
@@ -187,16 +188,16 @@ export const StockOpnameScreen: React.FC = () => {
   // Submit Adjustment
   const handleAdjustmentSubmit = async () => {
     if (!selectedProduct) {
-      Alert.alert('Peringatan', 'Silakan pilih produk terlebih dahulu.');
+      AppToast.error('Peringatan', 'Silakan pilih produk terlebih dahulu.');
       return;
     }
     const qty = Number(quantityStr);
     if (isNaN(qty) || qty < 0) {
-      Alert.alert('Peringatan', 'Masukkan jumlah stok valid (minimal 0).');
+      AppToast.error('Peringatan', 'Masukkan jumlah stok valid (minimal 0).');
       return;
     }
     if (!notes.trim()) {
-      Alert.alert('Peringatan', 'Catatan penyesuaian wajib diisi.');
+      AppToast.error('Peringatan', 'Catatan penyesuaian wajib diisi.');
       return;
     }
 
@@ -214,10 +215,10 @@ export const StockOpnameScreen: React.FC = () => {
         setShowAdjModal(false);
         fetchMovements(1, true);
       } else {
-        Alert.alert('Gagal', res.error || 'Gagal menyimpan penyesuaian stok.');
+        AppToast.error('Gagal', res.error || 'Gagal menyimpan penyesuaian stok.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Terjadi kesalahan sistem.');
+      AppToast.error('Error', 'Terjadi kesalahan sistem.');
     } finally {
       setSubmitting(false);
     }

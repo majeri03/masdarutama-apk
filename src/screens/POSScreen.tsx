@@ -27,6 +27,7 @@ import { GlassCard, GradientButton } from '../components/ui';
 import type { Product, Category, Customer, CartItem, PaymentMethod } from '../types';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
+import { AppToast } from '../utils/toast';
 
 export const POSScreen: React.FC = () => {
   const {
@@ -128,9 +129,9 @@ export const POSScreen: React.FC = () => {
   // Automatically select default customer when list is loaded or selectedCustomerId is cleared
   useEffect(() => {
     if (!selectedCustomerId && customers.length > 0) {
-      const regulerCust = customers.find((c) => c.type === 'REGULER') || customers.find((c) => c.code === 'CUST-001') || customers[0];
-      if (regulerCust) {
-        setCustomer(regulerCust.id);
+      const umumCust = customers.find((c) => c.type === 'UMUM' || c.name.toUpperCase() === 'UMUM') || customers[0];
+      if (umumCust) {
+        setCustomer(umumCust.id);
       }
     }
   }, [selectedCustomerId, customers]);
@@ -193,14 +194,23 @@ export const POSScreen: React.FC = () => {
 
   useEffect(() => {
     loadInitialData();
-    loadProducts();
+    // loadProducts() is handled by the debounce effect now to prevent double-fetch on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Debounced Search Effect
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setPage(1);
+      loadProducts(searchQuery, selectedCategory as any, 1, true);
+    }, 400);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]); // Run when searchQuery changes
+
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    setPage(1);
-    loadProducts(text, selectedCategory as any, 1, true);
+    // Pemuatan data akan dipicu oleh useEffect debounce di atas
   };
 
   const handleCategorySelect = (catId: string | null) => {
@@ -227,7 +237,7 @@ export const POSScreen: React.FC = () => {
       // Add immediately with primary unit
       addItem(product, units[0].unitId);
     } else {
-      Alert.alert('Eror', 'Produk tidak memiliki unit penjualan.');
+      AppToast.info('Eror', 'Produk tidak memiliki unit penjualan.');
     }
   };
 
@@ -253,7 +263,7 @@ export const POSScreen: React.FC = () => {
     if (!permission) {
       requestPermission();
     } else if (!permission.granted) {
-      Alert.alert('Izin Kamera', 'Aplikasi membutuhkan izin untuk menggunakan kamera.');
+      AppToast.error('Izin Kamera', 'Aplikasi membutuhkan izin untuk menggunakan kamera.');
       requestPermission();
       return;
     }
@@ -264,7 +274,7 @@ export const POSScreen: React.FC = () => {
   // Add Customer handler
   const handleSaveCustomer = async () => {
     if (!newCustomerName) {
-      Alert.alert('Peringatan', 'Nama pelanggan wajib diisi.');
+      AppToast.error('Peringatan', 'Nama pelanggan wajib diisi.');
       return;
     }
     setSavingCustomer(true);
@@ -275,16 +285,16 @@ export const POSScreen: React.FC = () => {
         type: 'REGULER',
       } as any);
       if (res.success && res.data) {
-        Alert.alert('Sukses', 'Pelanggan berhasil ditambahkan');
+        AppToast.success('Sukses', 'Pelanggan berhasil ditambahkan');
         setShowAddCustomer(false);
         setNewCustomerName('');
         setNewCustomerPhone('');
         loadInitialData(res.data.id); // Refresh & select newly added customer
       } else {
-        Alert.alert('Gagal', res.error || 'Gagal menambahkan pelanggan');
+        AppToast.error('Gagal', res.error || 'Gagal menambahkan pelanggan');
       }
     } catch (e) {
-      Alert.alert('Error', 'Terjadi kesalahan sistem');
+      AppToast.error('Error', 'Terjadi kesalahan sistem');
     } finally {
       setSavingCustomer(false);
     }
@@ -293,18 +303,18 @@ export const POSScreen: React.FC = () => {
   const handleCheckoutSubmit = async () => {
     const payNum = Number(paidAmount || 0);
     if (paymentMethod === 'CASH' && payNum < calculation.grandTotal) {
-      Alert.alert('Perhatian', 'Jumlah bayar kurang dari total belanja.');
+      AppToast.info('Perhatian', 'Jumlah bayar kurang dari total belanja.');
       return;
     }
 
     if (paymentMethod === 'CREDIT' && payNum > calculation.grandTotal) {
-      Alert.alert('Perhatian', 'Jumlah DP tidak boleh melebihi grand total.');
+      AppToast.info('Perhatian', 'Jumlah DP tidak boleh melebihi grand total.');
       return;
     }
 
     // Validasi customer wajib dipilih
     if (!selectedCustomerId) {
-      Alert.alert('Perhatian', 'Silakan pilih pelanggan terlebih dahulu.');
+      AppToast.info('Perhatian', 'Silakan pilih pelanggan terlebih dahulu.');
       return;
     }
 
@@ -344,29 +354,28 @@ export const POSScreen: React.FC = () => {
 
       const res = await salesService.checkout(payload);
       if (res.success && res.data) {
-        // Fetch full sale detail including cashier/customer/items for printing
-        try {
-          const detailRes = await salesService.getSaleById(res.data.id);
-          if (detailRes.success && detailRes.data) {
-            setCreatedSale(detailRes.data);
-          } else {
-            setCreatedSale(res.data);
-          }
-        } catch (detailErr) {
-          setCreatedSale(res.data);
-        }
-
+        // "Secepat kilat": Segera kosongkan keranjang dan buka modal sukses
         clearCart();
         setPaidAmount('');
         setShowCheckoutModal(false);
         setShowCartModal(false);
-        loadProducts(); // Refresh stock
-        setShowSuccessModal(true); // Open success modal
+        setShowSuccessModal(true); 
+        setCreatedSale(res.data); // Set data awal dulu biar langsung muncul
+
+        // Ambil detail lengkap untuk cetak struk secara background
+        salesService.getSaleById(res.data.id).then((detailRes) => {
+          if (detailRes.success && detailRes.data) {
+            setCreatedSale(detailRes.data);
+          }
+        }).catch(() => {});
+
+        // Refresh stock secara background tanpa memblokir UI
+        loadProducts();
       } else {
-        Alert.alert('Gagal', res.error || 'Transaksi gagal diproses.');
+        AppToast.error('Gagal', res.error || 'Transaksi gagal diproses.');
       }
     } catch (e) {
-      Alert.alert('Eror', 'Terjadi kesalahan sistem.');
+      AppToast.info('Eror', 'Terjadi kesalahan sistem.');
     } finally {
       setProcessingCheckout(false);
     }
@@ -495,7 +504,11 @@ export const POSScreen: React.FC = () => {
             );
           }}
           onEndReached={loadMore}
-          onEndReachedThreshold={0.3}
+          onEndReachedThreshold={0.5}
+          removeClippedSubviews={true}
+          initialNumToRender={10}
+          maxToRenderPerBatch={8}
+          windowSize={5}
           ListFooterComponent={
             loadingMore ? (
               <ActivityIndicator size="small" color={Colors.primary} style={{ padding: 16 }} />

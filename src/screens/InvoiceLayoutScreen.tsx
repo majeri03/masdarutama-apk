@@ -18,6 +18,7 @@ import { GlassCard, GradientButton } from '../components/ui';
 import api from '../services/api';
 import { API_ENDPOINTS, API_BASE_URL } from '../constants/api';
 import { useInvoiceLayoutStore, LayoutType } from '../stores/invoice-layout.store';
+import { AppToast } from '../utils/toast';
 
 export const InvoiceLayoutScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -49,7 +50,7 @@ export const InvoiceLayoutScreen: React.FC = () => {
           style: 'destructive',
           onPress: () => {
             layout.resetLayout();
-            Alert.alert('Sukses', 'Pengaturan berhasil dikembalikan ke default.');
+            AppToast.success('Sukses', 'Pengaturan berhasil dikembalikan ke default.');
           },
         },
       ]
@@ -57,7 +58,7 @@ export const InvoiceLayoutScreen: React.FC = () => {
   };
 
   const handleSave = () => {
-    Alert.alert('Sukses', 'Pengaturan desain & layout invoice berhasil disimpan!');
+    AppToast.success('Sukses', 'Pengaturan desain & layout invoice berhasil disimpan!');
   };
 
   // Mock Invoice Item Render
@@ -139,23 +140,27 @@ export const InvoiceLayoutScreen: React.FC = () => {
       return (
         <View style={styles.a4Preview}>
           {/* Header */}
-          <View style={[styles.rowBetween, styles.previewA4Header]}>
-            <View>
-              <Text style={styles.a4StoreName}>TB MASDAR UTAMA</Text>
-              <Text style={styles.a4StoreAddr}>Jl. Poros Maros - Pangkep</Text>
+          {layout.showHeader && (
+            <View style={[styles.rowBetween, styles.previewA4Header]}>
+              <View>
+                <Text style={styles.a4StoreName}>TB MASDAR UTAMA</Text>
+                <Text style={styles.a4StoreAddr}>Jl. Poros Maros - Pangkep</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.a4DocType}>SURAT JALAN</Text>
+                <Text style={styles.a4DocNo}>DO-INV/20260524-0001</Text>
+              </View>
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.a4DocType}>SURAT JALAN</Text>
-              <Text style={styles.a4DocNo}>DO-INV/20260524-0001</Text>
-            </View>
-          </View>
+          )}
 
           {/* Customer */}
-          <View style={styles.a4CustCard}>
-            <Text style={styles.a4CustTitle}>TUJUAN PENGIRIMAN</Text>
-            <Text style={styles.a4CustName}>Nama: Umum</Text>
-            <Text style={styles.a4CustAddr}>Alamat: -</Text>
-          </View>
+          {layout.showCustomerInfo && (
+            <View style={styles.a4CustCard}>
+              <Text style={styles.a4CustTitle}>TUJUAN PENGIRIMAN</Text>
+              <Text style={styles.a4CustName}>Nama: Umum</Text>
+              <Text style={styles.a4CustAddr}>Alamat: -</Text>
+            </View>
+          )}
 
           {/* Table */}
           <View style={styles.a4Table}>
@@ -172,53 +177,64 @@ export const InvoiceLayoutScreen: React.FC = () => {
           </View>
 
           {/* Signatures */}
-          <View style={[styles.rowBetween, { marginTop: 15, paddingHorizontal: Spacing.xs }]}>
-            <View style={styles.a4SignBox}>
-              <Text style={styles.a4SignLabel}>Penerima,</Text>
-              <View style={styles.a4SignLine} />
+          {layout.showSignature && (
+            <View style={[styles.rowBetween, { marginTop: 15, paddingHorizontal: Spacing.xs }]}>
+              <View style={styles.a4SignBox}>
+                <Text style={styles.a4SignLabel}>Penerima,</Text>
+                <View style={styles.a4SignLine} />
+              </View>
+              <View style={styles.a4SignBox}>
+                <Text style={styles.a4SignLabel}>Sopir,</Text>
+                <View style={styles.a4SignLine} />
+              </View>
+              <View style={styles.a4SignBox}>
+                <Text style={styles.a4SignLabel}>Hormat Kami,</Text>
+                <View style={styles.a4SignLine} />
+              </View>
             </View>
-            <View style={styles.a4SignBox}>
-              <Text style={styles.a4SignLabel}>Sopir,</Text>
-              <View style={styles.a4SignLine} />
+          )}
+
+          {/* Footer */}
+          {layout.showFooter && (
+            <View style={styles.a4FooterTerms}>
+              <Text style={styles.a4TermsText}>{layout.footerTerms}</Text>
             </View>
-            <View style={styles.a4SignBox}>
-              <Text style={styles.a4SignLabel}>Hormat Kami,</Text>
-              <View style={styles.a4SignLine} />
-            </View>
-          </View>
+          )}
         </View>
       );
-    } else {
+    } else if (layout.layoutType === 'INVOICE_BESAR') {
       // INVOICE_BESAR (A4 INVOICE - PRECISELY MATCHES SPECIFIED LAYOUT)
       return (
         <View style={styles.a4Preview}>
           {/* Header Box */}
-          <View style={[styles.rowBetween, styles.previewA4Header]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
-              {layout.showLogo && (
-                logoUrl ? (
-                  <Image source={{ uri: logoUrl }} style={{ width: 44, height: 44, borderRadius: BorderRadius.sm }} resizeMode="contain" />
-                ) : (
-                  <View style={{ width: 36, height: 36, backgroundColor: Colors.error, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: BorderRadius.sm }}>
-                    {/* Stylized triangle using simple border shapes in RN */}
-                    <View style={{ width: 0, height: 0, borderLeftWidth: 14, borderRightWidth: 14, borderBottomWidth: 28, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#FFFFFF', position: 'absolute', bottom: -2 }} />
-                    <View style={{ width: 0, height: 0, borderLeftWidth: 18, borderRightWidth: 18, borderBottomWidth: 36, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: Colors.error, position: 'absolute', bottom: -2 }} />
-                  </View>
-                )
-              )}
-              <View>
-                <Text style={styles.a4StoreName}>TB MASDAR UTAMA</Text>
-                <Text style={styles.a4StoreAddr}>Jl. Poros Maros - Pangkep</Text>
-                <Text style={styles.a4StorePhone}>Phone: 6285398346677</Text>
+          {layout.showHeader && (
+            <View style={[styles.rowBetween, styles.previewA4Header]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                {layout.showLogo && (
+                  logoUrl ? (
+                    <Image source={{ uri: logoUrl }} style={{ width: 44, height: 44, borderRadius: BorderRadius.sm }} resizeMode="contain" />
+                  ) : (
+                    <View style={{ width: 36, height: 36, backgroundColor: Colors.error, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: BorderRadius.sm }}>
+                      {/* Stylized triangle using simple border shapes in RN */}
+                      <View style={{ width: 0, height: 0, borderLeftWidth: 14, borderRightWidth: 14, borderBottomWidth: 28, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#FFFFFF', position: 'absolute', bottom: -2 }} />
+                      <View style={{ width: 0, height: 0, borderLeftWidth: 18, borderRightWidth: 18, borderBottomWidth: 36, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: Colors.error, position: 'absolute', bottom: -2 }} />
+                    </View>
+                  )
+                )}
+                <View>
+                  <Text style={styles.a4StoreName}>TB MASDAR UTAMA</Text>
+                  <Text style={styles.a4StoreAddr}>Jl. Poros Maros - Pangkep</Text>
+                  <Text style={styles.a4StorePhone}>Phone: 6285398346677</Text>
+                </View>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.a4DocType}>INVOICE</Text>
+                <Text style={styles.a4DocNo}>INV/20260524-0001</Text>
+                <Text style={styles.a4Meta}>Date: 24/05/2026</Text>
+                <Text style={styles.a4Meta}>Pay: CASH</Text>
               </View>
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.a4DocType}>INVOICE</Text>
-              <Text style={styles.a4DocNo}>INV/20260524-0001</Text>
-              <Text style={styles.a4Meta}>Date: 24/05/2026</Text>
-              <Text style={styles.a4Meta}>Pay: CASH</Text>
-            </View>
-          </View>
+          )}
 
           {/* Customer Info Box */}
           {layout.showCustomerInfo && (
@@ -295,7 +311,103 @@ export const InvoiceLayoutScreen: React.FC = () => {
           )}
         </View>
       );
+    } else if (layout.layoutType === 'FAKTUR_NCR') {
+      return (
+        <View style={styles.a4Preview}>
+          {/* Header Box */}
+          {layout.showHeader && (
+            <View style={[styles.rowBetween, styles.previewA4Header, { borderBottomWidth: 1, borderColor: '#000' }]}>
+              <View>
+                <Text style={styles.a4StoreName}>TB MASDAR UTAMA</Text>
+                <Text style={styles.a4StoreAddr}>Jl. Poros Maros - Pangkep</Text>
+                <Text style={styles.a4StorePhone}>Phone: 6285398346677</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.a4DocType}>FAKTUR NCR</Text>
+                <Text style={styles.a4DocNo}>INV/20260524-0001</Text>
+                <Text style={styles.a4Meta}>Date: 24/05/2026</Text>
+                <Text style={styles.a4Meta}>Pay: CASH</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Customer Info Box */}
+          {layout.showCustomerInfo && (
+            <View style={[styles.a4CustCard, { borderWidth: 1, borderColor: '#000', borderRadius: 0 }]}>
+              <Text style={[styles.a4CustTitle, { borderBottomWidth: 1, borderColor: '#000' }]}>CUSTOMER INFO</Text>
+              <Text style={styles.a4CustName}>Nama: Umum</Text>
+              <Text style={styles.a4CustAddr}>Address: -</Text>
+            </View>
+          )}
+
+          {/* High legibility A4 Product Table */}
+          <View style={[styles.a4Table, { borderWidth: 0, marginTop: 10 }]}>
+            <View style={[styles.rowBetween, styles.a4TableHead, { backgroundColor: 'transparent', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#000' }]}>
+              <Text style={[styles.a4Th, { flex: 0.3 }]}>No</Text>
+              <Text style={[styles.a4Th, { flex: 2, textAlign: 'left', paddingLeft: 4 }]}>Description</Text>
+              <Text style={styles.a4Th}>Qty</Text>
+              <Text style={styles.a4Th}>Price</Text>
+              <Text style={styles.a4Th}>Net</Text>
+            </View>
+            <View style={[styles.rowBetween, styles.a4TableRow, { borderBottomWidth: 0 }]}>
+              <Text style={[styles.a4Td, { flex: 0.3 }]}>1</Text>
+              <Text style={[styles.a4Td, { flex: 2, textAlign: 'left', fontWeight: 'bold', paddingLeft: 4 }]}>A PLUS Pink</Text>
+              <Text style={styles.a4Td}>2 Zak</Text>
+              <Text style={styles.a4Td}>Rp 78k</Text>
+              <Text style={[styles.a4Td, { fontWeight: 'bold' }]}>Rp 156k</Text>
+            </View>
+          </View>
+
+          {/* Bottom details Row */}
+          <View style={[styles.rowBetween, { marginTop: 8, alignItems: 'flex-start' }]}>
+            {/* Left section: Terbilang, Bank transfer, signature */}
+            <View style={{ flex: 1.3, gap: Spacing.xs }}>
+              <View style={[styles.a4MiniTerbilang, { borderWidth: 1, borderRadius: 0, backgroundColor: 'transparent' }]}>
+                <Text style={styles.a4TerbilangTxt}><Text style={{ fontWeight: 'bold' }}>Terbilang:</Text> Seratus Lima Puluh Enam Ribu Rupiah</Text>
+              </View>
+              {layout.showPaymentInfo && (
+                <View style={[styles.a4MiniBank, { borderWidth: 1, borderRadius: 0, backgroundColor: 'transparent', borderStyle: 'solid' }]}>
+                  <Text style={styles.a4BankTxt}><Text style={{ fontWeight: 'bold' }}>TRANSFER:</Text> {layout.bankName} - {layout.bankAccount}</Text>
+                  <Text style={styles.a4BankTxt}>a/n {layout.bankHolder}</Text>
+                </View>
+              )}
+              {layout.showSignature && (
+                <View style={{ marginTop: 15 }}>
+                  <Text style={styles.a4SignTitle}>Super Admin</Text>
+                  <Text style={styles.a4SignSub}>Authorized Signature</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Right section: Totals Grid */}
+            <View style={{ flex: 1 }}>
+              <View style={[styles.a4TotalsTable, { borderWidth: 1, borderColor: '#000' }]}>
+                <View style={styles.a4TotalRow}>
+                  <Text style={styles.a4TotalLabel}>Gross</Text>
+                  <Text style={styles.a4TotalVal}>Rp 156.000</Text>
+                </View>
+                <View style={styles.a4TotalRow}>
+                  <Text style={styles.a4TotalLabel}>Discount</Text>
+                  <Text style={styles.a4TotalVal}>Rp 0</Text>
+                </View>
+                <View style={[styles.a4TotalRow, styles.a4GrandTotalRow, { backgroundColor: 'transparent', borderTopWidth: 1, borderColor: '#000' }]}>
+                  <Text style={styles.a4TotalLabel}>Grand Total</Text>
+                  <Text style={styles.a4TotalVal}>Rp 156.000</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Footer terms */}
+          {layout.showFooter && (
+            <View style={styles.a4FooterTerms}>
+              <Text style={styles.a4TermsText}>{layout.footerTerms}</Text>
+            </View>
+          )}
+        </View>
+      );
     }
+    return null;
   };
 
   return (
@@ -332,6 +444,7 @@ export const InvoiceLayoutScreen: React.FC = () => {
               { key: 'STRUK_KECIL', label: 'Struk Thermal' },
               { key: 'INVOICE_BESAR', label: 'Invoice A4' },
               { key: 'SURAT_JALAN', label: 'Surat Jalan' },
+              { key: 'FAKTUR_NCR', label: 'Faktur NCR' },
             ] as const).map((tab) => (
               <TouchableOpacity
                 key={tab.key}

@@ -1,11 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity, Animated, Easing, Vibration, Image } from 'react-native';
+import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity, Animated, Easing, Vibration, Image, LogBox } from 'react-native';
 import { NavigationContainer, DefaultTheme, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
+
+LogBox.ignoreLogs([
+  'expo-notifications: Android Push notifications',
+  '`expo-notifications` functionality is not fully supported in Expo Go',
+]);
 
 // Import state store
 import { useAuthStore } from './src/stores/auth.store';
@@ -30,9 +36,12 @@ import { CustomersScreen } from './src/screens/CustomersScreen';
 
 // Import Sidebar Drawer
 import { SidebarDrawer } from './src/components/ui/SidebarDrawer';
+import { FloatingShortcut } from './src/components/ui/FloatingShortcut';
 
 // Design Theme
 import { Colors, FontWeight, FontSize } from './src/constants/theme';
+import { useNotificationStore } from './src/stores/notification.store';
+import { usePushNotifications } from './src/hooks/usePushNotifications';
 
 import { navigationRef } from './src/utils/navigation';
 
@@ -201,6 +210,8 @@ const MainTabNavigator = () => {
 
 export default function App() {
   const { isAuthenticated, isLoading, checkSession } = useAuthStore();
+  usePushNotifications(); // Hook untuk inisialisasi push notification
+
   const [showSplash, setShowSplash] = useState(true);
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const scaleAnim = React.useRef(new Animated.Value(0.4)).current;
@@ -212,7 +223,7 @@ export default function App() {
     try {
       Vibration.vibrate([100, 80, 100, 150]);
       const { createAudioPlayer } = require('expo-audio');
-      const player = createAudioPlayer({ uri: 'https://cdnjs.cloudflare.com/ajax/libs/ion-sound/3.0.7/sounds/bell_ring.mp3' });
+      const player = createAudioPlayer(require('./assets/Masdar_Utama.mp3'));
       player.play();
       
       // Release resource after 5 seconds to prevent memory leaks
@@ -255,6 +266,10 @@ export default function App() {
         useNativeDriver: true,
       }),
     ]).start();
+
+    // Start polling for notifications
+    const { startPolling } = useNotificationStore.getState();
+    startPolling();
   }, []);
 
   useEffect(() => {
@@ -368,6 +383,9 @@ export default function App() {
           )}
         </Stack.Navigator>
       </NavigationContainer>
+      
+      {isAuthenticated && <FloatingShortcut />}
+      <Toast />
     </SafeAreaProvider>
   );
 }

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type LayoutType = 'STRUK_KECIL' | 'INVOICE_BESAR' | 'SURAT_JALAN';
+export type LayoutType = 'STRUK_KECIL' | 'INVOICE_BESAR' | 'SURAT_JALAN' | 'FAKTUR_NCR';
 
 export interface InvoiceLayoutState {
   layoutType: LayoutType;

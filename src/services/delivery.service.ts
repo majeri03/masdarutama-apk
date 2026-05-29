@@ -31,12 +31,16 @@ export const deliveryService = {
     search?: string;
     customerId?: string;
     status?: string;
+    startDate?: string;
+    endDate?: string;
   } = {}): Promise<ApiResponse<any[]>> {
     try {
       const params = new URLSearchParams();
       if (filters.search) params.append('search', filters.search);
       if (filters.customerId) params.append('customerId', filters.customerId);
       if (filters.status) params.append('status', filters.status);
+      if (filters.startDate) params.append('startDate', filters.startDate);
+      if (filters.endDate) params.append('endDate', filters.endDate);
 
       const url = `${API_ENDPOINTS.DELIVERY_ORDERS}?${params.toString()}`;
       const response = await api.get<ApiResponse<any[]>>(url);

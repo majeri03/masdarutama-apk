@@ -5,7 +5,7 @@
 
 // ==================== ENUMS ====================
 export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'KASIR';
-export type CustomerType = 'REGULER' | 'GROSIR' | 'PROYEK';
+export type CustomerType = 'REGULER' | 'GROSIR' | 'PROYEK' | 'UMUM';
 export type PaymentMethod = 'CASH' | 'TRANSFER' | 'CREDIT' | 'DEBIT_CARD' | 'QRIS';
 export type SaleStatus = 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'RETURN';
 export type PurchaseStatus = 'PENDING' | 'RECEIVED' | 'PARTIAL' | 'CANCELLED';

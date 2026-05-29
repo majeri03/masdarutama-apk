@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { AppToast } from '../utils/toast';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 import { Ionicons } from '@expo/vector-icons';
@@ -81,7 +82,7 @@ export const ProductsScreen: React.FC = () => {
     if (!permission) {
       requestPermission();
     } else if (!permission.granted) {
-      Alert.alert('Izin Kamera', 'Aplikasi membutuhkan izin untuk menggunakan kamera.');
+      AppToast.error('Izin Kamera', 'Aplikasi membutuhkan izin untuk menggunakan kamera.');
       requestPermission();
       return;
     }
@@ -263,10 +264,10 @@ export const ProductsScreen: React.FC = () => {
                 setSelectedProduct(null);
                 loadProducts(searchQuery, selectedCategory as any);
               } else {
-                Alert.alert('Gagal', res.error || 'Gagal menghapus produk.');
+                AppToast.error('Gagal', res.error || 'Gagal menghapus produk.');
               }
             } catch (e) {
-              Alert.alert('Error', 'Terjadi kesalahan sistem.');
+              AppToast.error('Error', 'Terjadi kesalahan sistem.');
             }
           },
         },
@@ -277,7 +278,7 @@ export const ProductsScreen: React.FC = () => {
   // Add Unit to Form list
   const handleAddUnitToForm = () => {
     if (!tempUnitId) {
-      Alert.alert('Peringatan', 'Pilih satuan terlebih dahulu.');
+      AppToast.error('Peringatan', 'Pilih satuan terlebih dahulu.');
       return;
     }
     const conv = Number(tempConversion);
@@ -285,21 +286,21 @@ export const ProductsScreen: React.FC = () => {
     const sell = Number(tempSellPrice);
 
     if (isNaN(conv) || conv < 1) {
-      Alert.alert('Peringatan', 'Nilai konversi minimal 1.');
+      AppToast.error('Peringatan', 'Nilai konversi minimal 1.');
       return;
     }
     if (isNaN(buy) || buy < 0 || isNaN(sell) || sell < 0) {
-      Alert.alert('Peringatan', 'Harga tidak boleh negatif.');
+      AppToast.error('Peringatan', 'Harga tidak boleh negatif.');
       return;
     }
     if (sell < buy) {
-      Alert.alert('Peringatan', 'Harga jual tidak boleh lebih kecil dari harga beli.');
+      AppToast.error('Peringatan', 'Harga jual tidak boleh lebih kecil dari harga beli.');
       return;
     }
 
     // Check duplicate
     if (formProductUnits.some((pu) => pu.unitId === tempUnitId)) {
-      Alert.alert('Peringatan', 'Satuan ini sudah ditambahkan.');
+      AppToast.error('Peringatan', 'Satuan ini sudah ditambahkan.');
       return;
     }
 
@@ -357,7 +358,7 @@ export const ProductsScreen: React.FC = () => {
       }
 
       if (status !== 'granted') {
-        Alert.alert('Izin Ditolak', 'Aplikasi memerlukan izin untuk mengakses gambar.');
+        AppToast.error('Izin Ditolak', 'Aplikasi memerlukan izin untuk mengakses gambar.');
         return;
       }
 
@@ -390,11 +391,11 @@ export const ProductsScreen: React.FC = () => {
       if (uploadRes.success && uploadRes.data?.url) {
         setFormImageUrl(uploadRes.data.url);
       } else {
-        Alert.alert('Gagal', uploadRes.error || 'Gagal mengunggah foto produk');
+        AppToast.error('Gagal', uploadRes.error || 'Gagal mengunggah foto produk');
       }
     } catch (e) {
       console.warn('[IMAGE_UPLOAD_ERROR]', e);
-      Alert.alert('Error', 'Gagal memproses gambar');
+      AppToast.error('Error', 'Gagal memproses gambar');
     } finally {
       setUploadingImage(false);
     }
@@ -407,7 +408,7 @@ export const ProductsScreen: React.FC = () => {
   // Create Category helper
   const handleCreateCategory = async () => {
     if (!newCategoryName.trim()) {
-      Alert.alert('Peringatan', 'Nama kategori wajib diisi.');
+      AppToast.error('Peringatan', 'Nama kategori wajib diisi.');
       return;
     }
     setSavingCategory(true);
@@ -430,10 +431,10 @@ export const ProductsScreen: React.FC = () => {
           setFormCategory(res.data.id);
         }
       } else {
-        Alert.alert('Gagal', res.error || 'Gagal membuat kategori.');
+        AppToast.error('Gagal', res.error || 'Gagal membuat kategori.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Terjadi kesalahan sistem.');
+      AppToast.error('Error', 'Terjadi kesalahan sistem.');
     } finally {
       setSavingCategory(false);
     }
@@ -442,11 +443,11 @@ export const ProductsScreen: React.FC = () => {
   // Create Sub-Category helper
   const handleCreateSubCategory = async () => {
     if (!newSubCategoryName.trim()) {
-      Alert.alert('Peringatan', 'Nama sub-kategori wajib diisi.');
+      AppToast.error('Peringatan', 'Nama sub-kategori wajib diisi.');
       return;
     }
     if (!formCategory) {
-      Alert.alert('Peringatan', 'Pilih kategori utama terlebih dahulu.');
+      AppToast.error('Peringatan', 'Pilih kategori utama terlebih dahulu.');
       return;
     }
     setSavingSubCategory(true);
@@ -468,10 +469,10 @@ export const ProductsScreen: React.FC = () => {
           setFormSubCategory(res.data.id);
         }
       } else {
-        Alert.alert('Gagal', res.error || 'Gagal membuat sub-kategori.');
+        AppToast.error('Gagal', res.error || 'Gagal membuat sub-kategori.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Terjadi kesalahan sistem.');
+      AppToast.error('Error', 'Terjadi kesalahan sistem.');
     } finally {
       setSavingSubCategory(false);
     }
@@ -480,26 +481,26 @@ export const ProductsScreen: React.FC = () => {
   // Form Submit
   const handleFormSubmit = async () => {
     if (!formName.trim()) {
-      Alert.alert('Peringatan', 'Nama produk wajib diisi.');
+      AppToast.error('Peringatan', 'Nama produk wajib diisi.');
       return;
     }
     if (!formCategory) {
-      Alert.alert('Peringatan', 'Kategori produk wajib dipilih.');
+      AppToast.error('Peringatan', 'Kategori produk wajib dipilih.');
       return;
     }
     if (formProductUnits.length === 0) {
-      Alert.alert('Peringatan', 'Minimal harus menentukan 1 satuan penjualan.');
+      AppToast.error('Peringatan', 'Minimal harus menentukan 1 satuan penjualan.');
       return;
     }
 
     // Check primary unit requirements
     const primaryUnits = formProductUnits.filter((u) => u.isPrimary);
     if (primaryUnits.length !== 1) {
-      Alert.alert('Peringatan', 'Harus menentukan tepat 1 satuan utama (primary).');
+      AppToast.error('Peringatan', 'Harus menentukan tepat 1 satuan utama (primary).');
       return;
     }
     if (primaryUnits[0].conversionValue !== 1) {
-      Alert.alert('Peringatan', 'Satuan utama harus memiliki nilai konversi = 1.');
+      AppToast.error('Peringatan', 'Satuan utama harus memiliki nilai konversi = 1.');
       return;
     }
 
@@ -525,14 +526,14 @@ export const ProductsScreen: React.FC = () => {
       }
 
       if (res.success) {
-        Alert.alert('Sukses', isEditing ? 'Produk berhasil diperbarui!' : 'Produk berhasil dibuat!');
+        AppToast.success('Sukses', isEditing ? 'Produk berhasil diperbarui!' : 'Produk berhasil dibuat!');
         setShowFormModal(false);
         loadProducts(searchQuery, selectedCategory as any);
       } else {
-        Alert.alert('Gagal', res.error || 'Gagal menyimpan produk.');
+        AppToast.error('Gagal', res.error || 'Gagal menyimpan produk.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Terjadi kesalahan sistem.');
+      AppToast.error('Error', 'Terjadi kesalahan sistem.');
     } finally {
       setSavingProduct(false);
     }
@@ -660,6 +661,13 @@ export const ProductsScreen: React.FC = () => {
           }}
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
+          
+          // Optimasi FlatList
+          removeClippedSubviews={true}
+          initialNumToRender={10}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

@@ -8,6 +8,7 @@ import { GlassCard, GradientButton } from '../components/ui';
 import { masterService } from '../services/master.service';
 import { salesService } from '../services/sales.service';
 import type { Customer, Sale } from '../types';
+import { AppToast } from '../utils/toast';
 
 export const CustomersScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -93,7 +94,7 @@ export const CustomersScreen: React.FC = () => {
 
   const handleSave = async () => {
     if (!formData.name) {
-      Alert.alert('Error', 'Nama pelanggan wajib diisi');
+      AppToast.error('Error', 'Nama pelanggan wajib diisi');
       return;
     }
     setSaving(true);
@@ -105,14 +106,14 @@ export const CustomersScreen: React.FC = () => {
         res = await masterService.createCustomer(formData);
       }
       if (res.success) {
-        Alert.alert('Sukses', 'Data pelanggan berhasil disimpan');
+        AppToast.success('Sukses', 'Data pelanggan berhasil disimpan');
         setShowForm(false);
         loadData();
       } else {
-        Alert.alert('Gagal', res.error || 'Gagal menyimpan data');
+        AppToast.error('Gagal', res.error || 'Gagal menyimpan data');
       }
     } catch (e) {
-      Alert.alert('Error', 'Terjadi kesalahan sistem');
+      AppToast.error('Error', 'Terjadi kesalahan sistem');
     } finally {
       setSaving(false);
     }

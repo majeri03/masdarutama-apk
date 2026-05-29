@@ -20,10 +20,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
+import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { salesService } from '../services/sales.service';
 import type { Sale, PaymentMethod, SaleStatus } from '../types';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
 import { useRoute } from '@react-navigation/native';
+import { AppToast } from '../utils/toast';
 
 // Badge warna untuk status pembayaran
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string; icon: string }> = {
@@ -45,8 +47,8 @@ interface FilterState {
   search: string;
   status: SaleStatus | '';
   paymentMethod: PaymentMethod | '';
-  dateFrom: string;
-  dateTo: string;
+  dateFrom: Date | null;
+  dateTo: Date | null;
   sortOrder: 'asc' | 'desc';
 }
 
@@ -72,8 +74,8 @@ export const TransactionHistoryScreen: React.FC = () => {
     search: '',
     status: '',
     paymentMethod: '',
-    dateFrom: '',
-    dateTo: '',
+    dateFrom: null,
+    dateTo: null,
     sortOrder: 'desc',
   });
   const [showFilter, setShowFilter] = useState(false);
@@ -97,8 +99,8 @@ export const TransactionHistoryScreen: React.FC = () => {
           search: filters.search || undefined,
           status: filters.status || undefined,
           paymentMethod: filters.paymentMethod || undefined,
-          dateFrom: filters.dateFrom || undefined,
-          dateTo: filters.dateTo || undefined,
+          dateFrom: filters.dateFrom ? filters.dateFrom.toISOString().split('T')[0] : undefined,
+          dateTo: filters.dateTo ? filters.dateTo.toISOString().split('T')[0] : undefined,
           sortOrder: filters.sortOrder,
           customerId: activeCustomerId || undefined,
           page: pageNum,
@@ -156,8 +158,8 @@ export const TransactionHistoryScreen: React.FC = () => {
       search: '',
       status: '',
       paymentMethod: '',
-      dateFrom: '',
-      dateTo: '',
+      dateFrom: null,
+      dateTo: null,
       sortOrder: 'desc',
     };
     setPendingFilters(empty);
@@ -219,7 +221,7 @@ export const TransactionHistoryScreen: React.FC = () => {
         title: `Invoice ${sale.invoiceNumber}`,
       });
     } catch (e) {
-      Alert.alert('Error', 'Gagal membagikan invoice.');
+      AppToast.error('Error', 'Gagal membagikan invoice.');
     }
   };
 
@@ -354,6 +356,13 @@ export const TransactionHistoryScreen: React.FC = () => {
           }
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
+          
+          // Optimasi FlatList
+          removeClippedSubviews={true}
+          initialNumToRender={10}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+
           ListFooterComponent={
             loadingMore ? (
               <ActivityIndicator size="small" color={Colors.primaryStart} style={{ padding: 16 }} />
@@ -431,6 +440,23 @@ export const TransactionHistoryScreen: React.FC = () => {
                     </Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+
+              {/* Filter Tanggal dengan DatePickerInput */}
+              <Text style={styles.filterLabel}>Rentang Waktu</Text>
+              <View style={{flexDirection: 'row', gap: 12}}>
+                <DatePickerInput 
+                  value={pendingFilters.dateFrom} 
+                  onChange={(d) => setPendingFilters((f) => ({ ...f, dateFrom: d }))} 
+                  placeholder="Dari Tanggal" 
+                  style={{flex: 1}} 
+                />
+                <DatePickerInput 
+                  value={pendingFilters.dateTo} 
+                  onChange={(d) => setPendingFilters((f) => ({ ...f, dateTo: d }))} 
+                  placeholder="Sampai Tanggal" 
+                  style={{flex: 1}} 
+                />
               </View>
 
               {/* Urutan Waktu */}

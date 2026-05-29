@@ -17,6 +17,7 @@ import { masterService } from '../services/master.service';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
+import { AppToast } from '../utils/toast';
 
 export const LoginScreen: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -87,18 +88,18 @@ export const LoginScreen: React.FC = () => {
         if (targetEmail && targetPassword) {
           const loginResult = await login(targetEmail, targetPassword);
           if (!loginResult.success) {
-            Alert.alert('Login Gagal', loginResult.error || 'Terjadi kesalahan saat masuk.');
+            AppToast.error('Login Gagal', loginResult.error || 'Terjadi kesalahan saat masuk.');
           }
         }
       }
     } catch (e) {
-      Alert.alert('Error', 'Gagal memverifikasi biometrik.');
+      AppToast.error('Error', 'Gagal memverifikasi biometrik.');
     }
   };
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Perhatian', 'Email dan password wajib diisi.');
+      AppToast.info('Perhatian', 'Email dan password wajib diisi.');
       return;
     }
 
@@ -109,7 +110,7 @@ export const LoginScreen: React.FC = () => {
       await SecureStore.setItemAsync('saved_password', password);
       await SecureStore.setItemAsync('saved_remember', 'true');
     } else {
-      Alert.alert('Login Gagal', result.error || 'Terjadi kesalahan saat masuk.');
+      AppToast.error('Login Gagal', result.error || 'Terjadi kesalahan saat masuk.');
     }
   };
 

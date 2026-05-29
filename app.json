@@ -40,7 +40,8 @@
       "expo-secure-store",
       "expo-local-authentication",
       "expo-audio",
-      "expo-updates"
+      "expo-updates",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {

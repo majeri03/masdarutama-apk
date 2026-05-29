@@ -20,6 +20,7 @@ import { GlassCard, GradientButton } from '../components/ui';
 import { debtService, DebtPaymentPayload } from '../services/debt.service';
 import { masterService } from '../services/master.service';
 import { useSidebarStore } from '../stores/sidebar.store';
+import { AppToast } from '../utils/toast';
 
 // Helper WITA Timezone formatting
 const formatWitaDate = (dateString: string | null) => {
@@ -142,7 +143,7 @@ export const DebtScreen: React.FC = () => {
   const handlePaySubmit = async () => {
     const amountNum = Number(payAmount || 0);
     if (!payAmount || amountNum <= 0) {
-      Alert.alert('Perhatian', 'Masukkan jumlah pembayaran yang valid.');
+      AppToast.info('Perhatian', 'Masukkan jumlah pembayaran yang valid.');
       return;
     }
 
@@ -171,10 +172,10 @@ export const DebtScreen: React.FC = () => {
         setShowPayModal(false);
         fetchDebts();
       } else {
-        Alert.alert('Gagal', res.error || 'Terjadi kesalahan saat mencatat cicilan.');
+        AppToast.error('Gagal', res.error || 'Terjadi kesalahan saat mencatat cicilan.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Gagal memproses pembayaran utang.');
+      AppToast.error('Error', 'Gagal memproses pembayaran utang.');
     } finally {
       setSubmittingPayment(false);
     }

@@ -22,6 +22,7 @@ import { useNavigation } from '@react-navigation/native';
 import api from '../services/api';
 import { API_ENDPOINTS } from '../constants/api';
 import type { StoreSetting } from '../types';
+import { AppToast } from '../utils/toast';
 
 export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -85,15 +86,15 @@ export const SettingsScreen: React.FC = () => {
 
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      Alert.alert('Peringatan', 'Semua field password wajib diisi.');
+      AppToast.error('Peringatan', 'Semua field password wajib diisi.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert('Peringatan', 'Password baru dan konfirmasi tidak cocok.');
+      AppToast.error('Peringatan', 'Password baru dan konfirmasi tidak cocok.');
       return;
     }
     if (newPassword.length < 8) {
-      Alert.alert('Peringatan', 'Password baru minimal 8 karakter.');
+      AppToast.error('Peringatan', 'Password baru minimal 8 karakter.');
       return;
     }
 
@@ -118,10 +119,10 @@ export const SettingsScreen: React.FC = () => {
           },
         ]);
       } else {
-        Alert.alert('Gagal', res.data?.error || 'Gagal mengubah password.');
+        AppToast.error('Gagal', res.data?.error || 'Gagal mengubah password.');
       }
     } catch (e: any) {
-      Alert.alert('Gagal', e?.response?.data?.error || 'Terjadi kesalahan sistem.');
+      AppToast.error('Gagal', e?.response?.data?.error || 'Terjadi kesalahan sistem.');
     } finally {
       setChangingPassword(false);
     }

@@ -19,10 +19,12 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
+import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { deliveryService } from '../services/delivery.service';
 import { masterService } from '../services/master.service';
 import { productService } from '../services/product.service';
 import { salesService } from '../services/sales.service';
+import { AppToast } from '../utils/toast';
 import { generateInvoiceHtml } from '../utils/invoicePdf';
 import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
 import type { Customer, Product, Sale } from '../types';
@@ -65,6 +67,9 @@ export const DeliveryScreen: React.FC = () => {
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   // Selected DO Details Modal
   const [selectedDO, setSelectedDO] = useState<DeliveryOrder | null>(null);
@@ -82,7 +87,7 @@ export const DeliveryScreen: React.FC = () => {
   const [driver, setDriver] = useState('');
   const [vehicle, setVehicle] = useState('');
   const [notes, setNotes] = useState('');
-  const [deliveryDate, setDeliveryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [deliveryDate, setDeliveryDate] = useState<Date | null>(new Date());
   const [salesList, setSalesList] = useState<any[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState('');
 
@@ -129,6 +134,8 @@ export const DeliveryScreen: React.FC = () => {
       const res = await deliveryService.getDeliveryOrders({
         search: search || undefined,
         status: statusFilter || undefined,
+        startDate: startDate ? startDate.toISOString().split('T')[0] : undefined,
+        endDate: endDate ? endDate.toISOString().split('T')[0] : undefined,
       });
       if (res.success && res.data) {
         setDeliveryOrders(res.data as DeliveryOrder[]);
@@ -139,7 +146,7 @@ export const DeliveryScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search, statusFilter]);
+  }, [search, statusFilter, startDate, endDate]);
 
   useFocusEffect(
     useCallback(() => {
@@ -189,11 +196,11 @@ export const DeliveryScreen: React.FC = () => {
 
   const handleCreateDO = async () => {
     if (!selectedCustomerId) {
-      Alert.alert('Peringatan', 'Silakan pilih pelanggan terlebih dahulu.');
+      AppToast.error('Peringatan', 'Silakan pilih pelanggan terlebih dahulu.');
       return;
     }
     if (doItems.length === 0) {
-      Alert.alert('Peringatan', 'Masukkan minimal 1 produk kiriman.');
+      AppToast.error('Peringatan', 'Masukkan minimal 1 produk kiriman.');
       return;
     }
 
@@ -201,7 +208,7 @@ export const DeliveryScreen: React.FC = () => {
       const payload = {
         customerId: selectedCustomerId,
         saleId: selectedSaleId || undefined,
-        deliveryDate,
+        deliveryDate: deliveryDate ? deliveryDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         driver: driver || undefined,
         vehicle: vehicle || undefined,
         notes: notes || undefined,
@@ -215,7 +222,7 @@ export const DeliveryScreen: React.FC = () => {
 
       const res = await deliveryService.createDeliveryOrder(payload);
       if (res.success) {
-        Alert.alert('Sukses', res.message || 'Surat Jalan berhasil dibuat!');
+        AppToast.success('Sukses', res.message || 'Surat Jalan berhasil dibuat!');
         setShowCreateModal(false);
         // Reset form
         setSelectedCustomerId('');
@@ -226,20 +233,21 @@ export const DeliveryScreen: React.FC = () => {
         setDoItems([]);
         loadData();
       } else {
-        Alert.alert('Gagal', res.error || 'Gagal membuat Surat Jalan.');
+        AppToast.error('Gagal', res.error || 'Gagal membuat Surat Jalan.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Terjadi kesalahan sistem.');
+      AppToast.error('Error', 'Terjadi kesalahan sistem.');
     }
   };
 
   const handleUpdateStatus = async () => {
-    if (!selectedDO) return;
+    if (!selectedDO || updatingStatusId === selectedDO.id) return;
     if (newStatus === 'DELIVERED' && !receivedBy) {
-      Alert.alert('Peringatan', 'Nama penerima wajib diisi saat status Diterima.');
+      AppToast.error('Peringatan', 'Nama penerima wajib diisi saat status Diterima.');
       return;
     }
 
+    setUpdatingStatusId(selectedDO.id);
     try {
       const res = await deliveryService.updateDeliveryStatus({
         id: selectedDO.id,
@@ -249,17 +257,16 @@ export const DeliveryScreen: React.FC = () => {
       });
 
       if (res.success) {
-        Alert.alert('Sukses', res.message || 'Status pengiriman berhasil diperbarui!');
+        AppToast.success('Sukses', 'Status Surat Jalan berhasil diperbarui!');
         setShowStatusModal(false);
-        setReceivedBy('');
-        setShowDetailsModal(false);
-        setSelectedDO(null);
         loadData();
       } else {
-        Alert.alert('Gagal', res.error || 'Gagal memperbarui status.');
+        AppToast.error('Gagal', res.error || 'Gagal memperbarui status.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Terjadi kesalahan sistem.');
+      AppToast.error('Error', 'Terjadi kesalahan sistem.');
+    } finally {
+      setUpdatingStatusId(null);
     }
   };
 
@@ -275,12 +282,12 @@ export const DeliveryScreen: React.FC = () => {
           onPress: async () => {
             const res = await deliveryService.deleteDeliveryOrder(id);
             if (res.success) {
-              Alert.alert('Sukses', 'Surat Jalan berhasil dihapus.');
+              AppToast.success('Sukses', 'Surat Jalan berhasil dihapus.');
               setShowDetailsModal(false);
               setSelectedDO(null);
               loadData();
             } else {
-              Alert.alert('Gagal', res.error || 'Gagal menghapus Surat Jalan.');
+              AppToast.error('Gagal', res.error || 'Gagal menghapus Surat Jalan.');
             }
           },
         },
@@ -289,9 +296,13 @@ export const DeliveryScreen: React.FC = () => {
   };
 
   const handlePrintDO = async (doItem: DeliveryOrder) => {
-    if (!acquirePrintLock()) return;
+    const acquired = acquirePrintLock();
+    if (!acquired) {
+      AppToast.info('Tunggu', 'Sedang ada proses cetak lain yang berjalan.');
+      return;
+    }
+
     try {
-      // Mock a sale object for DO generation
       const mockSale: Sale = {
         id: doItem.id,
         invoiceNumber: doItem.doNumber,
@@ -336,21 +347,25 @@ export const DeliveryScreen: React.FC = () => {
         tagline: 'Distributor Bahan Bangunan Terpercaya',
       };
 
-      // Set layout store temporarily to SURAT_JALAN
       const { updateLayout } = require('../stores/invoice-layout.store').useInvoiceLayoutStore.getState();
       updateLayout({ layoutType: 'SURAT_JALAN' });
 
       const html = generateInvoiceHtml(mockSale, store);
       await Print.printAsync({ html });
-    } catch (e) {
-      Alert.alert('Gagal Cetak', 'Gagal memproses cetak berkas Surat Jalan.');
+    } catch (error) {
+      AppToast.error('Gagal Cetak', 'Gagal memproses cetak surat jalan.');
     } finally {
       releasePrintLock();
     }
   };
 
   const handleShareDO = async (doItem: DeliveryOrder) => {
-    if (!acquirePrintLock()) return;
+    const acquired = acquirePrintLock();
+    if (!acquired) {
+      AppToast.info('Tunggu', 'Sedang ada proses cetak lain yang berjalan.');
+      return;
+    }
+
     try {
       const mockSale: Sale = {
         id: doItem.id,
@@ -401,13 +416,16 @@ export const DeliveryScreen: React.FC = () => {
 
       const html = generateInvoiceHtml(mockSale, store);
       const { uri } = await Print.printToFileAsync({ html });
-      await Sharing.shareAsync(uri, {
-        mimeType: 'application/pdf',
-        dialogTitle: `Share Surat Jalan ${doItem.doNumber}`,
-        UTI: 'com.adobe.pdf',
-      });
-    } catch (e) {
-      Alert.alert('Gagal Share', 'Gagal membagikan berkas PDF Surat Jalan.');
+      
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        AppToast.error('Gagal', 'Fitur bagikan PDF tidak didukung di perangkat ini.');
+        return;
+      }
+
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      AppToast.error('Gagal Share', 'Gagal membagikan berkas PDF surat jalan.');
     } finally {
       releasePrintLock();
     }
@@ -415,7 +433,7 @@ export const DeliveryScreen: React.FC = () => {
 
   const addItemToDo = () => {
     if (!selectedProductId || !selectedUnitId || !quantity) {
-      Alert.alert('Peringatan', 'Silakan pilih produk, satuan, dan masukkan kuantitas.');
+      AppToast.error('Peringatan', 'Silakan pilih produk, satuan, dan masukkan kuantitas.');
       return;
     }
     const product = products.find((p) => p.id === selectedProductId);
@@ -536,19 +554,43 @@ export const DeliveryScreen: React.FC = () => {
       </View>
 
       {/* Filter & Search */}
-      <View style={styles.filterSection}>
-        <View style={styles.searchWrapper}>
-          <Ionicons name="search-outline" size={18} color={Colors.textTertiary} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Cari No. DO, Pelanggan, Sopir..."
-            placeholderTextColor={Colors.textTertiary}
-            value={search}
-            onChangeText={(text) => {
-              setSearch(text);
-            }}
-            onSubmitEditing={loadData}
-          />
+      <View style={{ ...styles.filterSection, gap: Spacing.sm }}>
+        <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+          <View style={[styles.searchWrapper, { flex: 1 }]}>
+            <Ionicons name="search-outline" size={18} color={Colors.textTertiary} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Cari No. DO, Pelanggan..."
+              placeholderTextColor={Colors.textTertiary}
+              value={search}
+              onChangeText={(text) => {
+                setSearch(text);
+              }}
+              onSubmitEditing={loadData}
+            />
+          </View>
+          <View style={[styles.searchWrapper, { flex: 1, paddingHorizontal: 4 }]}>
+            <DatePickerInput 
+              value={startDate} 
+              onChange={setStartDate} 
+              placeholder="Dari Tgl" 
+              compact={true} 
+            />
+          </View>
+          <View style={[styles.searchWrapper, { flex: 1, paddingHorizontal: 4 }]}>
+            <DatePickerInput 
+              value={endDate} 
+              onChange={setEndDate} 
+              placeholder="Sp Tgl" 
+              compact={true} 
+            />
+          </View>
+        </View>
+
+        <View style={{flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4}}>
+           <TouchableOpacity onPress={loadData} style={{backgroundColor: Colors.primaryStart, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8}}>
+             <Text style={{color: '#fff', fontSize: 12, fontWeight: 'bold'}}>Terapkan Filter</Text>
+           </TouchableOpacity>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusFilters}>
@@ -564,33 +606,86 @@ export const DeliveryScreen: React.FC = () => {
               style={[styles.filterBadge, statusFilter === st && styles.filterBadgeActive]}
               onPress={() => setStatusFilter(st)}
             >
-              <Text style={[styles.filterText, statusFilter === st && styles.filterTextActive]}>{st}</Text>
+              <Text style={[styles.filterText, statusFilter === st && styles.filterTextActive]}>
+                {st === 'IN_TRANSIT' ? 'DALAM PERJALANAN' : st}
+              </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
 
-      {/* List */}
+      {/* List / Table */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primaryStart} />
         </View>
       ) : (
-        <FlatList
-          data={deliveryOrders}
-          keyExtractor={(item) => item.id}
-          renderItem={renderDOItem}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="paper-plane-outline" size={48} color={Colors.textTertiary} />
-              <Text style={styles.emptyText}>Tidak ada data Surat Jalan ditemukan.</Text>
+        <GlassCard padding={0} style={{ flex: 1, marginHorizontal: Spacing.md, marginBottom: Spacing.lg, borderRadius: BorderRadius.md, overflow: 'hidden' }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+            <View>
+              {/* Table Header */}
+              <View style={styles.tableHeader}>
+                <Text style={[styles.tableHeaderText, { width: 140 }]}>NO. DO</Text>
+                <Text style={[styles.tableHeaderText, { width: 120 }]}>TANGGAL</Text>
+                <Text style={[styles.tableHeaderText, { width: 180 }]}>PELANGGAN</Text>
+                <Text style={[styles.tableHeaderText, { width: 120 }]}>NO REF. SALE</Text>
+                <Text style={[styles.tableHeaderText, { width: 120 }]}>STATUS</Text>
+                <Text style={[styles.tableHeaderText, { width: 80 }]}></Text>
+              </View>
+              
+              {/* Table Body */}
+              <ScrollView 
+                showsVerticalScrollIndicator={true}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              >
+                {deliveryOrders.length === 0 ? (
+                  <View style={[styles.emptyContainer, { width: 760 }]}>
+                    <Ionicons name="paper-plane-outline" size={48} color={Colors.textTertiary} />
+                    <Text style={styles.emptyText}>Tidak ada data Surat Jalan ditemukan.</Text>
+                  </View>
+                ) : (
+                  deliveryOrders.map((item, index) => {
+                    const statusColor = getStatusColor(item.status);
+                    return (
+                      <TouchableOpacity 
+                        key={item.id}
+                        style={[styles.tableRow, index % 2 === 1 && styles.tableRowAlt]}
+                        onPress={() => {
+                          setSelectedDO(item);
+                          setShowDetailsModal(true);
+                        }}
+                      >
+                        <Text style={[styles.tableRowText, { width: 140, fontWeight: 'bold' }]}>{item.doNumber}</Text>
+                        <Text style={[styles.tableRowText, { width: 120 }]}>
+                          {new Date(item.deliveryDate).toLocaleDateString('id-ID', { timeZone: 'Asia/Makassar', day: '2-digit', month: 'short', year: 'numeric' })}
+                        </Text>
+                        <Text style={[styles.tableRowText, { width: 180 }]} numberOfLines={1}>
+                          {item.customer.name}
+                        </Text>
+                        <Text style={[styles.tableRowText, { width: 120, color: Colors.textTertiary }]}>
+                          {item.sale?.invoiceNumber || '-'}
+                        </Text>
+                        <View style={{ width: 120, justifyContent: 'center' }}>
+                          <View style={[styles.statusBadge, { backgroundColor: statusColor + '15', borderColor: statusColor, alignSelf: 'flex-start', margin: 0 }]}>
+                            <Text style={[styles.statusText, { color: statusColor, fontSize: 10 }]}>{item.status}</Text>
+                          </View>
+                        </View>
+                        <View style={{ width: 80, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                          <TouchableOpacity onPress={() => handlePrintDO(item)}>
+                            <Ionicons name="print-outline" size={18} color={Colors.primaryStart} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => handleShareDO(item)}>
+                            <Ionicons name="share-social-outline" size={18} color={Colors.success} />
+                          </TouchableOpacity>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
             </View>
-          }
-        />
+          </ScrollView>
+        </GlassCard>
       )}
 
       {/* ─── DO DETAILS MODAL ─── */}
@@ -747,7 +842,7 @@ export const DeliveryScreen: React.FC = () => {
             )}
 
             <View style={{ gap: Spacing.sm, marginTop: Spacing.lg }}>
-              <GradientButton title="Simpan Status Baru" onPress={handleUpdateStatus} variant="primary" fullWidth />
+              <GradientButton title="Simpan Status Baru" onPress={handleUpdateStatus} loading={updatingStatusId === selectedDO?.id} variant="primary" fullWidth />
               <GradientButton title="Batal" onPress={() => setShowStatusModal(false)} variant="outline" fullWidth />
             </View>
           </GlassCard>
@@ -834,13 +929,13 @@ export const DeliveryScreen: React.FC = () => {
 
               {/* Delivery Date */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Tanggal Pengiriman (YYYY-MM-DD) *</Text>
-                <TextInput
-                  style={styles.textInput}
+                <Text style={styles.inputLabel}>Tanggal Pengiriman *</Text>
+                <DatePickerInput
                   value={deliveryDate}
-                  onChangeText={setDeliveryDate}
-                  placeholder="Contoh: 2026-05-24"
-                  placeholderTextColor={Colors.textTertiary}
+                  onChange={setDeliveryDate}
+                  placeholder="Pilih Tanggal Pengiriman"
+                  iconSize={20}
+                  style={{height: 48, paddingHorizontal: 12}}
                 />
               </View>
 
@@ -1379,6 +1474,37 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: Colors.border,
     paddingHorizontal: Spacing.lg,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  tableHeaderText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: Colors.textSecondary,
+    letterSpacing: 0.5,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderColor: Colors.glassBorder,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  tableRowAlt: {
+    backgroundColor: '#F9FAFB',
+  },
+  tableRowText: {
+    fontSize: FontSize.sm,
+    color: Colors.textPrimary,
   },
 });
 

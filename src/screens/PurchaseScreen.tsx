@@ -19,9 +19,11 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
+import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { purchaseService } from '../services/purchase.service';
 import { masterService } from '../services/master.service';
 import { productService } from '../services/product.service';
+import { AppToast } from '../utils/toast';
 import type { Supplier, Product } from '../types';
 
 interface PurchaseItem {
@@ -80,7 +82,7 @@ export const PurchaseScreen: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
-  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [purchaseDate, setPurchaseDate] = useState<Date | null>(new Date());
   const [paymentMethod, setPaymentMethod] = useState('CREDIT');
   const [globalDiscount, setGlobalDiscount] = useState('0');
   const [globalTaxPercent, setGlobalTaxPercent] = useState('0');
@@ -193,16 +195,31 @@ export const PurchaseScreen: React.FC = () => {
   const remainingDebt = Math.max(0, grandTotal - Number(paidAmount || 0));
 
   const addItemToPO = () => {
-    if (!selectedProductId || !selectedUnitId || !quantity || !purchasePrice) {
-      Alert.alert('Peringatan', 'Silakan pilih produk, satuan, masukkan kuantitas, dan harga beli.');
+    if (!selectedProductId) {
+      AppToast.error('Peringatan', 'Silakan pilih produk terlebih dahulu.');
+      return;
+    }
+    if (!selectedUnitId) {
+      AppToast.error('Peringatan', 'Silakan pilih satuan produk.');
+      return;
+    }
+    if (!quantity || Number(quantity) <= 0) {
+      AppToast.error('Peringatan', 'Kuantitas harus lebih dari 0.');
+      return;
+    }
+    if (!purchasePrice || purchasePrice === '') {
+      AppToast.error('Peringatan', 'Harga beli wajib diisi.');
       return;
     }
 
-    const product = products.find((p) => p.id === selectedProductId);
+    const product = selectedProduct;
     if (!product) return;
 
     const unit = product.productUnits?.find((pu) => pu.unitId === selectedUnitId);
-    if (!unit) return;
+    if (!unit) {
+      AppToast.error('Gagal', 'Satuan produk tidak ditemukan atau produk ini belum diatur satuannya.');
+      return;
+    }
 
     const qtyVal = Number(quantity);
     const priceVal = Number(purchasePrice);
@@ -246,18 +263,18 @@ export const PurchaseScreen: React.FC = () => {
 
   const handleCreatePO = async () => {
     if (!selectedSupplierId) {
-      Alert.alert('Peringatan', 'Silakan pilih supplier terlebih dahulu.');
+      AppToast.error('Peringatan', 'Silakan pilih supplier terlebih dahulu.');
       return;
     }
     if (poItems.length === 0) {
-      Alert.alert('Peringatan', 'Masukkan minimal 1 produk barang pesanan.');
+      AppToast.error('Peringatan', 'Masukkan minimal 1 produk barang pesanan.');
       return;
     }
 
     try {
       const payload = {
         supplierId: selectedSupplierId,
-        purchaseDate,
+        purchaseDate: purchaseDate ? purchaseDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         discount: discountAmount,
         tax: taxAmount,
         paidAmount: Number(paidAmount || 0),
@@ -275,7 +292,7 @@ export const PurchaseScreen: React.FC = () => {
 
       const res = await purchaseService.createPurchase(payload);
       if (res.success) {
-        Alert.alert('Sukses', res.message || 'Purchase Order berhasil dibuat!');
+        AppToast.success('Sukses', res.message || 'Purchase Order berhasil dibuat!');
         setShowCreateModal(false);
         // Reset form
         setSelectedSupplierId('');
@@ -286,10 +303,10 @@ export const PurchaseScreen: React.FC = () => {
         setNotes('');
         loadData();
       } else {
-        Alert.alert('Gagal', res.error || 'Gagal membuat Purchase Order.');
+        AppToast.error('Gagal', res.error || 'Gagal membuat Purchase Order.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Terjadi kesalahan sistem.');
+      AppToast.error('Error', 'Terjadi kesalahan sistem.');
     }
   };
 
@@ -306,15 +323,15 @@ export const PurchaseScreen: React.FC = () => {
             try {
               const res = await purchaseService.receivePurchase(id, new Date().toISOString());
               if (res.success) {
-                Alert.alert('Sukses', res.message || 'Barang berhasil masuk gudang!');
+                AppToast.success('Sukses', res.message || 'Barang berhasil masuk gudang!');
                 setShowDetailsModal(false);
                 setSelectedPO(null);
                 loadData();
               } else {
-                Alert.alert('Gagal', res.error || 'Gagal memproses penerimaan barang.');
+                AppToast.error('Gagal', res.error || 'Gagal memproses penerimaan barang.');
               }
             } catch (e) {
-              Alert.alert('Error', 'Terjadi kesalahan sistem.');
+              AppToast.error('Error', 'Terjadi kesalahan sistem.');
             } finally {
               setReceivingPO(false);
             }
@@ -336,12 +353,12 @@ export const PurchaseScreen: React.FC = () => {
           onPress: async () => {
             const res = await purchaseService.deletePurchase(id);
             if (res.success) {
-              Alert.alert('Sukses', 'Purchase Order berhasil dihapus.');
+              AppToast.success('Sukses', 'Purchase Order berhasil dihapus.');
               setShowDetailsModal(false);
               setSelectedPO(null);
               loadData();
             } else {
-              Alert.alert('Gagal', res.error || 'Gagal menghapus PO.');
+              AppToast.error('Gagal', res.error || 'Gagal menghapus PO.');
             }
           },
         },
@@ -465,6 +482,13 @@ export const PurchaseScreen: React.FC = () => {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />
           }
+          
+          // Optimasi FlatList
+          removeClippedSubviews={true}
+          initialNumToRender={10}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Ionicons name="receipt-outline" size={48} color={Colors.textTertiary} />
@@ -647,13 +671,13 @@ export const PurchaseScreen: React.FC = () => {
 
               {/* Date */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Tanggal PO (YYYY-MM-DD) *</Text>
-                <TextInput
-                  style={styles.textInput}
+                <Text style={styles.inputLabel}>Tanggal PO *</Text>
+                <DatePickerInput
                   value={purchaseDate}
-                  onChangeText={setPurchaseDate}
-                  placeholder="Contoh: 2026-05-24"
-                  placeholderTextColor={Colors.textTertiary}
+                  onChange={setPurchaseDate}
+                  placeholder="Pilih Tanggal PO"
+                  iconSize={20}
+                  style={{height: 48, paddingHorizontal: 12}}
                 />
               </View>
 

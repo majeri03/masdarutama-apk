@@ -411,8 +411,344 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       </body>
       </html>
     `;
+  } else if (layout.layoutType === 'FAKTUR_NCR') {
+    // 3. FAKTUR NCR (SIMILAR TO A4 BUT NO LOGO, NO GRIDS)
+    const itemsHtml = items.map((item, index) => {
+      const gross = item.quantity * item.unitPrice;
+      const discountPercent = item.discount > 0 ? Math.round((item.discount / gross) * 100) : 0;
+      return `
+        <tr style="font-size: ${12 * scale}px;">
+          <td style="padding: 10px 8px; text-align: center;">${index + 1}</td>
+          <td style="padding: 10px 8px;">
+            <div style="font-weight: bold; color: #000000;">${item.product.name}</div>
+            <div style="font-size: 10px; color: #4B5563; font-family: monospace;">${item.product.code}</div>
+          </td>
+          <td style="padding: 10px 8px; text-align: center;">
+            ${item.quantity} ${item.unit?.name || 'Unit'}
+          </td>
+          <td style="padding: 10px 8px; text-align: right;">
+            Rp ${item.unitPrice.toLocaleString('id-ID')}
+          </td>
+          <td style="padding: 10px 8px; text-align: right;">
+            Rp ${gross.toLocaleString('id-ID')}
+          </td>
+          <td style="padding: 10px 8px; text-align: center;">
+            ${discountPercent}%
+          </td>
+          <td style="padding: 10px 8px; text-align: right; color: #DC2626;">
+            ${item.discount > 0 ? `Rp ${item.discount.toLocaleString('id-ID')}` : 'Rp 0'}
+          </td>
+          <td style="padding: 10px 8px; text-align: right; font-weight: bold;">
+            Rp ${item.subtotal.toLocaleString('id-ID')}
+          </td>
+        </tr>
+      `;
+    }).join('') || '';
+
+    const terbilangStr = getTerbilangRupiah(sale.grandTotal);
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Faktur NCR ${sale.invoiceNumber}</title>
+        <style>
+          body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: #000000;
+            margin: 0;
+            padding: 30px;
+            font-size: ${12 * scale}px;
+            line-height: 1.4;
+          }
+          .container {
+            max-width: 850px;
+            margin: 0 auto;
+            background: #ffffff;
+            position: relative;
+            overflow: hidden;
+          }
+          .header-box {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 2px solid #000000;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+          }
+          .store-info {
+            flex: 1.5;
+          }
+          .store-name {
+            font-size: ${18 * scale}px;
+            font-weight: bold;
+            color: #000000;
+            margin: 0 0 4px 0;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+          }
+          .invoice-title-col {
+            flex: 1;
+            text-align: right;
+          }
+          .invoice-title {
+            font-size: ${24 * scale}px;
+            font-weight: bold;
+            color: #000000;
+            margin: 0 0 10px 0;
+            letter-spacing: 1px;
+          }
+          .meta-table {
+            float: right;
+            border-collapse: collapse;
+            font-size: ${11 * scale}px;
+          }
+          .meta-table td {
+            padding: 3px 6px;
+          }
+          .meta-label {
+            font-weight: bold;
+            color: #000000;
+          }
+          .card-box {
+            border: 1px solid #000000;
+            padding: 12px;
+            margin-bottom: 20px;
+          }
+          .card-box-title {
+            font-weight: bold;
+            text-transform: uppercase;
+            border-bottom: 1px solid #000000;
+            padding-bottom: 4px;
+            margin-bottom: 8px;
+            font-size: ${11 * scale}px;
+          }
+          .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+          }
+          .data-table th {
+            border-bottom: 2px solid #000000;
+            border-top: 2px solid #000000;
+            padding: 8px;
+            background: transparent;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: ${11 * scale}px;
+          }
+          .bottom-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            gap: 20px;
+          }
+          .bottom-left {
+            flex: 1.4;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+          }
+          .terbilang-box {
+            border: 1px solid #000000;
+            padding: 10px;
+            font-size: ${11 * scale}px;
+            margin-bottom: 12px;
+            background: transparent;
+          }
+          .transfer-box {
+            border: 1px solid #000000;
+            padding: 10px;
+            font-size: ${11 * scale}px;
+            background: transparent;
+          }
+          .signature-box {
+            text-align: center;
+            margin-top: auto;
+            align-self: flex-end;
+            padding-right: 30px;
+            font-size: ${11 * scale}px;
+          }
+          .signature-line {
+            width: 120px;
+            border-top: 1px solid #000000;
+            margin-top: 60px;
+            font-weight: bold;
+          }
+          .bottom-right {
+            flex: 1;
+          }
+          .totals-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #000000;
+          }
+          .totals-table td {
+            padding: 8px;
+            border: none;
+          }
+          .totals-label {
+            font-weight: bold;
+          }
+          .grand-total-row {
+            border-top: 1px solid #000000;
+            font-weight: bold;
+            font-size: ${13 * scale}px;
+          }
+          .footer-terms {
+            text-align: center;
+            margin-top: 30px;
+            border-top: 2px solid #000000;
+            padding-top: 8px;
+            font-size: ${9 * scale}px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          ${showWatermark ? `
+          <div style="position: absolute; top: 35%; left: 0; right: 0; text-align: center; opacity: 0.08; transform: rotate(-30deg); font-size: 110px; font-weight: 900; z-index: 1000; color: ${watermarkColor}; pointer-events: none; white-space: nowrap; font-family: sans-serif; letter-spacing: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+            ${watermarkText}
+          </div>
+          ` : ''}
+          <!-- ─── HEADER ─── -->
+          ${layout.showHeader ? `
+          <div class="header-box" style="align-items: center;">
+            <div class="store-info">
+              <div class="store-name" style="margin: 0; font-size: ${18 * scale}px; font-weight: bold; text-transform: uppercase;">${store.name}</div>
+              <div style="font-size: 11px; margin-top: 4px;">
+                ${store.address}<br>
+                Phone: ${store.phone}
+              </div>
+            </div>
+            <div class="invoice-title-col">
+              <div class="invoice-title">FAKTUR</div>
+              <table class="meta-table">
+                <tr>
+                  <td class="meta-label">Number</td>
+                  <td>: ${sale.invoiceNumber}</td>
+                </tr>
+                <tr>
+                  <td class="meta-label">Date</td>
+                  <td>: ${dateStr}</td>
+                </tr>
+                <tr>
+                  <td class="meta-label">Payment</td>
+                  <td>: ${PAYMENT_LABEL[sale.paymentMethod] || sale.paymentMethod}</td>
+                </tr>
+                <tr>
+                  <td class="meta-label">Cashier</td>
+                  <td>: ${sale.cashier?.name || '-'}</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+          ` : ''}
+
+          <!-- ─── CUSTOMER INFO ─── -->
+          ${layout.showCustomerInfo ? `
+            <div class="card-box">
+              <div class="card-box-title">Customer Info</div>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="width: 12%; font-weight: bold;">Customer</td>
+                  <td>: <b>${sale.customer?.name || 'Umum'}</b></td>
+                </tr>
+                ${sale.customer?.phone ? `<tr><td style="font-weight: bold;">Phone</td><td>: ${sale.customer.phone}</td></tr>` : ''}
+                ${sale.customer?.address ? `<tr><td style="font-weight: bold;">Address</td><td>: ${sale.customer.address}</td></tr>` : ''}
+              </table>
+            </div>
+          ` : ''}
+
+          <!-- ─── PRODUCTS TABLE ─── -->
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 5%; text-align: center;">No</th>
+                <th style="width: 40%; text-align: left;">Description</th>
+                <th style="width: 12%; text-align: center;">Qty</th>
+                <th style="width: 12%; text-align: right;">Price</th>
+                <th style="width: 12%; text-align: right;">Gross</th>
+                <th style="width: 5%; text-align: center;">%</th>
+                <th style="width: 12%; text-align: right;">Disc</th>
+                <th style="width: 12%; text-align: right;">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+
+          <!-- ─── BOTTOM BLOCK ─── -->
+          <div class="bottom-container">
+            <div class="bottom-left">
+              <div>
+                <div class="terbilang-box">
+                  <b>Terbilang:</b> <i>${terbilangStr}</i>
+                </div>
+
+                ${layout.showPaymentInfo && sale.paymentMethod === 'TRANSFER' ? `
+                  <div class="transfer-box">
+                    <b>TRANSFER VIA:</b><br>
+                    ${layout.bankName}<br>
+                    A/C: <b>${layout.bankAccount}</b><br>
+                    A/N: <b>${layout.bankHolder}</b>
+                  </div>
+                ` : ''}
+              </div>
+
+              ${layout.showSignature ? `
+                <div class="signature-box">
+                  <div style="font-weight: bold; text-decoration: underline;">${sale.cashier?.name || 'Authorized'}</div>
+                  <div style="font-size: 9px; color: #4B5563; margin-top: 2px;">Authorized Signature</div>
+                </div>
+              ` : ''}
+            </div>
+
+            <div class="bottom-right">
+              <table class="totals-table">
+                <tr>
+                  <td class="totals-label">Gross Total</td>
+                  <td style="text-align: right; font-weight: bold;">Rp ${sale.totalAmount.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr>
+                  <td class="totals-label">Discount</td>
+                  <td style="text-align: right; color: #DC2626;">(Rp ${sale.discount.toLocaleString('id-ID')})</td>
+                </tr>
+                <tr>
+                  <td class="totals-label">Tax</td>
+                  <td style="text-align: right;">Rp ${sale.tax.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr class="grand-total-row">
+                  <td>Grand Total</td>
+                  <td style="text-align: right; font-weight: bold;">Rp ${sale.grandTotal.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr>
+                  <td class="totals-label">Paid</td>
+                  <td style="text-align: right;">Rp ${sale.paidAmount.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr>
+                  <td class="totals-label">Change</td>
+                  <td style="text-align: right; font-weight: bold; color: #059669;">Rp ${sale.changeAmount.toLocaleString('id-ID')}</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+
+          <!-- ─── TERMS / FOOTER ─── -->
+          ${layout.showFooter ? `
+            <div class="footer-terms">
+              ${layout.footerTerms}
+            </div>
+          ` : ''}
+        </div>
+      </body>
+      </html>
+    `;
   } else {
-    // 3. TEMPLATE INVOICE BESAR (A4 STYLE - EXACTLY LIKE INVOICE PICTURE!)
+    // 4. TEMPLATE INVOICE BESAR (A4 STYLE - EXACTLY LIKE INVOICE PICTURE!)
     const itemsHtml = items.map((item, index) => {
       const gross = item.quantity * item.unitPrice;
       const discountPercent = item.discount > 0 ? Math.round((item.discount / gross) * 100) : 0;
