@@ -35,7 +35,7 @@ export const SidebarDrawer: React.FC = () => {
   const waOrdersPending = useNotificationStore((state) => state.waOrdersPending);
   const deliveriesPending = useNotificationStore((state) => state.deliveriesPending);
 
-  
+
   // Animation value
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -74,7 +74,7 @@ export const SidebarDrawer: React.FC = () => {
 
   const handleNavigate = (routeName: string) => {
     closeSidebar();
-    
+
     // Defer navigation slightly to allow drawer closing animation to finish
     setTimeout(() => {
       if (navigationRef.isReady()) {
@@ -103,7 +103,7 @@ export const SidebarDrawer: React.FC = () => {
     { name: 'Debt', label: 'Manajemen Utang & Piutang', icon: 'journal-outline' },
     { name: 'InvoiceLayout', label: 'Desain & Layout Invoice', icon: 'color-palette-outline' },
     { name: 'DeviceSettings', label: 'Pengaturan Perangkat & Printer', icon: 'print-outline' },
-    { name: 'WaOrders', label: 'Orderan WhatsApp', icon: 'logo-whatsapp' },
+    { name: 'WaOrders', label: 'Orderan', icon: 'list-outline' },
     { name: 'Customers', label: 'Pelanggan', icon: 'people-outline' },
   ];
 

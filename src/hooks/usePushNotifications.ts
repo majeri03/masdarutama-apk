@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import api from '../services/api';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
+import { navigationRef } from '../utils/navigation';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -48,6 +49,34 @@ export function usePushNotifications() {
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       console.log('Notification response:', response);
+      const notif = response.notification;
+      const state = useNotificationCenterStore.getState();
+      
+      // Simpan ke history jika belum ada (misal notif background yg di-tap)
+      const exists = state.notifications.some(
+        (n) => n.title === notif.request.content.title && n.body === notif.request.content.body
+      );
+      if (!exists) {
+        state.addNotification({
+          title: notif.request.content.title || 'Notifikasi Baru',
+          body: notif.request.content.body || '',
+          data: notif.request.content.data,
+        });
+      }
+
+      // Navigasi saat diklik
+      const data = notif.request.content.data;
+      if (navigationRef.isReady()) {
+        if (data?.screen) {
+          if (data?.params) {
+            (navigationRef as any).navigate(data.screen, data.params);
+          } else {
+            (navigationRef as any).navigate(data.screen);
+          }
+        } else {
+          (navigationRef as any).navigate('NotificationCenter');
+        }
+      }
     });
 
     return () => {

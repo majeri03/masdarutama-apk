@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity, Animated, Easing, Vibration, Image, LogBox } from 'react-native';
@@ -257,7 +257,10 @@ export default function App() {
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const scaleAnim = React.useRef(new Animated.Value(0.4)).current;
   const textFadeAnim = React.useRef(new Animated.Value(0)).current;
-  const textSlideAnim = React.useRef(new Animated.Value(30)).current;
+  const textSlideAnim = useRef(new Animated.Value(20)).current;
+
+  // Track current route for global components visibility
+  const [currentRoute, setCurrentRoute] = useState<string | undefined>(undefined);
   const splashFadeAnim = React.useRef(new Animated.Value(1)).current;
 
   const playChime = async () => {
@@ -308,9 +311,7 @@ export default function App() {
       }),
     ]).start();
 
-    // Start polling for notifications
-    const { startPolling } = useNotificationStore.getState();
-    startPolling();
+
   }, []);
 
   useEffect(() => {
@@ -327,6 +328,16 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [isLoading]);
+
+  // Start/stop polling based on authentication
+  useEffect(() => {
+    const { startPolling, stopPolling } = useNotificationStore.getState();
+    if (isAuthenticated) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+  }, [isAuthenticated]);
 
   return (
     <SafeAreaProvider>
@@ -356,7 +367,14 @@ export default function App() {
         </Animated.View>
       )}
 
-      <NavigationContainer theme={appNavTheme} ref={navigationRef}>
+      <NavigationContainer 
+        theme={appNavTheme} 
+        ref={navigationRef}
+        onStateChange={() => {
+          const current = navigationRef.getCurrentRoute()?.name;
+          setCurrentRoute(current);
+        }}
+      >
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {!isAuthenticated ? (
             <Stack.Screen name="Login" component={LoginScreen} />
@@ -440,7 +458,7 @@ export default function App() {
         </Stack.Navigator>
       </NavigationContainer>
 
-      {isAuthenticated && <FloatingShortcut />}
+      {isAuthenticated && currentRoute !== 'AiChat' && <FloatingShortcut />}
       <Toast />
     </SafeAreaProvider>
   );

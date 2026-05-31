@@ -1,28 +1,29 @@
 /**
  * AiChatScreen — Premium AI Chat Interface for MIDA (Masdar Intelligent Digital Assistant)
- * 
- * Features:
- * - Premium glassmorphism design matching the app's iOS-style theme
- * - All 24 tools connected to real backend services
- * - Interactive GlassCard draft rendering with confirmation dialogs
- * - Built-in markdown parser (bold, links) — no external library needed
- * - FlatList for performance (no lag even with 1000+ messages)
- * - Optional on-device LLM (llama.rn) — works fine without it via pattern matching fallback
- * - Empty state with animated suggestion chips
- * - Typing indicator with pulse animation
+ *
+ * v3 — True On-Device LLM Integration:
+ * - Real model download from HuggingFace via expo-file-system
+ * - Streaming per-token output via llama.rn
+ * - Fallback to regex pattern matching if model not downloaded
+ * - Draft confirmation compact & responsive
  */
-import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, TextInput, FlatList, TouchableOpacity,
+  View, Text, TextInput, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
-  Animated, Easing, ViewStyle,
+  Animated, Easing, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useAiStore, AiMessage } from '../stores/ai.store';
 import { executeAiToolCall, ToolCallPayload } from '../services/ai-executor.service';
+import {
+  initializeLlama, generateResponse, releaseLlama, isLlamaReady,
+  LLAMA_CONFIG, ChatMessage,
+} from '../services/llama.service';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GradientButton } from '../components/ui/GradientButton';
 import { Colors, FontSize, FontWeight, Shadow, Spacing, BorderRadius, Gradients } from '../constants/theme';
@@ -39,7 +40,11 @@ interface DraftData {
   executeEndpoint?: string;
 }
 
-// ==================== DRAFT EXECUTION (REAL BACKEND CALLS) ====================
+// ==================== MODEL FILE PATH ====================
+const getModelDir = () => `${FileSystem.documentDirectory}${LLAMA_CONFIG.modelDir}/`;
+const getModelPath = () => `${getModelDir()}${LLAMA_CONFIG.modelFilename}`;
+
+// ==================== DRAFT EXECUTION ====================
 const executeDraft = async (draftData: DraftData): Promise<{ success: boolean; message: string }> => {
   try {
     switch (draftData.type) {
@@ -120,58 +125,104 @@ const extractToolCall = (text: string): ToolCallPayload | null => {
   try {
     const parsed = JSON.parse(text.trim());
     if (parsed?.type === 'tool_call' && parsed?.tool) return parsed;
-  } catch {}
+  } catch { }
   const jsonMatch = text.match(/\{[\s\S]*"type"\s*:\s*"tool_call"[\s\S]*\}/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
       if (parsed?.type === 'tool_call' && parsed?.tool) return parsed;
-    } catch {}
+    } catch { }
   }
   return null;
 };
 
 const isDraftResponse = (r: any): boolean => typeof r?.type === 'string' && r.type.startsWith('draft_');
 
-// ==================== MOCK LLM (fallback when model not downloaded) ====================
+// ==================== MOCK LLM (pattern matching fallback) ====================
 const simulateLlmResponse = (userText: string): string => {
   const lower = userText.toLowerCase();
   const tc = (tool: string, params: any) => JSON.stringify({ type: 'tool_call', tool, params });
 
-  if (lower.includes('orderan wa') || lower.includes('pesanan wa') || lower.includes('order wa'))
+  // A: WA Orders
+  if (/(konfirmasi|terima|acc|setuju).*(order|pesanan)/i.test(lower))
+    return tc('confirmWaOrder', { orderId: 'O-123', parsedItems: [] });
+  if (/(tolak|batal|reject).*(order|pesanan)/i.test(lower))
+    return tc('rejectWaOrder', { orderId: 'O-123', reason: 'Ditolak via MIDA' });
+  if (/(orderan|pesanan).*(wa|whatsapp|pending)/i.test(lower) || lower.includes('lihat order'))
     return tc('getPendingWaOrders', {});
-  if (lower.includes('stok rendah') || lower.includes('stok habis') || lower.includes('low stock') || lower.includes('stok limit') || lower.includes('stok minimum'))
+
+  // B: Produk & Transaksi
+  if (/(stok|stock).*(rendah|habis|kosong|minimum|menipis)/i.test(lower))
     return tc('getLowStockProducts', {});
-  if (lower.includes('cek stok') || lower.includes('cek harga') || lower.includes('cari produk') || lower.includes('stok ')) {
-    const kw = lower.replace(/(cek stok|cek harga|cari produk|stok)\s*/i, '').trim() || 'semen';
+  if (/(detail|info|spesifikasi).*(produk|barang)/i.test(lower))
+    return tc('getProductDetail', { productId: 'unknown' });
+
+  if (/(harga|stok|cari|ada|jual|beli|berapa|produk)/i.test(lower) && !/(nota|transaksi|surat jalan|po|purchase|laporan|setting)/i.test(lower)) {
+    let kw = lower.replace(/(berapa|harga|stok|cari|ada|jual|beli|tolong|carikan|produk|cek|info)\s*/gi, '').trim();
+    if (!kw || kw.length < 2) kw = lower;
     return tc('searchProduct', { keyword: kw });
   }
-  if (lower.includes('buat nota') || lower.includes('buat transaksi') || lower.includes('buatkan nota'))
+
+  if (/(detail|info).*(nota|transaksi|invoice|struk)/i.test(lower))
+    return tc('getSaleDetail', { invoiceNumber: 'INV-UNKNOWN' });
+  if (/(buat|bikin|tambah).*(nota|transaksi|penjualan)/i.test(lower))
     return tc('createDraftTransaction', { customerName: 'UMUM', paymentMethod: 'CASH', items: [], notes: userText });
-  if (lower.includes('utang') || lower.includes('hutang') || lower.includes('piutang'))
+
+  // C: Hutang & Piutang
+  if (/(bayar|pembayaran|lunas).*(utang|hutang|piutang|bon)/i.test(lower))
+    return tc('createDraftDebtPayment', { debtType: 'customer', debtId: 'unknown', amount: 0 });
+  if (/(utang|hutang|piutang|bon)/i.test(lower))
     return lower.includes('supplier') ? tc('getSupplierDebts', {}) : tc('getCustomerDebts', {});
-  if (lower.includes('surat jalan') || lower.includes('delivery'))
+
+  // D: Surat Jalan & PO
+  if (/(buat|bikin|tambah).*(surat jalan|do|delivery)/i.test(lower))
+    return tc('createDraftDelivery', { customerName: 'UMUM', notes: userText });
+  if (/(surat jalan|delivery|pengiriman)/i.test(lower))
     return tc('getDeliveryOrders', {});
-  if (lower.includes('purchase order') || lower.includes(' po ') || lower.includes('pembelian'))
+  if (/(buat|bikin|tambah).*(po|purchase order|pesanan ke supplier)/i.test(lower))
+    return tc('createDraftPurchase', { supplierName: 'UMUM', notes: userText });
+  if (/(po|purchase order|pembelian)/i.test(lower))
     return tc('getPurchases', {});
-  if (lower.includes('pergerakan stok') || lower.includes('stock opname') || lower.includes('riwayat stok'))
+
+  // E: Stock Opname
+  if (/(sesuaikan|ubah|edit|ganti).*(stok|stock)/i.test(lower))
+    return tc('createDraftStockAdjustment', { productCode: 'unknown', type: 'ADJUSTMENT', qty: 0 });
+  if (/(pergerakan|riwayat|histori|opname).*(stok|stock)/i.test(lower))
     return tc('getStockMovements', {});
-  if (lower.includes('setting') || lower.includes('pengaturan') || lower.includes('profil toko'))
+
+  // F: Master & Laporan
+  if (/(setting|pengaturan|profil|toko)/i.test(lower))
     return tc('getStoreSettings', {});
-  if (lower.includes('laporan') || lower.includes('omzet') || lower.includes('profit') || lower.includes('revenue'))
+  if (/(laporan|omzet|profit|pendapatan|revenue|keuntungan)/i.test(lower))
     return tc('getFinancialReport', {});
-  if (lower.includes('inventaris') || lower.includes('inventory report'))
+  if (/(inventaris|inventory|aset|asset)/i.test(lower))
     return tc('getInventoryReport', {});
-  if (lower.includes('cari customer') || lower.includes('cari pelanggan'))
-    return tc('searchCustomer', { keyword: lower.replace(/(cari customer|cari pelanggan)\s*/i, '').trim() });
-  if (lower.includes('cari supplier'))
-    return tc('searchSupplier', { keyword: lower.replace(/cari supplier\s*/i, '').trim() });
-  if (lower.includes('hapus'))
+  if (/(cari|lihat|daftar).*(customer|pelanggan)/i.test(lower))
+    return tc('searchCustomer', { keyword: lower.replace(/(cari|lihat|daftar|customer|pelanggan)\s*/gi, '').trim() });
+  if (/(cari|lihat|daftar).*(supplier|pabrik)/i.test(lower))
+    return tc('searchSupplier', { keyword: lower.replace(/(cari|lihat|daftar|supplier|pabrik)\s*/gi, '').trim() });
+
+  // G: Aksi Berbahaya
+  if (/(hapus|buang|delete)/i.test(lower))
     return tc('deleteConfirmation', { target: 'product', id: 'unknown', name: userText });
-  if (lower.includes('ubah') || lower.includes('edit') || lower.includes('ganti'))
+  if (/(ubah|edit|ganti)/i.test(lower))
     return tc('editConfirmation', { target: 'product', id: 'unknown', name: userText, changes: {} });
 
-  return `Halo! Saya **MIDA**, asisten cerdas Toko Masdar Utama 🏪\n\nSaya bisa membantu Anda:\n\n• Cek **stok & harga** barang\n• Buat **transaksi** penjualan (POS)\n• Lihat **pesanan WA** yang masuk\n• Cek **hutang** pelanggan/supplier\n• Buat **Surat Jalan** & Purchase Order\n• **Laporan** keuangan & inventaris\n• **Stock Opname** & penyesuaian\n• **Setting** profil toko\n\nSilakan ketik permintaan Anda!`;
+  // Greetings
+  const greetings = ['halo', 'hai', 'hi', 'pagi', 'siang', 'sore', 'malam', 'assalamualaikum'];
+  if (greetings.some(g => lower.startsWith(g))) {
+    return `Halo! Saya **MIDA** (didukung oleh Qwen 2.5), asisten cerdas Toko Masdar Utama 🏪\n\nSaya siap mengeksekusi perintah apa pun, mulai dari cek stok, membuat surat jalan, hingga merekap laporan keuangan. Apa yang bisa saya bantu hari ini?`;
+  }
+
+  if (lower.includes('siapa kamu') || lower.includes('apa yang bisa kamu lakukan')) {
+    return `Saya adalah **MIDA**, AI cerdas yang memiliki akses penuh ke seluruh fitur Masdar Utama. Saya bisa mengeksekusi semua hal yang Anda butuhkan:\n\n• **Transaksi:** Buat nota, cek utang/piutang\n• **Inventaris:** Cek stok, cari barang, stock opname\n• **Operasional:** Konfirmasi pesanan WA, buat PO, buat Surat Jalan\n• **Analisis:** Buka laporan omzet, profit, dan data pelanggan\n\nTinggal berikan perintah dalam bahasa sehari-hari, dan saya akan mengeksekusinya!`;
+  }
+
+  if (lower.includes('terima kasih') || lower.includes('makasih')) {
+    return 'Sama-sama! Selalu siap membantu Anda kapan saja. Ada hal lain yang perlu dieksekusi?';
+  }
+
+  return `Saya mengerti Anda ingin membahas tentang "${userText.length > 20 ? userText.substring(0, 20) + '...' : userText}".\n\nSebagai asisten cerdas, saya punya akses penuh ke sistem. Apakah Anda ingin saya **Mencarikan data spesifik**, **Membuat dokumen baru (Nota/DO/PO)**, atau **Menganalisis laporan** terkait hal tersebut? Sebutkan saja perintah spesifiknya!`;
 };
 
 // ==================== FORMAT TOOL RESULTS ====================
@@ -202,6 +253,10 @@ const formatToolResult = (toolName: string, result: any): string => {
 
   if (typeof data === 'object') {
     switch (toolName) {
+      case 'getProductDetail':
+        return `📦 **Detail Produk: ${data.name}**\n\n• Kode: ${data.code}\n• Kategori: ${data.category?.name || '-'}\n• Stok Saat Ini: **${data.currentStock}** (Min: ${data.minStock})\n\n**Satuan & Harga:**\n${data.productUnits?.map((u: any) => `- ${u.unit?.name}: Beli Rp${u.buyPrice?.toLocaleString('id-ID')} | Jual Rp${u.sellPrice?.toLocaleString('id-ID')}`).join('\n') || '- -'}`;
+      case 'getSaleDetail':
+        return `🧾 **Detail Nota: ${data.invoiceNumber}**\n\n• Tanggal: ${new Date(data.date).toLocaleDateString('id-ID')}\n• Pelanggan: ${data.customer?.name || 'UMUM'}\n• Total: **Rp${(data.finalTotal || 0).toLocaleString('id-ID')}**\n• Status: ${data.paymentStatus}\n\n**Item Pembelian:**\n${data.saleItems?.map((item: any) => `- ${item.quantity} ${item.unit?.name} ${item.product?.name} (Rp${item.price?.toLocaleString('id-ID')})`).join('\n') || '- -'}`;
       case 'getStoreSettings':
         return `🏪 **Profil Toko**\n\n• Nama: **${data.name || '-'}**\n• Tagline: ${data.tagline || '-'}\n• Alamat: ${data.address || '-'}, ${data.city || ''}\n• Telepon: ${data.phone || '-'}\n• Email: ${data.email || '-'}\n• Bank: ${data.bankName || '-'} a.n. ${data.bankHolder || '-'}`;
       case 'getFinancialReport':
@@ -215,7 +270,7 @@ const formatToolResult = (toolName: string, result: any): string => {
   return result.message || String(data);
 };
 
-// ==================== TYPING INDICATOR COMPONENT ====================
+// ==================== TYPING INDICATOR ====================
 const TypingIndicator = () => {
   const dot1 = useRef(new Animated.Value(0.3)).current;
   const dot2 = useRef(new Animated.Value(0.3)).current;
@@ -247,47 +302,435 @@ const TypingIndicator = () => {
   );
 };
 
+// ==================== MARKDOWN RENDERER (per-line, clean) ====================
+const renderMarkdownText = (text: string, isUser: boolean): React.ReactNode[] => {
+  const lines = text.split('\n');
+  return lines.map((line, lineIdx) => {
+    if (line.trim() === '') {
+      return <View key={lineIdx} style={{ height: 4 }} />;
+    }
+
+    const isBullet = line.trim().startsWith('•') || line.trim().startsWith('-') || line.trim().match(/^\d+\./);
+
+    const renderInlineBold = (raw: string): React.ReactNode[] => {
+      const parts = raw.split(/(\*\*[^*]+\*\*)/g);
+      return parts.map((part, pIdx) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return (
+            <Text key={pIdx} style={[s.msgText, isUser ? s.userText : s.aiText, { fontWeight: '700' }]}>
+              {part.slice(2, -2)}
+            </Text>
+          );
+        }
+        return part ? (
+          <Text key={pIdx} style={[s.msgText, isUser ? s.userText : s.aiText]}>{part}</Text>
+        ) : null;
+      });
+    };
+
+    return (
+      <View key={lineIdx} style={[s.msgLine, isBullet && s.bulletLine]}>
+        <Text style={[s.msgText, isUser ? s.userText : s.aiText]}>
+          {renderInlineBold(line) as any}
+        </Text>
+      </View>
+    );
+  });
+};
+
+// ==================== COMPACT DRAFT CARD ====================
+const DraftCard = ({ msg, onConfirm }: { msg: AiMessage; onConfirm: (d: DraftData) => void }) => {
+  const [expanded, setExpanded] = useState(false);
+  let draftData: DraftData;
+  try { draftData = JSON.parse(msg.text); } catch { return null; }
+
+  const isDanger = draftData.type === 'draft_delete';
+  const isEdit = draftData.type === 'draft_edit';
+  const iconName = isDanger ? 'trash-outline' : isEdit ? 'create-outline' : 'document-text-outline';
+  const iconColor = isDanger ? Colors.error : Colors.primaryStart;
+
+  const entries = Object.entries(draftData.data || {});
+  const visibleEntries = expanded ? entries : entries.slice(0, 3);
+  const hasMore = entries.length > 3;
+
+  return (
+    <View style={s.alignLeft}>
+      <View style={s.draftCardCompact}>
+        <View style={s.draftHeaderCompact}>
+          <View style={[s.draftIconSmall, isDanger && { backgroundColor: Colors.errorLight }]}>
+            <Ionicons name={iconName as any} size={12} color={iconColor} />
+          </View>
+          <Text style={[s.draftTitleCompact, isDanger && { color: Colors.error }]} numberOfLines={1}>
+            {draftData.action}
+          </Text>
+        </View>
+
+        <View style={s.draftFieldsCompact}>
+          {visibleEntries.map(([key, val]) => (
+            <View key={key} style={s.draftFieldRowCompact}>
+              <Text style={s.draftFieldLabelCompact}>{key}</Text>
+              <Text style={s.draftFieldValueCompact}>
+                {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+              </Text>
+            </View>
+          ))}
+          {hasMore && (
+            <TouchableOpacity onPress={() => setExpanded(!expanded)}>
+              <Text style={s.expandToggle}>{expanded ? '▲ Sembunyikan' : `▼ +${entries.length - 3} lainnya`}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={s.draftActionsRow}>
+          <TouchableOpacity
+            style={[s.draftActionBtn, isDanger ? s.draftActionDanger : s.draftActionPrimary]}
+            onPress={() => onConfirm(draftData)}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={isDanger ? 'trash-outline' : isEdit ? 'pencil-outline' : 'checkmark-outline'}
+              size={13}
+              color="#fff"
+            />
+            <Text style={s.draftActionBtnText}>
+              {isDanger ? 'Hapus' : isEdit ? 'Edit' : 'Konfirmasi'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+};
+
+// ==================== AI SETTINGS MODAL ====================
+const AiSettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
+  const {
+    isModelDownloaded, modelDownloadProgress, setModelDownloadStatus,
+    isModelLoading, isModelReady,
+  } = useAiStore();
+  const [isDownloading, setIsDownloading] = useState(false);
+  const downloadRef = useRef<FileSystem.DownloadResumable | null>(null);
+
+  const handleDownloadModel = async () => {
+    Alert.alert(
+      '📥 Download Model AI',
+      `Model AI offline (Qwen 2.5 0.5B, ~395MB) akan diunduh dari HuggingFace.\n\nPastikan koneksi WiFi stabil dan storage tersedia.\nProses download membutuhkan waktu 5-15 menit.`,
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Mulai Download',
+          onPress: async () => {
+            setIsDownloading(true);
+            setModelDownloadStatus(false, 0);
+            try {
+              // Ensure model directory exists
+              const dirInfo = await FileSystem.getInfoAsync(getModelDir());
+              if (!dirInfo.exists) {
+                await FileSystem.makeDirectoryAsync(getModelDir(), { intermediates: true });
+              }
+
+              const callback = (downloadProgress: FileSystem.DownloadProgressData) => {
+                const pct = (downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite) * 100;
+                setModelDownloadStatus(false, Math.min(pct, 99));
+              };
+
+              downloadRef.current = FileSystem.createDownloadResumable(
+                LLAMA_CONFIG.modelUrl,
+                getModelPath(),
+                {},
+                callback,
+              );
+
+              const result = await downloadRef.current.downloadAsync();
+              if (result?.uri) {
+                setModelDownloadStatus(true, 100);
+                Alert.alert('✅ Selesai', 'Model AI offline berhasil diunduh! MIDA kini menggunakan True On-Device AI.');
+              } else {
+                throw new Error('Download gagal — tidak ada file.');
+              }
+            } catch (err: any) {
+              setModelDownloadStatus(false, 0);
+              Alert.alert('❌ Gagal', `Download gagal: ${err.message}`);
+            } finally {
+              setIsDownloading(false);
+              downloadRef.current = null;
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const handleDeleteModel = async () => {
+    Alert.alert(
+      '🗑️ Hapus Model AI',
+      'Yakin ingin menghapus model AI offline? Anda harus download ulang untuk menggunakan True AI.',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await releaseLlama();
+              useAiStore.getState().setModelReady(false);
+              const info = await FileSystem.getInfoAsync(getModelPath());
+              if (info.exists) await FileSystem.deleteAsync(getModelPath());
+              setModelDownloadStatus(false, 0);
+              Alert.alert('✅', 'Model AI berhasil dihapus. MIDA kembali ke mode Pattern Matching.');
+            } catch (err: any) {
+              Alert.alert('❌', `Gagal menghapus: ${err.message}`);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={s.settingsOverlay}>
+        <View style={s.settingsSheet}>
+          <View style={s.settingsHandle} />
+          <Text style={s.settingsTitle}>⚙️ Pengaturan AI MIDA</Text>
+
+          {/* Status saat ini */}
+          <View style={s.settingsSection}>
+            <Text style={s.settingsSectionLabel}>STATUS SAAT INI</Text>
+            <View style={s.statusRow}>
+              <View style={[s.statusDot, {
+                backgroundColor: isModelReady
+                  ? Colors.success
+                  : isModelLoading
+                    ? Colors.warning
+                    : isModelDownloaded
+                      ? Colors.info
+                      : Colors.error,
+              }]} />
+              <Text style={s.statusLabel}>
+                {isModelReady
+                  ? 'On-Device AI Aktif ✨'
+                  : isModelLoading
+                    ? 'Memuat model ke RAM...'
+                    : isModelDownloaded
+                      ? 'Model tersedia — belum dimuat'
+                      : 'Pattern Matching (Fallback)'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Model offline */}
+          <View style={s.settingsSection}>
+            <Text style={s.settingsSectionLabel}>MODEL AI OFFLINE (LOKAL)</Text>
+            <View style={s.modelCard}>
+              <View style={s.modelInfo}>
+                <Text style={s.modelName}>🧠 Qwen 2.5 0.5B Chat</Text>
+                <Text style={s.modelDesc}>Ringan & cepat · ~395 MB · Q4_K_M quantized</Text>
+                <Text style={s.modelDesc}>Berjalan 100% offline di memori HP</Text>
+              </View>
+
+              {isModelDownloaded ? (
+                <View style={{ alignItems: 'center', gap: 6 }}>
+                  <View style={s.modelInstalled}>
+                    <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+                    <Text style={[s.modelInstallText, { color: Colors.success }]}>Terpasang</Text>
+                  </View>
+                  <TouchableOpacity onPress={handleDeleteModel}>
+                    <Text style={{ fontSize: 10, color: Colors.error }}>Hapus</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : isDownloading || (modelDownloadProgress > 0 && modelDownloadProgress < 100) ? (
+                <View style={s.downloadProgress}>
+                  <View style={s.progressBar}>
+                    <View style={[s.progressFill, { width: `${modelDownloadProgress}%` as any }]} />
+                  </View>
+                  <Text style={s.progressText}>{Math.round(modelDownloadProgress)}%</Text>
+                </View>
+              ) : (
+                <TouchableOpacity style={s.downloadBtn} onPress={handleDownloadModel} activeOpacity={0.8}>
+                  <Ionicons name="cloud-download-outline" size={16} color="#fff" />
+                  <Text style={s.downloadBtnText}>Download</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Info cara kerja */}
+          <View style={s.settingsSection}>
+            <Text style={s.settingsSectionLabel}>CARA KERJA</Text>
+            <View style={s.infoBox}>
+              <Text style={s.infoText}>
+                {'• Jika model offline terpasang → AI berjalan di perangkat Anda tanpa internet\n'}
+                {'• Jika belum → MIDA menggunakan pattern matching pintar (offline, cepat)\n'}
+                {'• Semua data & tools tetap terhubung ke server toko Anda\n'}
+                {'• Model dimuat ke RAM saat membuka chat (~5-15 detik pertama)'}
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity style={s.settingsCloseBtn} onPress={onClose} activeOpacity={0.8}>
+            <Text style={s.settingsCloseBtnText}>Tutup</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 // ==================== MAIN COMPONENT ====================
 export const AiChatScreen = () => {
   const navigation = useNavigation<any>();
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
-  const { messages, addMessage, isModelDownloaded } = useAiStore();
+  const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const {
+    messages, addMessage, updateLastAssistantMessage,
+    isModelDownloaded, isModelReady,
+    setModelLoading, setModelReady, setModelLoadError, setModelDownloadStatus,
+  } = useAiStore();
 
-  // Reverse messages for inverted FlatList (newest at bottom)
-  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+  // Scroll to bottom when new message or streaming
+  useEffect(() => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  }, [messages.length, isLoading, streamingText]);
 
+  // Auto-load LLM context when model is downloaded
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadModel = async () => {
+      if (!isModelDownloaded || isModelReady || isLlamaReady()) return;
+
+      // Verify file exists on disk
+      try {
+        const info = await FileSystem.getInfoAsync(getModelPath());
+        if (!info.exists) {
+          setModelDownloadStatus(false, 0);
+          return;
+        }
+      } catch {
+        return;
+      }
+
+      setModelLoading(true);
+      setModelLoadError(null);
+      try {
+        await initializeLlama(getModelPath());
+        if (!cancelled) {
+          setModelReady(true);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setModelLoadError(err.message || 'Gagal memuat model');
+          console.warn('[MIDA] LLM load error:', err);
+        }
+      } finally {
+        if (!cancelled) setModelLoading(false);
+      }
+    };
+
+    loadModel();
+    return () => { cancelled = true; };
+  }, [isModelDownloaded]);
+
+  // Cleanup LLM context on unmount
+  useEffect(() => {
+    return () => {
+      releaseLlama().catch(() => {});
+      useAiStore.getState().setModelReady(false);
+    };
+  }, []);
+
+  // ==================== SEND MESSAGE ====================
   const handleSend = useCallback(async () => {
     if (!inputText.trim() || isLoading) return;
     const userText = inputText.trim();
     setInputText('');
     addMessage({ role: 'user', text: userText });
     setIsLoading(true);
+    setStreamingText(null);
 
     try {
-      await new Promise(r => setTimeout(r, 800)); // Simulate latency
-      const mockLlmResponse = simulateLlmResponse(userText);
-      const toolCall = extractToolCall(mockLlmResponse);
+      let llmResponse: string;
+
+      if (isModelReady && isLlamaReady()) {
+        // ===== TRUE ON-DEVICE LLM =====
+        // Build chat history (last 6 messages for context, save tokens)
+        const recentMsgs = messages.slice(-6);
+        const chatMsgs: ChatMessage[] = recentMsgs
+          .filter(m => m.role !== 'system')
+          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.text }));
+        chatMsgs.push({ role: 'user', content: userText });
+
+        // Add placeholder for streaming
+        addMessage({ role: 'assistant', text: '...' });
+
+        llmResponse = await generateResponse(chatMsgs, (data) => {
+          setStreamingText(data.accumulated_text);
+          updateLastAssistantMessage(data.accumulated_text);
+        });
+
+        setStreamingText(null);
+        // Update with final text
+        updateLastAssistantMessage(llmResponse);
+      } else {
+        // ===== FALLBACK: PATTERN MATCHING =====
+        await new Promise(r => setTimeout(r, 500));
+        llmResponse = simulateLlmResponse(userText);
+      }
+
+      // Try to extract tool call from the response
+      const toolCall = extractToolCall(llmResponse);
 
       if (toolCall) {
+        // If we used streaming, remove the raw JSON placeholder
+        if (isModelReady) {
+          updateLastAssistantMessage('⚙️ Mengeksekusi perintah...');
+        }
+
         const toolResult = await executeAiToolCall(toolCall);
         if (isDraftResponse(toolResult)) {
-          addMessage({ role: 'assistant', text: JSON.stringify(toolResult) });
+          if (isModelReady) {
+            updateLastAssistantMessage(JSON.stringify(toolResult));
+          } else {
+            addMessage({ role: 'assistant', text: JSON.stringify(toolResult) });
+          }
         } else if (toolResult.error) {
-          addMessage({ role: 'assistant', text: `⚠️ ${toolResult.error}` });
+          const errMsg = `⚠️ ${toolResult.error}`;
+          if (isModelReady) {
+            updateLastAssistantMessage(errMsg);
+          } else {
+            addMessage({ role: 'assistant', text: errMsg });
+          }
         } else {
-          addMessage({ role: 'assistant', text: formatToolResult(toolCall.tool, toolResult) });
+          const formatted = formatToolResult(toolCall.tool, toolResult);
+          if (isModelReady) {
+            updateLastAssistantMessage(formatted);
+          } else {
+            addMessage({ role: 'assistant', text: formatted });
+          }
         }
-      } else {
-        addMessage({ role: 'assistant', text: mockLlmResponse });
+      } else if (!isModelReady) {
+        // Fallback: non-tool response
+        addMessage({ role: 'assistant', text: llmResponse });
       }
-    } catch {
-      addMessage({ role: 'assistant', text: '❌ Maaf, terjadi kesalahan.' });
+      // If isModelReady && no toolCall, the streamed text is already in messages
+    } catch (err: any) {
+      const errMsg = '❌ Maaf, terjadi kesalahan.';
+      if (isModelReady) {
+        updateLastAssistantMessage(errMsg);
+      } else {
+        addMessage({ role: 'assistant', text: errMsg });
+      }
     } finally {
       setIsLoading(false);
+      setStreamingText(null);
     }
-  }, [inputText, isLoading, addMessage]);
+  }, [inputText, isLoading, addMessage, updateLastAssistantMessage, isModelReady, messages]);
 
   const handleDraftConfirm = useCallback(async (draftData: DraftData) => {
     const isDanger = draftData.type === 'draft_delete';
@@ -310,100 +753,68 @@ export const AiChatScreen = () => {
     );
   }, [addMessage]);
 
-  // ==================== RENDER MESSAGE ITEM ====================
-  const renderItem = useCallback(({ item: msg }: { item: AiMessage }) => {
+  // ==================== RENDER MESSAGE ====================
+  const renderMessage = (msg: AiMessage) => {
     const isUser = msg.role === 'user';
 
-    // === DRAFT CARD ===
+    // Draft card (compact)
     if (msg.role === 'assistant' && msg.text.startsWith('{') && msg.text.includes('"type":"draft_')) {
-      try {
-        const draftData: DraftData = JSON.parse(msg.text);
-        const isDanger = draftData.type === 'draft_delete';
-        const isEdit = draftData.type === 'draft_edit';
-        const iconName = isDanger ? 'trash-outline' : isEdit ? 'create-outline' : 'document-text-outline';
-        const iconColor = isDanger ? Colors.error : Colors.primaryStart;
-
-        return (
-          <View style={s.alignLeft}>
-            <GlassCard style={s.draftCard} tinted={isDanger}>
-              {/* Draft Header */}
-              <View style={s.draftHeader}>
-                <View style={[s.draftIconCircle, isDanger && { backgroundColor: Colors.errorLight }]}>
-                  <Ionicons name={iconName as any} size={16} color={iconColor} />
-                </View>
-                <Text style={[s.draftTitle, isDanger && { color: Colors.error }]}>{draftData.action}</Text>
-              </View>
-
-              {/* Draft Fields */}
-              <View style={s.draftBody}>
-                {Object.entries(draftData.data || {}).map(([key, val]) => (
-                  <View key={key} style={s.draftFieldRow}>
-                    <Text style={s.draftFieldLabel}>{key}</Text>
-                    <Text style={s.draftFieldValue} numberOfLines={2}>
-                      {typeof val === 'object' ? JSON.stringify(val) : String(val)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-
-              {/* Confirm Button */}
-              <GradientButton
-                title={isDanger ? '🗑️ Konfirmasi Hapus' : isEdit ? '✏️ Konfirmasi Edit' : '✅ Konfirmasi & Simpan'}
-                variant={isDanger ? 'danger' : 'primary'}
-                onPress={() => handleDraftConfirm(draftData)}
-                size="sm"
-                fullWidth
-              />
-            </GlassCard>
-          </View>
-        );
-      } catch {}
+      return <DraftCard key={msg.id} msg={msg} onConfirm={handleDraftConfirm} />;
     }
 
-    // === TEXT MESSAGE BUBBLE ===
-    const parts = msg.text.split(/(\[[^\]]+\]\([^)]+\))/g);
+    // Check if text contains a markdown link
+    const hasLink = /\[([^\]]+)\]\(([^)]+)\)/.test(msg.text);
 
+    if (hasLink) {
+      const parts = msg.text.split(/(\[[^\]]+\]\([^)]+\))/g);
+      return (
+        <View key={msg.id} style={isUser ? s.alignRight : s.alignLeft}>
+          <View style={[s.messageBubble, isUser ? s.userBubble : s.aiBubble]}>
+            {!isUser && (
+              <View style={s.aiAvatarSmall}>
+                <Ionicons name="sparkles" size={10} color={Colors.primaryStart} />
+              </View>
+            )}
+            <View style={s.messageTextContainer}>
+              {parts.map((part, idx) => {
+                const linkMatch = part.match(/\[([^\]]+)\]\(([^)]+)\)/);
+                if (linkMatch) {
+                  const [, linkText, linkRoute] = linkMatch;
+                  return (
+                    <TouchableOpacity key={idx} onPress={() => {
+                      const route = linkRoute.replace(/^\//, '');
+                      const segs = route.split('/');
+                      segs.length >= 2 ? navigation.navigate(segs[0], { id: segs[1] }) : navigation.navigate(route);
+                    }} style={s.linkButton}>
+                      <Ionicons name="open-outline" size={12} color={Colors.primaryStart} />
+                      <Text style={s.linkText}>{linkText}</Text>
+                    </TouchableOpacity>
+                  );
+                }
+                return renderMarkdownText(part, isUser);
+              })}
+            </View>
+          </View>
+        </View>
+      );
+    }
+
+    // Normal message with clean per-line rendering
     return (
-      <View style={isUser ? s.alignRight : s.alignLeft}>
+      <View key={msg.id} style={isUser ? s.alignRight : s.alignLeft}>
         <View style={[s.messageBubble, isUser ? s.userBubble : s.aiBubble]}>
-          {/* AI Avatar */}
           {!isUser && (
             <View style={s.aiAvatarSmall}>
               <Ionicons name="sparkles" size={10} color={Colors.primaryStart} />
             </View>
           )}
-
           <View style={s.messageTextContainer}>
-            {parts.map((part: string, idx: number) => {
-              // Markdown link
-              const linkMatch = part.match(/\[([^\]]+)\]\(([^)]+)\)/);
-              if (linkMatch) {
-                const [, linkText, linkRoute] = linkMatch;
-                return (
-                  <TouchableOpacity key={idx} onPress={() => {
-                    const route = linkRoute.replace(/^\//, '');
-                    const segs = route.split('/');
-                    segs.length >= 2 ? navigation.navigate(segs[0], { id: segs[1] }) : navigation.navigate(route);
-                  }} style={s.linkButton}>
-                    <Ionicons name="open-outline" size={12} color={Colors.primaryStart} />
-                    <Text style={s.linkText}>{linkText}</Text>
-                  </TouchableOpacity>
-                );
-              }
-              // Bold + normal text
-              return part.split(/(\*\*[^*]+\*\*)/g).map((bp: string, bpIdx: number) => {
-                if (bp.startsWith('**') && bp.endsWith('**'))
-                  return <Text key={`${idx}-${bpIdx}`} style={[s.msgText, isUser ? s.userText : s.aiText, { fontWeight: '700' }]}>{bp.slice(2, -2)}</Text>;
-                return bp ? <Text key={`${idx}-${bpIdx}`} style={[s.msgText, isUser ? s.userText : s.aiText]}>{bp}</Text> : null;
-              });
-            })}
+            {renderMarkdownText(msg.text, isUser)}
           </View>
         </View>
       </View>
     );
-  }, [navigation, handleDraftConfirm]);
-
-  const keyExtractor = useCallback((item: AiMessage) => item.id, []);
+  };
 
   // ==================== RENDER ====================
   return (
@@ -421,68 +832,81 @@ export const AiChatScreen = () => {
           <View>
             <Text style={s.headerTitle}>MIDA</Text>
             <Text style={s.headerSubtitle}>
-              {isModelDownloaded ? '🟢 On-Device AI' : '🔵 Cloud Fallback'}
+              {isModelReady ? '🟢 On-Device AI (Qwen 2.5)' : isModelDownloaded ? '🟡 Model tersedia' : '⚪ Pattern Matching'}
             </Text>
           </View>
         </View>
 
-        <TouchableOpacity
-          onPress={() => Alert.alert('Hapus Riwayat', 'Hapus semua riwayat chat AI?', [
-            { text: 'Batal', style: 'cancel' },
-            { text: 'Hapus', style: 'destructive', onPress: () => useAiStore.getState().clearHistory() },
-          ])}
-          style={s.clearBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="ellipsis-vertical" size={20} color={Colors.textTertiary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 4 }}>
+          <TouchableOpacity
+            onPress={() => setShowSettings(true)}
+            style={s.clearBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="settings-outline" size={20} color={Colors.textTertiary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => Alert.alert('Hapus Riwayat', 'Hapus semua riwayat chat AI?', [
+              { text: 'Batal', style: 'cancel' },
+              { text: 'Hapus', style: 'destructive', onPress: () => useAiStore.getState().clearHistory() },
+            ])}
+            style={s.clearBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="trash-outline" size={20} color={Colors.textTertiary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* ===== CHAT MESSAGES (FlatList for performance) ===== */}
-      <FlatList
-        ref={flatListRef}
-        data={reversedMessages}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        inverted
-        contentContainerStyle={s.chatContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        initialNumToRender={15}
-        maxToRenderPerBatch={10}
-        windowSize={10}
-        removeClippedSubviews={Platform.OS === 'android'}
-        ListEmptyComponent={
-          <View style={s.emptyState}>
-            <LinearGradient colors={Gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.emptyAvatar}>
-              <Ionicons name="sparkles" size={32} color="#fff" />
-            </LinearGradient>
-            <Text style={s.emptyTitle}>Halo! Saya MIDA 👋</Text>
-            <Text style={s.emptySubtitle}>
-              Asisten AI Toko Masdar Utama.{'\n'}Saya bisa bantu cek stok, buat nota, lihat laporan, dan banyak lagi!
-            </Text>
-            <View style={s.chipContainer}>
-              {[
-                { icon: 'cube-outline', label: 'Cek stok semen' },
-                { icon: 'logo-whatsapp', label: 'Lihat pesanan WA' },
-                { icon: 'bar-chart-outline', label: 'Laporan keuangan' },
-                { icon: 'wallet-outline', label: 'Cek hutang pelanggan' },
-                { icon: 'alert-circle-outline', label: 'Stok rendah' },
-                { icon: 'storefront-outline', label: 'Profil toko' },
-              ].map(({ icon, label }) => (
-                <TouchableOpacity key={label} style={s.chip} onPress={() => setInputText(label)} activeOpacity={0.7}>
-                  <Ionicons name={icon as any} size={14} color={Colors.primaryStart} />
-                  <Text style={s.chipText}>{label}</Text>
-                </TouchableOpacity>
-              ))}
+      {/* ===== CHAT MESSAGES (ScrollView, no inverted) ===== */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          ref={scrollViewRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={s.chatContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {messages.length === 0 ? (
+            <View style={s.emptyState}>
+              <LinearGradient colors={Gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.emptyAvatar}>
+                <Ionicons name="sparkles" size={32} color="#fff" />
+              </LinearGradient>
+              <Text style={s.emptyTitle}>Halo! Saya MIDA 👋</Text>
+              <Text style={s.emptySubtitle}>
+                {isModelReady
+                  ? 'AI On-Device aktif! Saya berjalan langsung di HP Anda tanpa internet.'
+                  : 'Asisten AI Toko Masdar Utama.\nSaya bisa bantu cek stok, buat nota, lihat laporan, dan banyak lagi!'}
+              </Text>
+              <View style={s.chipContainer}>
+                {[
+                  { icon: 'cube-outline', label: 'Cek stok semen' },
+                  { icon: 'logo-whatsapp', label: 'Lihat pesanan WA' },
+                  { icon: 'bar-chart-outline', label: 'Laporan keuangan' },
+                  { icon: 'wallet-outline', label: 'Cek hutang pelanggan' },
+                  { icon: 'alert-circle-outline', label: 'Stok rendah' },
+                  { icon: 'storefront-outline', label: 'Profil toko' },
+                ].map(({ icon, label }) => (
+                  <TouchableOpacity key={label} style={s.chip} onPress={() => setInputText(label)} activeOpacity={0.7}>
+                    <Ionicons name={icon as any} size={14} color={Colors.primaryStart} />
+                    <Text style={s.chipText}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
-          </View>
-        }
-        ListHeaderComponent={isLoading ? <TypingIndicator /> : null}
-      />
+          ) : (
+            <>
+              {messages.map(renderMessage)}
+              {isLoading && !streamingText && <TypingIndicator />}
+            </>
+          )}
+        </ScrollView>
 
-      {/* ===== INPUT BAR ===== */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
+        {/* ===== INPUT BAR ===== */}
         <View style={s.inputBar}>
           <View style={s.inputWrapper}>
             <TextInput
@@ -508,11 +932,17 @@ export const AiChatScreen = () => {
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={s.sendBtnGradient}
             >
-              <Ionicons name="send" size={18} color="#fff" />
+              {isLoading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="send" size={18} color="#fff" />
+              }
             </LinearGradient>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* AI Settings Modal */}
+      <AiSettingsModal visible={showSettings} onClose={() => setShowSettings(false)} />
     </SafeAreaView>
   );
 };
@@ -536,19 +966,26 @@ const s = StyleSheet.create({
   clearBtn: { padding: 4 },
 
   // Chat
-  chatContent: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: 8 },
-  alignRight: { alignItems: 'flex-end', marginBottom: 8 },
-  alignLeft: { alignItems: 'flex-start', marginBottom: 8 },
+  chatContent: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: 12, flexGrow: 1 },
+  alignRight: { alignItems: 'flex-end', marginBottom: 10 },
+  alignLeft: { alignItems: 'flex-start', marginBottom: 10 },
 
   // Bubbles
-  messageBubble: { maxWidth: '82%', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18, flexDirection: 'row', gap: 8 },
+  messageBubble: {
+    maxWidth: '82%', paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 18, flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+  },
   userBubble: { backgroundColor: Colors.primaryStart, borderBottomRightRadius: 4, ...Shadow.sm },
   aiBubble: { backgroundColor: Colors.surface, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: Colors.border, ...Shadow.sm },
   aiAvatarSmall: {
     width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.infoLight,
-    justifyContent: 'center', alignItems: 'center', marginTop: 2,
+    justifyContent: 'center', alignItems: 'center', marginTop: 2, flexShrink: 0,
   },
-  messageTextContainer: { flex: 1, flexDirection: 'row', flexWrap: 'wrap' },
+  messageTextContainer: { flex: 1, flexDirection: 'column' },
+
+  // Per-line message rendering
+  msgLine: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 1 },
+  bulletLine: { paddingLeft: 4 },
   msgText: { fontSize: 14, lineHeight: 21 },
   userText: { color: '#fff' },
   aiText: { color: Colors.textPrimary },
@@ -557,22 +994,47 @@ const s = StyleSheet.create({
   linkButton: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: Colors.infoLight, borderRadius: BorderRadius.sm,
-    paddingHorizontal: 10, paddingVertical: 5, marginTop: 6,
+    paddingHorizontal: 10, paddingVertical: 5, marginTop: 6, alignSelf: 'flex-start',
   },
   linkText: { color: Colors.primaryStart, fontSize: 12, fontWeight: FontWeight.semibold },
 
-  // Draft cards
-  draftCard: { maxWidth: '92%' as any },
-  draftHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: Spacing.md },
-  draftIconCircle: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.infoLight,
+  // COMPACT DRAFT CARD
+  draftCardCompact: {
+    width: '95%',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    ...Shadow.sm,
+  },
+  draftHeaderCompact: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingVertical: 12,
+    backgroundColor: Colors.surfaceLight,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  draftIconSmall: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.infoLight,
     justifyContent: 'center', alignItems: 'center',
   },
-  draftTitle: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textPrimary, flex: 1 },
-  draftBody: { marginBottom: Spacing.md, backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.sm, padding: Spacing.md },
-  draftFieldRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  draftFieldLabel: { fontSize: 12, fontWeight: FontWeight.semibold, color: Colors.textTertiary, textTransform: 'capitalize' },
-  draftFieldValue: { fontSize: 12, color: Colors.textPrimary, maxWidth: '60%', textAlign: 'right' },
+  draftTitleCompact: { fontSize: 13, fontWeight: FontWeight.bold, color: Colors.textPrimary, flex: 1 },
+  draftFieldsCompact: { paddingHorizontal: 16, paddingVertical: 12 },
+  draftFieldRowCompact: { flexDirection: 'column', marginBottom: 8, gap: 4 },
+  draftFieldLabelCompact: { fontSize: 11, fontWeight: FontWeight.semibold, color: Colors.textTertiary, textTransform: 'capitalize' },
+  draftFieldValueCompact: { fontSize: 13, color: Colors.textPrimary },
+  expandToggle: { fontSize: 12, color: Colors.primaryStart, fontWeight: FontWeight.semibold, textAlign: 'center', marginTop: 8 },
+  draftActionsRow: {
+    flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12,
+    borderTopWidth: 1, borderTopColor: Colors.border, gap: 12,
+  },
+  draftActionBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: BorderRadius.sm,
+  },
+  draftActionPrimary: { backgroundColor: Colors.primaryStart },
+  draftActionDanger: { backgroundColor: Colors.error },
+  draftActionBtnText: { color: '#fff', fontSize: 13, fontWeight: FontWeight.bold },
 
   // Typing
   typingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
@@ -592,8 +1054,7 @@ const s = StyleSheet.create({
   },
   inputWrapper: {
     flex: 1, backgroundColor: Colors.background, borderRadius: 22,
-    borderWidth: 1, borderColor: Colors.border,
-    paddingHorizontal: Spacing.lg,
+    borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.lg,
   },
   input: { fontSize: 14, color: Colors.textPrimary, paddingVertical: 10, maxHeight: 100, minHeight: 40 },
   sendBtn: {},
@@ -604,10 +1065,9 @@ const s = StyleSheet.create({
     ...Shadow.sm,
   },
 
-  // Empty state (inverted so it renders upside-down — we use transform)
+  // Empty state
   emptyState: {
-    alignItems: 'center', paddingHorizontal: 32, paddingVertical: 40,
-    transform: [{ scaleY: -1 }], // Flip because FlatList is inverted
+    alignItems: 'center', paddingHorizontal: 32, paddingVertical: 40, flex: 1, justifyContent: 'center',
   },
   emptyAvatar: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.lg },
   emptyTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary },
@@ -620,6 +1080,58 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border, ...Shadow.sm,
   },
   chipText: { fontSize: 12, color: Colors.textPrimary, fontWeight: FontWeight.medium },
+
+  // AI Settings Modal
+  settingsOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end',
+  },
+  settingsSheet: {
+    backgroundColor: Colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.lg, paddingBottom: 32, paddingTop: 12,
+    maxHeight: '85%',
+  },
+  settingsHandle: {
+    width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border,
+    alignSelf: 'center', marginBottom: Spacing.md,
+  },
+  settingsTitle: {
+    fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary,
+    marginBottom: Spacing.lg, textAlign: 'center',
+  },
+  settingsSection: { marginBottom: Spacing.lg },
+  settingsSectionLabel: {
+    fontSize: 10, fontWeight: FontWeight.bold, color: Colors.textTertiary,
+    letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8,
+  },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.surface, padding: 12, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border },
+  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  statusLabel: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: FontWeight.semibold },
+  modelCard: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.md, padding: 12,
+    borderWidth: 1, borderColor: Colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  modelInfo: { flex: 1 },
+  modelName: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  modelDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 2, lineHeight: 16 },
+  modelInstalled: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  modelInstallText: { fontSize: 11, fontWeight: FontWeight.bold },
+  downloadProgress: { alignItems: 'center', gap: 4, minWidth: 72 },
+  progressBar: { width: 72, height: 6, backgroundColor: Colors.border, borderRadius: 3, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: Colors.primaryStart, borderRadius: 3 },
+  progressText: { fontSize: 10, color: Colors.primaryStart, fontWeight: FontWeight.bold },
+  downloadBtn: {
+    backgroundColor: Colors.primaryStart, paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: BorderRadius.sm, flexDirection: 'row', alignItems: 'center', gap: 4,
+  },
+  downloadBtnText: { color: '#fff', fontSize: 11, fontWeight: FontWeight.bold },
+  infoBox: { backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.md, padding: 12, borderWidth: 1, borderColor: Colors.border },
+  infoText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
+  settingsCloseBtn: {
+    backgroundColor: Colors.primaryStart, paddingVertical: 14, borderRadius: BorderRadius.md,
+    alignItems: 'center', marginTop: Spacing.md,
+  },
+  settingsCloseBtnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: FontWeight.bold },
 });
 
 export default AiChatScreen;
