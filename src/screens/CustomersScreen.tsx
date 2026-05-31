@@ -99,11 +99,18 @@ export const CustomersScreen: React.FC = () => {
     }
     setSaving(true);
     try {
+      const payload = {
+        name: formData.name || '',
+        phone: formData.phone || '',
+        address: formData.address || '',
+        type: formData.type || 'UMUM',
+      };
+      
       let res;
       if (formData.id) {
-        res = await masterService.updateCustomer(formData.id, formData);
+        res = await masterService.updateCustomer(formData.id, payload);
       } else {
-        res = await masterService.createCustomer(formData);
+        res = await masterService.createCustomer(payload);
       }
       if (res.success) {
         AppToast.success('Sukses', 'Data pelanggan berhasil disimpan');

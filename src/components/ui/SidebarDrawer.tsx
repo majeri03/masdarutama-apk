@@ -102,6 +102,7 @@ export const SidebarDrawer: React.FC = () => {
     { name: 'Purchase', label: 'Purchase Order (PO)', icon: 'cart-outline' },
     { name: 'Debt', label: 'Manajemen Utang & Piutang', icon: 'journal-outline' },
     { name: 'InvoiceLayout', label: 'Desain & Layout Invoice', icon: 'color-palette-outline' },
+    { name: 'DeviceSettings', label: 'Pengaturan Perangkat & Printer', icon: 'print-outline' },
     { name: 'WaOrders', label: 'Orderan WhatsApp', icon: 'logo-whatsapp' },
     { name: 'Customers', label: 'Pelanggan', icon: 'people-outline' },
   ];

@@ -15,6 +15,8 @@ export interface InvoiceLayoutState {
   bankHolder: string;
   footerTerms: string;
   fontSizeScale: number;
+  paperSize: string;
+  invoicePaperSize: string;
 
   // Actions
   updateLayout: (layout: Partial<Omit<InvoiceLayoutState, 'updateLayout' | 'resetLayout'>>) => void;
@@ -34,6 +36,8 @@ const DEFAULT_STATE = {
   bankHolder: 'TB MASDAR UTAMA',
   footerTerms: 'BARANG YANG SUDAH DIBELI TIDAK DAPAT DITUKAR/DIKEMBALIKAN KECUALI ADA PERJANJIAN.',
   fontSizeScale: 1.0,
+  paperSize: '58mm',
+  invoicePaperSize: 'A4',
 };
 
 export const useInvoiceLayoutStore = create<InvoiceLayoutState>((set) => ({

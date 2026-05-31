@@ -106,6 +106,12 @@ export const ProductsScreen: React.FC = () => {
   const [newSubCategoryDesc, setNewSubCategoryDesc] = useState('');
   const [savingSubCategory, setSavingSubCategory] = useState(false);
 
+  // Add Unit Master State
+  const [showAddUnitMasterModal, setShowAddUnitMasterModal] = useState(false);
+  const [newUnitName, setNewUnitName] = useState('');
+  const [newUnitSymbol, setNewUnitSymbol] = useState('');
+  const [savingUnit, setSavingUnit] = useState(false);
+
   // Units in Form State
   const [formProductUnits, setFormProductUnits] = useState<{
     unitId: string;
@@ -276,9 +282,22 @@ export const ProductsScreen: React.FC = () => {
   };
 
   // Add Unit to Form list
+  const handleConversionChange = (val: string) => {
+    setTempConversion(val);
+    const conv = Number(val);
+    if (!isNaN(conv) && conv > 0) {
+      // Find primary unit
+      const primary = formProductUnits.find(u => u.isPrimary);
+      if (primary) {
+        setTempBuyPrice((primary.buyPrice * conv).toString());
+        setTempSellPrice((primary.sellPrice * conv).toString());
+      }
+    }
+  };
+
   const handleAddUnitToForm = () => {
     if (!tempUnitId) {
-      AppToast.error('Peringatan', 'Pilih satuan terlebih dahulu.');
+      AppToast.error('Peringatan', 'Silakan pilih satuan.');
       return;
     }
     const conv = Number(tempConversion);
@@ -330,6 +349,19 @@ export const ProductsScreen: React.FC = () => {
 
   const handleRemoveUnitFromForm = (unitId: string) => {
     setFormProductUnits(formProductUnits.filter((u) => u.unitId !== unitId));
+  };
+
+  const handleEditUnitInForm = (unitId: string) => {
+    const unitToEdit = formProductUnits.find(u => u.unitId === unitId);
+    if (unitToEdit) {
+      setTempUnitId(unitToEdit.unitId);
+      setTempConversion(String(unitToEdit.conversionValue));
+      setTempBuyPrice(String(unitToEdit.buyPrice));
+      setTempSellPrice(String(unitToEdit.sellPrice));
+      setTempIsPrimary(unitToEdit.isPrimary);
+      setFormProductUnits(formProductUnits.filter((u) => u.unitId !== unitId));
+      setShowAddUnitForm(true);
+    }
   };
 
   // Select Image Source (Camera / Gallery)
@@ -475,6 +507,40 @@ export const ProductsScreen: React.FC = () => {
       AppToast.error('Error', 'Terjadi kesalahan sistem.');
     } finally {
       setSavingSubCategory(false);
+    }
+  };
+
+  // Create Unit Master helper
+  const handleCreateUnitMaster = async () => {
+    if (!newUnitName.trim()) {
+      AppToast.error('Peringatan', 'Nama satuan wajib diisi.');
+      return;
+    }
+    setSavingUnit(true);
+    try {
+      const res = await masterService.createUnit({
+        name: newUnitName.trim(),
+        symbol: newUnitSymbol.trim() || undefined,
+      });
+      if (res.success && res.data) {
+        Alert.alert('Sukses', `Satuan "${res.data.name}" berhasil dibuat!`);
+        setShowAddUnitMasterModal(false);
+        setNewUnitName('');
+        setNewUnitSymbol('');
+        
+        // Reload units
+        const unitRes = await masterService.getUnits();
+        if (unitRes.success && unitRes.data?.units) {
+          setUnits(unitRes.data.units);
+          setTempUnitId(res.data.id);
+        }
+      } else {
+        AppToast.error('Gagal', res.error || 'Gagal membuat satuan.');
+      }
+    } catch (e) {
+      AppToast.error('Error', 'Terjadi kesalahan sistem.');
+    } finally {
+      setSavingUnit(false);
     }
   };
 
@@ -1085,12 +1151,20 @@ export const ProductsScreen: React.FC = () => {
                       <Text style={styles.formUnitCardPrice}>
                         Rp {item.sellPrice.toLocaleString('id-ID')}
                       </Text>
-                      <TouchableOpacity
-                        onPress={() => handleRemoveUnitFromForm(item.unitId)}
-                        style={styles.removeUnitBtn}
-                      >
-                        <Ionicons name="trash-outline" size={16} color={Colors.error} />
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                        <TouchableOpacity
+                          onPress={() => handleEditUnitInForm(item.unitId)}
+                          style={styles.removeUnitBtn}
+                        >
+                          <Ionicons name="create-outline" size={16} color={Colors.primaryStart} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleRemoveUnitFromForm(item.unitId)}
+                          style={styles.removeUnitBtn}
+                        >
+                          <Ionicons name="trash-outline" size={16} color={Colors.error} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
                 );
@@ -1118,10 +1192,19 @@ export const ProductsScreen: React.FC = () => {
         <Modal visible={showAddUnitForm} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <GlassCard padding={24} style={styles.addUnitModalCard}>
-              <Text style={styles.modalTitle}>Tambah Satuan</Text>
+              <Text style={styles.modalTitle}>Tambah Satuan Penjualan</Text>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Satuan *</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={styles.inputLabel}>Satuan *</Text>
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    onPress={() => setShowAddUnitMasterModal(true)}
+                  >
+                    <Ionicons name="add-circle-outline" size={16} color={Colors.primaryStart} />
+                    <Text style={{ fontSize: FontSize.xs, color: Colors.primaryStart, fontWeight: 'bold' }}>+ Satuan Baru</Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.pickerWrapper}>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                     {units.map((u) => (
@@ -1148,7 +1231,7 @@ export const ProductsScreen: React.FC = () => {
                   style={styles.textInput}
                   keyboardType="numeric"
                   value={tempConversion}
-                  onChangeText={setTempConversion}
+                  onChangeText={handleConversionChange}
                   editable={!tempIsPrimary}
                 />
               </View>
@@ -1296,6 +1379,53 @@ export const ProductsScreen: React.FC = () => {
                     setShowAddSubCategoryModal(false);
                     setNewSubCategoryName('');
                   }}
+                  variant="outline"
+                  fullWidth
+                />
+              </View>
+            </GlassCard>
+          </View>
+        </Modal>
+
+        {/* --- QUICK ADD UNIT MODAL --- */}
+        <Modal visible={showAddUnitMasterModal} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <GlassCard padding={24} style={styles.addUnitModalCard}>
+              <Text style={styles.modalTitle}>Buat Master Satuan Baru</Text>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Nama Satuan *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Contoh: Lusin, Box, Kg"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={newUnitName}
+                  onChangeText={setNewUnitName}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Simbol (Opsional)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Contoh: lsn, box, kg"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={newUnitSymbol}
+                  onChangeText={setNewUnitSymbol}
+                />
+              </View>
+
+              <View style={{ gap: Spacing.sm, marginTop: Spacing.lg }}>
+                <GradientButton
+                  title="Simpan Satuan"
+                  onPress={handleCreateUnitMaster}
+                  loading={savingUnit}
+                  variant="primary"
+                  fullWidth
+                />
+                <GradientButton
+                  title="Batal"
+                  onPress={() => setShowAddUnitMasterModal(false)}
                   variant="outline"
                   fullWidth
                 />

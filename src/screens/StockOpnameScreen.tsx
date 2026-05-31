@@ -12,6 +12,7 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
 import { GlassCard, GradientButton, StatusBadge } from '../components/ui';
@@ -240,42 +241,35 @@ export const StockOpnameScreen: React.FC = () => {
     );
   };
 
-  const renderMovementCard = ({ item }: { item: StockMovement }) => {
+  const renderMovementCard = ({ item, index }: { item: StockMovement; index: number }) => {
     const primaryUnit = item.product?.productUnits?.find((pu: any) => pu.isPrimary) || item.product?.productUnits?.[0];
     const unitSymbol = primaryUnit?.unit?.name || 'unit';
     const color = MOVEMENT_COLOR[item.type] || Colors.textPrimary;
     const sign = item.type === 'IN' ? '+' : item.type === 'OUT' ? '-' : '';
+    const isEven = index % 2 === 0;
 
     return (
-      <GlassCard padding={14} style={styles.movementCard}>
-        <View style={styles.cardRow}>
-          <View style={styles.cardLeft}>
-            <Text style={styles.productName} numberOfLines={1}>{item.product?.name}</Text>
-            <Text style={styles.productCode}>{item.product?.code}</Text>
-            {item.notes && <Text style={styles.notesText}>"{item.notes}"</Text>}
-            <Text style={styles.dateText}>
-              {new Date(item.createdAt).toLocaleDateString('id-ID', {
-                timeZone: 'Asia/Makassar',
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
+      <View style={[styles.tableRow, isEven && styles.tableRowEven]}>
+        <Text style={[styles.tableCell, { flex: 1.2 }]} numberOfLines={1}>
+          {new Date(item.createdAt).toLocaleDateString('id-ID', {
+            day: '2-digit', month: '2-digit', year: '2-digit'
+          })}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 3.5 }]} numberOfLines={2}>
+          {item.product?.name}
+          {item.notes ? `\n(${item.notes})` : ''}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 2, textAlign: 'right', fontWeight: 'bold', color }]} numberOfLines={1}>
+          {sign}{item.quantity} {unitSymbol}
+        </Text>
+        <View style={{ flex: 1.8, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={[styles.typeBadge, { backgroundColor: color + '15', borderColor: color + '30' }]}>
+            <Text style={[styles.typeBadgeText, { color }]}>
+              {MOVEMENT_LABEL[item.type] || item.type}
             </Text>
-          </View>
-          <View style={styles.cardRight}>
-            <Text style={[styles.qtyText, { color }]}>
-              {sign}{item.quantity} {unitSymbol}
-            </Text>
-            <View style={[styles.typeBadge, { backgroundColor: color + '15', borderColor: color + '30' }]}>
-              <Text style={[styles.typeBadgeText, { color }]}>
-                {MOVEMENT_LABEL[item.type] || item.type}
-              </Text>
-            </View>
           </View>
         </View>
-      </GlassCard>
+      </View>
     );
   };
 
@@ -324,29 +318,39 @@ export const StockOpnameScreen: React.FC = () => {
           <Text style={styles.loadingLabel}>Memuat data pergerakan stok...</Text>
         </View>
       ) : (
-        <FlatList
-          data={movements}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMovementCard}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />
-          }
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.3}
-          ListFooterComponent={
-            loadingMore ? (
-              <ActivityIndicator size="small" color={Colors.primaryStart} style={{ padding: 16 }} />
-            ) : null
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Ionicons name="swap-horizontal-outline" size={48} color={Colors.textTertiary} />
-              <Text style={styles.emptyTitle}>Belum ada pergerakan stok</Text>
-              <Text style={styles.emptyDesc}>Riwayat keluar/masuk/penyesuaian stok akan tercatat di sini.</Text>
-            </View>
-          }
-        />
+        <View style={styles.tableContainer}>
+          {/* Header Tabel */}
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, { flex: 1.2 }]}>Tgl</Text>
+            <Text style={[styles.tableHeaderText, { flex: 3.5 }]}>Produk</Text>
+            <Text style={[styles.tableHeaderText, { flex: 2, textAlign: 'right' }]}>Jml</Text>
+            <Text style={[styles.tableHeaderText, { flex: 1.8, textAlign: 'center' }]}>Tipe</Text>
+          </View>
+
+          <FlatList
+            data={movements}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMovementCard}
+            contentContainerStyle={styles.listContainer}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />
+            }
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={
+              loadingMore ? (
+                <ActivityIndicator size="small" color={Colors.primaryStart} style={{ padding: 16 }} />
+              ) : null
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyBox}>
+                <Ionicons name="swap-horizontal-outline" size={48} color={Colors.textTertiary} />
+                <Text style={styles.emptyTitle}>Belum ada pergerakan stok</Text>
+                <Text style={styles.emptyDesc}>Riwayat keluar/masuk/penyesuaian stok akan tercatat di sini.</Text>
+              </View>
+            }
+          />
+        </View>
       )}
 
       {/* Floating Action Button for Stock Opname */}
@@ -359,7 +363,7 @@ export const StockOpnameScreen: React.FC = () => {
 
       {/* ── STOCK OPNAME ADJUSTMENT MODAL ── */}
       <Modal visible={showAdjModal} animationType="slide">
-        <View style={styles.formContainer}>
+        <SafeAreaView style={styles.formContainer}>
           <View style={styles.formHeader}>
             <TouchableOpacity onPress={() => setShowAdjModal(false)}>
               <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
@@ -538,7 +542,7 @@ export const StockOpnameScreen: React.FC = () => {
               />
             </View>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -608,48 +612,42 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   listContainer: {
-    padding: Spacing.lg,
-    gap: Spacing.md,
     paddingBottom: 100, // padding for FAB space
   },
-  movementCard: {
-    backgroundColor: Colors.backgroundSecondary,
-  },
-  cardRow: {
+  // ── Table Styles ──
+  tableContainer: { flex: 1 },
+  tableHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
     alignItems: 'center',
   },
-  cardLeft: {
-    flex: 1,
-    gap: 4,
+  tableHeaderText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
   },
-  productName: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderColor: Colors.border + '80',
+  },
+  tableRowEven: {
+    backgroundColor: Colors.surface,
+  },
+  tableCell: {
+    fontSize: 12,
     color: Colors.textPrimary,
   },
-  productCode: {
-    fontSize: 11,
-    color: Colors.textTertiary,
-  },
-  notesText: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-  },
-  dateText: {
-    fontSize: 10,
-    color: Colors.textMuted,
-  },
-  cardRight: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  qtyText: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-  },
+  // ── Types ──
   typeBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,

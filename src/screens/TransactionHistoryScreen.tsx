@@ -17,6 +17,7 @@ import {
   Alert,
   Share,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
@@ -24,7 +25,7 @@ import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { salesService } from '../services/sales.service';
 import type { Sale, PaymentMethod, SaleStatus } from '../types';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useFocusEffect } from '@react-navigation/native';
 import { AppToast } from '../utils/toast';
 
 // Badge warna untuk status pembayaran
@@ -87,11 +88,13 @@ export const TransactionHistoryScreen: React.FC = () => {
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const fetchSales = useCallback(
-    async (pageNum = 1, resetList = true) => {
-      if (pageNum === 1) {
-        resetList ? setLoading(true) : setRefreshing(true);
-      } else {
-        setLoadingMore(true);
+    async (pageNum = 1, resetList = true, isSilent = false) => {
+      if (!isSilent) {
+        if (pageNum === 1) {
+          resetList ? setLoading(true) : setRefreshing(true);
+        } else {
+          setLoadingMore(true);
+        }
       }
 
       try {
@@ -135,9 +138,16 @@ export const TransactionHistoryScreen: React.FC = () => {
     fetchSales(1, true);
   }, [filters, activeCustomerId]);
 
+  useFocusEffect(
+    useCallback(() => {
+      // Refresh silently when screen comes into focus
+      fetchSales(1, false, true);
+    }, [fetchSales])
+  );
+
   const onRefresh = () => {
     setPage(1);
-    fetchSales(1, true);
+    fetchSales(1, false, false);
   };
 
   const loadMore = () => {
@@ -228,43 +238,38 @@ export const TransactionHistoryScreen: React.FC = () => {
   const hasActiveFilters =
     filters.search || filters.status || filters.paymentMethod || filters.dateFrom || filters.dateTo;
 
-  const renderSaleCard = ({ item }: { item: Sale }) => {
-    const status = STATUS_CONFIG[item.status] || STATUS_CONFIG.PENDING;
+  const renderSaleCard = ({ item, index }: { item: Sale; index: number }) => {
+    let status = STATUS_CONFIG[item.status] || STATUS_CONFIG.PENDING;
+    if (item.status === 'COMPLETED' && item.paymentMethod === 'CREDIT' && item.paidAmount < item.grandTotal) {
+      status = { ...status, label: 'Piutang', bg: Colors.errorLight, color: Colors.error };
+    }
+    const isEven = index % 2 === 0;
+
     return (
-      <TouchableOpacity onPress={() => openDetail(item)} activeOpacity={0.7}>
-        <GlassCard padding={16} style={styles.saleCard}>
-          <View style={styles.saleCardTop}>
-            <View style={styles.saleCardLeft}>
-              <Text style={styles.invoiceNumber}>{item.invoiceNumber}</Text>
-              <Text style={styles.saleDate}>
-                {new Date(item.createdAt || item.saleDate).toLocaleDateString('id-ID', {
-                  timeZone: 'Asia/Makassar',
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </Text>
-              <Text style={styles.customerName}>
-                <Ionicons name="person-outline" size={11} color={Colors.textTertiary} />{' '}
-                {item.customer?.name || 'Umum'}
-              </Text>
-            </View>
-            <View style={styles.saleCardRight}>
-              <Text style={styles.grandTotal}>
-                Rp {item.grandTotal.toLocaleString('id-ID')}
-              </Text>
-              <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-                <Ionicons name={status.icon as any} size={10} color={status.color} />
-                <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
-              </View>
-              <Text style={styles.paymentMethod}>
-                {PAYMENT_LABEL[item.paymentMethod] || item.paymentMethod}
-              </Text>
-            </View>
+      <TouchableOpacity 
+        onPress={() => openDetail(item)} 
+        activeOpacity={0.7}
+        style={[styles.tableRow, isEven && styles.tableRowEven]}
+      >
+        <Text style={[styles.tableCell, { flex: 1.2 }]} numberOfLines={1}>
+          {new Date(item.createdAt || item.saleDate).toLocaleDateString('id-ID', {
+            day: '2-digit', month: '2-digit', year: '2-digit'
+          })}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 2.2, fontWeight: 'bold' }]} numberOfLines={1}>
+          {item.invoiceNumber}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 2.6 }]} numberOfLines={1}>
+          {item.customer?.name || 'Umum'}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 2.5, textAlign: 'right' }]} numberOfLines={1}>
+          {item.grandTotal.toLocaleString('id-ID')}
+        </Text>
+        <View style={{ flex: 1.5, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={[styles.statusBadgeSm, { backgroundColor: status.bg }]}>
+            <Text style={[styles.statusTextSm, { color: status.color }]}>{status.label}</Text>
           </View>
-        </GlassCard>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -342,44 +347,55 @@ export const TransactionHistoryScreen: React.FC = () => {
           <Text style={styles.loadingText}>Memuat transaksi...</Text>
         </View>
       ) : (
-        <FlatList
-          data={sales}
-          keyExtractor={(item) => item.id}
-          renderItem={renderSaleCard}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={Colors.primaryStart}
-            />
-          }
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.3}
+        <View style={styles.tableContainer}>
+          {/* Header Tabel */}
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, { flex: 1.2 }]}>Tgl</Text>
+            <Text style={[styles.tableHeaderText, { flex: 2.2 }]}>No. Ref</Text>
+            <Text style={[styles.tableHeaderText, { flex: 2.6 }]}>Pelanggan</Text>
+            <Text style={[styles.tableHeaderText, { flex: 2.5, textAlign: 'right' }]}>Total (Rp)</Text>
+            <Text style={[styles.tableHeaderText, { flex: 1.5, textAlign: 'center' }]}>Status</Text>
+          </View>
           
-          // Optimasi FlatList
-          removeClippedSubviews={true}
-          initialNumToRender={10}
-          maxToRenderPerBatch={5}
-          windowSize={5}
+          <FlatList
+            data={sales}
+            keyExtractor={(item) => item.id}
+            renderItem={renderSaleCard}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={Colors.primaryStart}
+              />
+            }
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.3}
+            
+            // Optimasi FlatList
+            removeClippedSubviews={true}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
 
-          ListFooterComponent={
-            loadingMore ? (
-              <ActivityIndicator size="small" color={Colors.primaryStart} style={{ padding: 16 }} />
-            ) : null
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Ionicons name="receipt-outline" size={48} color={Colors.textTertiary} />
-              <Text style={styles.emptyTitle}>Belum ada transaksi</Text>
-              <Text style={styles.emptyDesc}>
-                {hasActiveFilters
-                  ? 'Tidak ada transaksi sesuai filter yang dipilih.'
-                  : 'Transaksi yang sudah dilakukan akan tampil di sini.'}
-              </Text>
-            </View>
-          }
-        />
+            ListFooterComponent={
+              loadingMore ? (
+                <ActivityIndicator size="small" color={Colors.primaryStart} style={{ padding: 16 }} />
+              ) : null
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyBox}>
+                <Ionicons name="receipt-outline" size={48} color={Colors.textTertiary} />
+                <Text style={styles.emptyTitle}>Belum ada transaksi</Text>
+                <Text style={styles.emptyDesc}>
+                  {hasActiveFilters
+                    ? 'Tidak ada transaksi sesuai filter yang dipilih.'
+                    : 'Transaksi yang sudah dilakukan akan tampil di sini.'}
+                </Text>
+              </View>
+            }
+          />
+        </View>
       )}
 
       {/* ── FILTER MODAL ── */}
@@ -508,7 +524,7 @@ export const TransactionHistoryScreen: React.FC = () => {
 
       {/* ── DETAIL / INVOICE MODAL ── */}
       <Modal visible={showDetail} animationType="slide">
-        <View style={styles.detailContainer}>
+        <SafeAreaView style={styles.detailContainer}>
           <View style={styles.detailHeader}>
             <TouchableOpacity onPress={() => setShowDetail(false)}>
               <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
@@ -543,7 +559,10 @@ export const TransactionHistoryScreen: React.FC = () => {
                 </Text>
                 <View style={styles.invoiceStatusRow}>
                   {(() => {
-                    const s = STATUS_CONFIG[selectedSale.status] || STATUS_CONFIG.PENDING;
+                    let s = STATUS_CONFIG[selectedSale.status] || STATUS_CONFIG.PENDING;
+                    if (selectedSale.status === 'COMPLETED' && selectedSale.paymentMethod === 'CREDIT' && selectedSale.paidAmount < selectedSale.grandTotal) {
+                      s = { ...s, label: 'Piutang', bg: Colors.errorLight, color: Colors.error };
+                    }
                     return (
                       <View style={[styles.statusBadge, { backgroundColor: s.bg }]}>
                         <Ionicons name={s.icon as any} size={12} color={s.color} />
@@ -664,7 +683,7 @@ export const TransactionHistoryScreen: React.FC = () => {
               </View>
             </ScrollView>
           ) : null}
-        </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -734,16 +753,48 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 11, color: Colors.primaryStart, fontWeight: FontWeight.semibold },
   clearFilter: { fontSize: FontSize.xs, color: Colors.error, fontWeight: FontWeight.semibold },
-  // ── List ──
-  listContent: { padding: Spacing.lg, gap: Spacing.md },
-  saleCard: { marginBottom: 0 },
-  saleCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  saleCardLeft: { flex: 1 },
-  invoiceNumber: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.primaryStart },
-  saleDate: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
-  customerName: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 4 },
-  saleCardRight: { alignItems: 'flex-end', gap: 4 },
-  grandTotal: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  // ── List & Table ──
+  tableContainer: { flex: 1 },
+  listContent: { paddingBottom: Spacing.xl },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  tableHeaderText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderColor: Colors.border + '80',
+  },
+  tableRowEven: {
+    backgroundColor: Colors.surface,
+  },
+  tableCell: {
+    fontSize: 12,
+    color: Colors.textPrimary,
+  },
+  statusBadgeSm: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusTextSm: { fontSize: 9, fontWeight: 'bold' },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',

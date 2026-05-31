@@ -28,12 +28,17 @@
         "backgroundColor": "#0F0F23"
       },
       "package": "com.tbmasdarutama.mobile",
+      "googleServicesFile": "./google-services.json",
       "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT",
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN"
       ]
     },
     "plugins": [
@@ -41,6 +46,7 @@
       "expo-local-authentication",
       "expo-audio",
       "expo-updates",
+      "expo-notifications",
       "@react-native-community/datetimepicker"
     ],
     "extra": {

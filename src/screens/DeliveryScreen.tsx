@@ -620,9 +620,9 @@ export const DeliveryScreen: React.FC = () => {
           <ActivityIndicator size="large" color={Colors.primaryStart} />
         </View>
       ) : (
-        <GlassCard padding={0} style={{ flex: 1, marginHorizontal: Spacing.md, marginBottom: Spacing.lg, borderRadius: BorderRadius.md, overflow: 'hidden' }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={true}>
-            <View>
+        <View style={{ flex: 1 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={true} style={{ flex: 1 }}>
+            <View style={{ minWidth: 760 }}>
               {/* Table Header */}
               <View style={styles.tableHeader}>
                 <Text style={[styles.tableHeaderText, { width: 140 }]}>NO. DO</Text>
@@ -632,60 +632,58 @@ export const DeliveryScreen: React.FC = () => {
                 <Text style={[styles.tableHeaderText, { width: 120 }]}>STATUS</Text>
                 <Text style={[styles.tableHeaderText, { width: 80 }]}></Text>
               </View>
-              
-              {/* Table Body */}
-              <ScrollView 
-                showsVerticalScrollIndicator={true}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              >
-                {deliveryOrders.length === 0 ? (
+
+              <FlatList
+                data={deliveryOrders}
+                keyExtractor={(item) => item.id}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />}
+                contentContainerStyle={{ paddingBottom: Spacing['3xl'] }}
+                ListEmptyComponent={
                   <View style={[styles.emptyContainer, { width: 760 }]}>
                     <Ionicons name="paper-plane-outline" size={48} color={Colors.textTertiary} />
                     <Text style={styles.emptyText}>Tidak ada data Surat Jalan ditemukan.</Text>
                   </View>
-                ) : (
-                  deliveryOrders.map((item, index) => {
-                    const statusColor = getStatusColor(item.status);
-                    return (
-                      <TouchableOpacity 
-                        key={item.id}
-                        style={[styles.tableRow, index % 2 === 1 && styles.tableRowAlt]}
-                        onPress={() => {
-                          setSelectedDO(item);
-                          setShowDetailsModal(true);
-                        }}
-                      >
-                        <Text style={[styles.tableRowText, { width: 140, fontWeight: 'bold' }]}>{item.doNumber}</Text>
-                        <Text style={[styles.tableRowText, { width: 120 }]}>
-                          {new Date(item.deliveryDate).toLocaleDateString('id-ID', { timeZone: 'Asia/Makassar', day: '2-digit', month: 'short', year: 'numeric' })}
-                        </Text>
-                        <Text style={[styles.tableRowText, { width: 180 }]} numberOfLines={1}>
-                          {item.customer.name}
-                        </Text>
-                        <Text style={[styles.tableRowText, { width: 120, color: Colors.textTertiary }]}>
-                          {item.sale?.invoiceNumber || '-'}
-                        </Text>
-                        <View style={{ width: 120, justifyContent: 'center' }}>
-                          <View style={[styles.statusBadge, { backgroundColor: statusColor + '15', borderColor: statusColor, alignSelf: 'flex-start', margin: 0 }]}>
-                            <Text style={[styles.statusText, { color: statusColor, fontSize: 10 }]}>{item.status}</Text>
-                          </View>
+                }
+                renderItem={({ item, index }) => {
+                  const statusColor = getStatusColor(item.status);
+                  return (
+                    <TouchableOpacity 
+                      style={[styles.tableRow, index % 2 === 1 && styles.tableRowAlt]}
+                      onPress={() => {
+                        setSelectedDO(item);
+                        setShowDetailsModal(true);
+                      }}
+                    >
+                      <Text style={[styles.tableRowText, { width: 140, fontWeight: 'bold' }]}>{item.doNumber}</Text>
+                      <Text style={[styles.tableRowText, { width: 120 }]}>
+                        {new Date(item.deliveryDate).toLocaleDateString('id-ID', { timeZone: 'Asia/Makassar', day: '2-digit', month: 'short', year: 'numeric' })}
+                      </Text>
+                      <Text style={[styles.tableRowText, { width: 180 }]} numberOfLines={1}>
+                        {item.customer.name}
+                      </Text>
+                      <Text style={[styles.tableRowText, { width: 120, color: Colors.textTertiary }]}>
+                        {item.sale?.invoiceNumber || '-'}
+                      </Text>
+                      <View style={{ width: 120, justifyContent: 'center' }}>
+                        <View style={[styles.statusBadge, { backgroundColor: statusColor + '15', borderColor: statusColor, alignSelf: 'flex-start', margin: 0 }]}>
+                          <Text style={[styles.statusText, { color: statusColor, fontSize: 10 }]}>{item.status}</Text>
                         </View>
-                        <View style={{ width: 80, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                          <TouchableOpacity onPress={() => handlePrintDO(item)}>
-                            <Ionicons name="print-outline" size={18} color={Colors.primaryStart} />
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => handleShareDO(item)}>
-                            <Ionicons name="share-social-outline" size={18} color={Colors.success} />
-                          </TouchableOpacity>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </ScrollView>
+                      </View>
+                      <View style={{ width: 80, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                        <TouchableOpacity onPress={() => handlePrintDO(item)}>
+                          <Ionicons name="print-outline" size={18} color={Colors.primaryStart} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleShareDO(item)}>
+                          <Ionicons name="share-social-outline" size={18} color={Colors.success} />
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
             </View>
           </ScrollView>
-        </GlassCard>
+        </View>
       )}
 
       {/* ─── DO DETAILS MODAL ─── */}

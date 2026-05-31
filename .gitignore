@@ -7,3 +7,4 @@ dist/
 # Mengabaikan file sistem/editor
 .DS_Store
 *.log
+google-services.json

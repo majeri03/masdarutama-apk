@@ -1,0 +1,13 @@
+# EAS Ignore file
+# File ini berfungsi agar file-file ini TIDAK di-upload ke server Expo EAS.
+# Berbeda dengan .gitignore, kita TIDAK memasukkan google-services.json ke sini
+# agar EAS bisa membawanya saat build.
+
+node_modules/
+.expo/
+dist/
+.env
+
+.DS_Store
+*.log
+.git/

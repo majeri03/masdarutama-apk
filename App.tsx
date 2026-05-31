@@ -33,6 +33,9 @@ import { DebtScreen } from './src/screens/DebtScreen';
 import { WaOrdersScreen } from './src/screens/WaOrdersScreen';
 import { WaOrderConfirmScreen } from './src/screens/WaOrderConfirmScreen';
 import { CustomersScreen } from './src/screens/CustomersScreen';
+import { DeviceSettingsScreen } from './src/screens/DeviceSettingsScreen';
+import { NotificationCenterScreen } from './src/screens/NotificationCenterScreen';
+import AiChatScreen from './src/screens/AiChatScreen';
 
 // Import Sidebar Drawer
 import { SidebarDrawer } from './src/components/ui/SidebarDrawer';
@@ -41,6 +44,7 @@ import { FloatingShortcut } from './src/components/ui/FloatingShortcut';
 // Design Theme
 import { Colors, FontWeight, FontSize } from './src/constants/theme';
 import { useNotificationStore } from './src/stores/notification.store';
+import { useNotificationCenterStore } from './src/stores/notificationCenter.store';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
 
 import { navigationRef } from './src/utils/navigation';
@@ -102,6 +106,42 @@ const HeaderLogoutButton: React.FC = () => {
   );
 };
 
+// Notification button component for the header
+const HeaderNotificationButton: React.FC = () => {
+  const navigation = useNavigation<any>();
+  const unreadCount = useNotificationCenterStore((state) => 
+    state.notifications.filter(n => !n.isRead).length
+  );
+
+  return (
+    <TouchableOpacity
+      onPress={() => navigation.navigate('NotificationCenter')}
+      style={{ marginRight: 16, padding: 4, position: 'relative' }}
+    >
+      <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+      {unreadCount > 0 && (
+        <View style={{
+          position: 'absolute',
+          top: 2,
+          right: 2,
+          backgroundColor: Colors.error,
+          borderRadius: 10,
+          minWidth: 18,
+          height: 18,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 1.5,
+          borderColor: Colors.surface,
+        }}>
+          <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
+
 // Tab Navigator for Authenticated User
 const MainTabNavigator = () => {
   return (
@@ -159,13 +199,14 @@ const MainTabNavigator = () => {
           letterSpacing: 0.5,
         },
         headerLeft: () => <HeaderBurgerButton />,
+        headerRight: () => <HeaderNotificationButton />,
       })}
     >
       <Tab.Screen
         name="Dashboard"
         component={DashboardScreen}
         options={{
-          headerTitle: 'IKHTISAR TOKO',
+          headerTitle: 'BERANDA',
         }}
       />
       <Tab.Screen
@@ -225,12 +266,12 @@ export default function App() {
       const { createAudioPlayer } = require('expo-audio');
       const player = createAudioPlayer(require('./assets/Masdar_Utama.mp3'));
       player.play();
-      
+
       // Release resource after 5 seconds to prevent memory leaks
       setTimeout(() => {
         try {
           player.release();
-        } catch (e) {}
+        } catch (e) { }
       }, 5000);
     } catch (error) {
       console.warn('Could not play startup chime:', error);
@@ -291,7 +332,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <SidebarDrawer />
-      
+
       {showSplash && (
         <Animated.View style={[styles.splashContainer, { opacity: splashFadeAnim }]}>
           <View style={styles.splashContent}>
@@ -379,11 +420,26 @@ export default function App() {
                 component={CustomersScreen}
                 options={{ headerShown: false }}
               />
+              <Stack.Screen
+                name="DeviceSettings"
+                component={DeviceSettingsScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="NotificationCenter"
+                component={NotificationCenterScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="AiChat"
+                component={AiChatScreen}
+                options={{ headerShown: false }}
+              />
             </>
           )}
         </Stack.Navigator>
       </NavigationContainer>
-      
+
       {isAuthenticated && <FloatingShortcut />}
       <Toast />
     </SafeAreaProvider>

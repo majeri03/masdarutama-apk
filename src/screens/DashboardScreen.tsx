@@ -14,6 +14,7 @@ import { useAuthStore } from '../stores/auth.store';
 import { productService } from '../services/product.service';
 import { reportService } from '../services/report.service';
 import { salesService } from '../services/sales.service';
+import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight } from '../constants/theme';
 import { GlassCard, StatCard } from '../components/ui';
 import type { Product, FinancialReport } from '../types';
@@ -34,14 +35,14 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   const aggregateWeeklySales = (salesList: any[]) => {
     const daysOfWeek = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
     const result: { day: string; dateString: string; amount: number }[] = [];
-    
+
     // Create placeholders for the last 7 days
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const dayName = daysOfWeek[d.getDay()];
       const dateString = d.toLocaleDateString('id-ID', { timeZone: 'Asia/Makassar' }); // Makassar / WITA local format
-      
+
       result.push({
         day: dayName,
         dateString: dateString,
@@ -114,19 +115,43 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
     });
   };
 
+  const unreadCount = useNotificationCenterStore((state) =>
+    state.notifications.filter(n => !n.isRead).length
+  );
+
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <View style={{ marginRight: 16 }}>
-          {storeLogo ? (
-            <Image source={{ uri: storeLogo }} style={{ width: 36, height: 36, borderRadius: 8 }} resizeMode="contain" />
-          ) : (
-            <Image source={require('../../assets/logomasdarutama.png')} style={{ width: 36, height: 36, borderRadius: 8 }} resizeMode="contain" />
-          )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 16, gap: 12 }}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('NotificationCenter')}
+            style={{ padding: 4, position: 'relative' }}
+          >
+            <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+            {unreadCount > 0 && (
+              <View style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                backgroundColor: Colors.error,
+                borderRadius: 10,
+                minWidth: 18,
+                height: 18,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1.5,
+                borderColor: Colors.surface,
+              }}>
+                <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       ),
     });
-  }, [navigation, storeLogo]);
+  }, [navigation, storeLogo, unreadCount]);
 
   if (loading) {
     return (
@@ -195,10 +220,10 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
                       <View style={styles.barContainer}>
                         {d.amount > 0 ? (
                           <Text style={styles.barValueText}>
-                            {d.amount >= 1000000 
-                              ? `${(d.amount / 1000000).toFixed(1)}M` 
-                              : d.amount >= 1000 
-                                ? `${Math.round(d.amount / 1000)}k` 
+                            {d.amount >= 1000000
+                              ? `${(d.amount / 1000000).toFixed(1)}M`
+                              : d.amount >= 1000
+                                ? `${Math.round(d.amount / 1000)}k`
                                 : d.amount}
                           </Text>
                         ) : null}

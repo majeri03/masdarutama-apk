@@ -251,6 +251,21 @@ export const SettingsScreen: React.FC = () => {
 
             <View style={styles.divider} />
 
+            <TouchableOpacity style={styles.settingItem} onPress={() => navigation.navigate('DeviceSettings')}>
+              <View style={styles.settingItemLeft}>
+                <View style={[styles.iconBox, { backgroundColor: Colors.info + '18' }]}>
+                  <Ionicons name="hardware-chip-outline" size={20} color={Colors.info} />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Pengaturan Perangkat</Text>
+                  <Text style={styles.settingDesc}>Printer Bluetooth, USB, & Scanner</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
             <TouchableOpacity style={styles.settingItem} onPress={() => navigation.navigate('InvoiceLayout')}>
               <View style={styles.settingItemLeft}>
                 <View style={[styles.iconBox, { backgroundColor: Colors.primaryStart + '18' }]}>

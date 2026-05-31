@@ -6,6 +6,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../constants/api';
 import { useInvoiceLayoutStore } from '../stores/invoice-layout.store';
 import type { Sale } from '../types';
 import { acquirePrintLock, releasePrintLock } from './printLock';
+import { printerService } from '../services/printer.service';
 
 const PAYMENT_LABEL: Record<string, string> = {
   CASH: 'Tunai',
@@ -247,6 +248,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
         <meta charset="utf-8">
         <title>Surat Jalan ${sale.invoiceNumber}</title>
         <style>
+          @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
           body {
             font-family: Arial, sans-serif;
             color: #000000;
@@ -454,6 +456,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
         <meta charset="utf-8">
         <title>Faktur NCR ${sale.invoiceNumber}</title>
         <style>
+          @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
           body {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #000000;
@@ -790,6 +793,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
         <meta charset="utf-8">
         <title>Invoice A4 ${sale.invoiceNumber}</title>
         <style>
+          @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
           body {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #000000;
@@ -1092,12 +1096,90 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
   }
 };
 
+export const generateThermalReceiptString = (sale: Sale, store: any): string => {
+  const layout = useInvoiceLayoutStore.getState();
+  const dateStr = new Date(sale.createdAt || sale.saleDate).toLocaleDateString('id-ID', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+  
+  let paperWidthChars = 32;
+  if (layout.paperSize && layout.paperSize.includes('80')) {
+    paperWidthChars = 48;
+  } else if (layout.paperSize && parseInt(layout.paperSize) > 80) {
+    paperWidthChars = 48; // max typical is 80mm
+  }
+  const separator = '-'.repeat(paperWidthChars);
+  const doubleSeparator = '='.repeat(paperWidthChars);
+  
+  let receipt = '';
+  
+  // Header
+  if (layout.showHeader) {
+    receipt += `[C]<b>${store.name || 'TB Masdar Utama'}</b>\n`;
+    if (store.tagline) receipt += `[C]${store.tagline}\n`;
+    receipt += `[C]${store.address || ''}\n`;
+    receipt += `[C]Telp: ${store.phone || ''}\n`;
+    receipt += `[C]${separator}\n`;
+  }
+
+  // Meta
+  receipt += `[L]No. INV: ${sale.invoiceNumber}\n`;
+  receipt += `[L]Tanggal: ${dateStr}\n`;
+  receipt += `[L]Kasir  : ${sale.cashier?.name || '-'}\n`;
+  if (layout.showCustomerInfo && sale.customer) {
+    receipt += `[L]Plgn   : ${sale.customer.name}\n`;
+  }
+  receipt += `[C]${doubleSeparator}\n`;
+  receipt += `[L]<b>DAFTAR BARANG</b>\n`;
+  
+  // Items
+  const items = sale.saleItems || [];
+  items.forEach((item) => {
+    receipt += `[L]<b>${item.product.name}</b>\n`;
+    receipt += `[L]${item.quantity} ${item.unit?.name || 'Unit'} x Rp ${item.unitPrice.toLocaleString('id-ID')}\n`;
+    if (item.discount > 0) {
+      receipt += `[L]Diskon: -Rp ${item.discount.toLocaleString('id-ID')}\n`;
+    }
+    receipt += `[R]Rp ${item.subtotal.toLocaleString('id-ID')}\n`;
+  });
+  
+  receipt += `[C]${separator}\n`;
+  
+  // Totals
+  receipt += `[L]Subtotal[R]Rp ${sale.totalAmount.toLocaleString('id-ID')}\n`;
+  if (sale.discount > 0) receipt += `[L]Diskon[R]-Rp ${sale.discount.toLocaleString('id-ID')}\n`;
+  if (sale.tax > 0) receipt += `[L]Pajak[R]Rp ${sale.tax.toLocaleString('id-ID')}\n`;
+  receipt += `[L]<b>GRAND TOTAL</b>[R]<b>Rp ${sale.grandTotal.toLocaleString('id-ID')}</b>\n`;
+  receipt += `[C]${separator}\n`;
+  receipt += `[L]Bayar (${PAYMENT_LABEL[sale.paymentMethod] || sale.paymentMethod})[R]Rp ${sale.paidAmount.toLocaleString('id-ID')}\n`;
+  receipt += `[L]Kembalian[R]Rp ${sale.changeAmount.toLocaleString('id-ID')}\n`;
+  
+  // Footer
+  if (layout.showFooter) {
+    receipt += `[C]${separator}\n`;
+    receipt += `[C]<b>TERIMA KASIH</b>\n`;
+    receipt += `[C]${layout.footerTerms || 'Barang yang sudah dibeli tidak dapat ditukar atau dikembalikan'}\n`;
+  }
+  
+  return receipt;
+};
+
 export const printInvoice = async (sale: Sale) => {
   if (!acquirePrintLock()) return;
   try {
     const store = await getStoreSettings();
-    const html = generateInvoiceHtml(sale, store);
-    await Print.printAsync({ html });
+    const activePrinter = printerService.getActivePrinter();
+    const layout = useInvoiceLayoutStore.getState();
+
+    if (activePrinter && activePrinter.type !== 'SYSTEM' && layout.layoutType === 'STRUK_KECIL') {
+      // Print via Native ESC/POS Thermal Printer
+      const rawReceipt = generateThermalReceiptString(sale, store);
+      await printerService.printReceipt(rawReceipt);
+    } else {
+      // Fallback Print via System (Wi-Fi, A4, PDF)
+      const html = generateInvoiceHtml(sale, store);
+      await Print.printAsync({ html });
+    }
   } catch (error) {
     console.error('[PRINT_INVOICE] Error:', error);
     Alert.alert('Gagal Cetak', 'Gagal memproses cetak struk invoice.');

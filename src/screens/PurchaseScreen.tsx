@@ -381,8 +381,9 @@ export const PurchaseScreen: React.FC = () => {
     }
   };
 
-  const renderPOItem = ({ item }: { item: PurchaseOrder }) => {
+  const renderPOItem = ({ item, index }: { item: PurchaseOrder; index: number }) => {
     const statusColor = getStatusColor(item.status);
+    const isEven = index % 2 === 0;
     
     return (
       <TouchableOpacity
@@ -390,30 +391,27 @@ export const PurchaseScreen: React.FC = () => {
           setSelectedPO(item);
           setShowDetailsModal(true);
         }}
+        style={[styles.tableRow, isEven && styles.tableRowEven]}
       >
-        <GlassCard padding={16} style={styles.poCard}>
-          <View style={styles.rowBetween}>
-            <Text style={styles.poNumber}>{item.poNumber}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: statusColor + '15', borderColor: statusColor }]}>
-              <Text style={[styles.statusText, { color: statusColor }]}>{item.status}</Text>
-            </View>
+        <Text style={[styles.tableCell, { flex: 1.2 }]} numberOfLines={1}>
+          {new Date(item.purchaseDate).toLocaleDateString('id-ID', {
+            day: '2-digit', month: '2-digit', year: '2-digit'
+          })}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 2, fontWeight: 'bold' }]} numberOfLines={1}>
+          {item.poNumber}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 2.5 }]} numberOfLines={1}>
+          {item.supplier.name}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 2.5, textAlign: 'right' }]} numberOfLines={1}>
+          {item.grandTotal.toLocaleString('id-ID')}
+        </Text>
+        <View style={{ flex: 1.5, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={[styles.statusBadgeSm, { backgroundColor: statusColor + '20' }]}>
+            <Text style={[styles.statusTextSm, { color: statusColor }]}>{item.status}</Text>
           </View>
-          
-          <Text style={styles.supplierName}>{item.supplier.name}</Text>
-          <Text style={styles.purchaseDate}>
-            <Ionicons name="calendar-outline" size={12} color={Colors.textTertiary} /> {new Date(item.purchaseDate).toLocaleDateString('id-ID', { timeZone: 'Asia/Makassar', day: '2-digit', month: 'long', year: 'numeric' })}
-          </Text>
-
-          <View style={styles.divider} />
-
-          <View style={styles.rowBetween}>
-            <View style={{ gap: 2 }}>
-              <Text style={styles.totalLabel}>Total PO</Text>
-              <Text style={styles.totalValue}>Rp {item.grandTotal.toLocaleString('id-ID')}</Text>
-            </View>
-            <Text style={styles.itemsCount}>{item.purchaseItems.length} Barang</Text>
-          </View>
-        </GlassCard>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -474,28 +472,39 @@ export const PurchaseScreen: React.FC = () => {
           <ActivityIndicator size="large" color={Colors.primaryStart} />
         </View>
       ) : (
-        <FlatList
-          data={purchases}
-          keyExtractor={(item) => item.id}
-          renderItem={renderPOItem}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />
-          }
-          
-          // Optimasi FlatList
-          removeClippedSubviews={true}
-          initialNumToRender={10}
-          maxToRenderPerBatch={5}
-          windowSize={5}
+        <View style={styles.tableContainer}>
+          {/* Header Tabel */}
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, { flex: 1.2 }]}>Tgl</Text>
+            <Text style={[styles.tableHeaderText, { flex: 2 }]}>No. PO</Text>
+            <Text style={[styles.tableHeaderText, { flex: 2.5 }]}>Supplier</Text>
+            <Text style={[styles.tableHeaderText, { flex: 2.5, textAlign: 'right' }]}>Total (Rp)</Text>
+            <Text style={[styles.tableHeaderText, { flex: 1.5, textAlign: 'center' }]}>Status</Text>
+          </View>
 
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="receipt-outline" size={48} color={Colors.textTertiary} />
-              <Text style={styles.emptyText}>Tidak ada data Purchase Order ditemukan.</Text>
-            </View>
-          }
-        />
+          <FlatList
+            data={purchases}
+            keyExtractor={(item) => item.id}
+            renderItem={renderPOItem}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />
+            }
+            
+            // Optimasi FlatList
+            removeClippedSubviews={true}
+            initialNumToRender={10}
+            maxToRenderPerBatch={5}
+            windowSize={5}
+
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="receipt-outline" size={48} color={Colors.textTertiary} />
+                <Text style={styles.emptyText}>Tidak ada data Purchase Order ditemukan.</Text>
+              </View>
+            }
+          />
+        </View>
       )}
 
       {/* ─── PO DETAILS MODAL ─── */}
@@ -1035,14 +1044,52 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.medium,
   },
   filterTextActive: {
-    color: '#FFFFFF',
+    color: '#fff',
     fontWeight: FontWeight.bold,
   },
-  // ─── List Content ───
-  listContent: {
-    padding: Spacing.lg,
-    gap: Spacing.lg,
+  // ── List & Table ──
+  tableContainer: { flex: 1 },
+  listContent: { paddingBottom: Spacing.xl },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
   },
+  tableHeaderText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderColor: Colors.border + '80',
+  },
+  tableRowEven: {
+    backgroundColor: Colors.surface,
+  },
+  tableCell: {
+    fontSize: 12,
+    color: Colors.textPrimary,
+  },
+  statusBadgeSm: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusTextSm: { fontSize: 9, fontWeight: 'bold' },
+  // ─── List Content ───
   poCard: {
     backgroundColor: Colors.backgroundSecondary,
   },
@@ -1052,7 +1099,6 @@ const styles = StyleSheet.create({
     color: Colors.primaryStart,
   },
   statusBadge: {
-    borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: BorderRadius.sm,

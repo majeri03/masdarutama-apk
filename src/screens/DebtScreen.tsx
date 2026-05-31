@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
+import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { debtService, DebtPaymentPayload } from '../services/debt.service';
 import { masterService } from '../services/master.service';
 import { useSidebarStore } from '../stores/sidebar.store';
@@ -61,6 +62,8 @@ export const DebtScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
 
   // Repayment Modal
   const [showPayModal, setShowPayModal] = useState(false);
@@ -94,12 +97,29 @@ export const DebtScreen: React.FC = () => {
       if (res.success && res.data) {
         setDebts(res.data);
         
-        // Calculate totals
+        // Calculate totals based on filtered results
         let totalDebt = 0;
         let totalPaid = 0;
         let totalRemaining = 0;
         
-        res.data.forEach((d) => {
+        let finalData = res.data;
+
+        // Client-side date filter if service doesn't support it directly
+        if (startDate || endDate) {
+          finalData = finalData.filter((d: any) => {
+            const txDate = new Date(d.createdAt);
+            if (startDate && txDate < startDate) return false;
+            if (endDate) {
+              const end = new Date(endDate);
+              end.setHours(23, 59, 59, 999);
+              if (txDate > end) return false;
+            }
+            return true;
+          });
+          setDebts(finalData);
+        }
+
+        finalData.forEach((d: any) => {
           totalDebt += Number(d.totalDebt || 0);
           totalPaid += Number(d.paidAmount || 0);
           totalRemaining += Number(d.remainingDebt || 0);
@@ -115,7 +135,7 @@ export const DebtScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeTab, search, statusFilter]);
+  }, [activeTab, search, statusFilter, startDate, endDate]);
 
   useFocusEffect(
     useCallback(() => {
@@ -125,7 +145,7 @@ export const DebtScreen: React.FC = () => {
 
   useEffect(() => {
     fetchDebts();
-  }, [activeTab, statusFilter]);
+  }, [activeTab, statusFilter, startDate, endDate]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -327,21 +347,39 @@ export const DebtScreen: React.FC = () => {
 
       {/* Search and Filters */}
       <View style={styles.filterBar}>
-        <View style={styles.searchWrapper}>
-          <Ionicons name="search-outline" size={18} color={Colors.textTertiary} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder={`Cari nama / nomor...`}
-            placeholderTextColor={Colors.textTertiary}
-            value={search}
-            onChangeText={setSearch}
-            onSubmitEditing={() => fetchDebts()}
-          />
-          {search ? (
-            <TouchableOpacity onPress={() => { setSearch(''); setTimeout(() => fetchDebts(), 50); }}>
-              <Ionicons name="close-circle" size={18} color={Colors.textTertiary} />
-            </TouchableOpacity>
-          ) : null}
+        <View style={{ flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm }}>
+          <View style={[styles.searchWrapper, { flex: 1, marginHorizontal: 0, marginBottom: 0 }]}>
+            <Ionicons name="search-outline" size={18} color={Colors.textTertiary} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder={`Cari nama / nomor...`}
+              placeholderTextColor={Colors.textTertiary}
+              value={search}
+              onChangeText={setSearch}
+              onSubmitEditing={() => fetchDebts()}
+            />
+            {search ? (
+              <TouchableOpacity onPress={() => { setSearch(''); setTimeout(() => fetchDebts(), 50); }}>
+                <Ionicons name="close-circle" size={18} color={Colors.textTertiary} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          <View style={{ flex: 1 }}>
+            <DatePickerInput 
+              value={startDate} 
+              onChange={setStartDate} 
+              placeholder="Dari Tgl" 
+              compact={true} 
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <DatePickerInput 
+              value={endDate} 
+              onChange={setEndDate} 
+              placeholder="Sp Tgl" 
+              compact={true} 
+            />
+          </View>
         </View>
         
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusScroll} contentContainerStyle={styles.statusContent}>

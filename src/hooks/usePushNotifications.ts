@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import api from '../services/api';
+import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -38,6 +39,11 @@ export function usePushNotifications() {
 
     notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
       setNotification(notification);
+      useNotificationCenterStore.getState().addNotification({
+        title: notification.request.content.title || 'Notifikasi Baru',
+        body: notification.request.content.body || '',
+        data: notification.request.content.data,
+      });
     });
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {

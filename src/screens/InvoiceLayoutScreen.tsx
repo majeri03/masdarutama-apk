@@ -20,10 +20,26 @@ import { API_ENDPOINTS, API_BASE_URL } from '../constants/api';
 import { useInvoiceLayoutStore, LayoutType } from '../stores/invoice-layout.store';
 import { AppToast } from '../utils/toast';
 
+const THERMAL_PRESETS = ['58mm', '80mm', '76mm', '57mm'];
+const DOCUMENT_PRESETS = ['A4', 'A5', 'F4', 'Letter', 'HVS'];
+
 export const InvoiceLayoutScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const layout = useInvoiceLayoutStore();
   const [storeSettings, setStoreSettings] = React.useState<any>(null);
+
+  // ── Paper size mode state ──
+  const [thermalMode, setThermalMode] = React.useState<'preset' | 'custom'>(
+    THERMAL_PRESETS.includes(layout.paperSize) ? 'preset' : 'custom'
+  );
+  const [thermalCustomW, setThermalCustomW] = React.useState(
+    THERMAL_PRESETS.includes(layout.paperSize) ? '58' : layout.paperSize.replace('mm', '')
+  );
+  const [docMode, setDocMode] = React.useState<'preset' | 'custom'>(
+    DOCUMENT_PRESETS.includes(layout.invoicePaperSize) ? 'preset' : 'custom'
+  );
+  const [docCustomW, setDocCustomW] = React.useState('210');
+  const [docCustomH, setDocCustomH] = React.useState('297');
 
   React.useEffect(() => {
     const fetchStore = async () => {
@@ -467,6 +483,136 @@ export const InvoiceLayoutScreen: React.FC = () => {
           </View>
         </GlassCard>
 
+        <GlassCard padding={16} style={styles.controlGroup}>
+          <Text style={styles.formGroupTitle}>Pengaturan Ukuran Kertas</Text>
+
+          {/* ── THERMAL ── */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Lebar Thermal POS (Struk Kecil)</Text>
+            {/* Mode toggle */}
+            <View style={styles.modeToggleRow}>
+              {(['preset', 'custom'] as const).map((m) => (
+                <TouchableOpacity
+                  key={m}
+                  onPress={() => {
+                    setThermalMode(m);
+                    if (m === 'preset') layout.updateLayout({ paperSize: THERMAL_PRESETS[0] });
+                    else layout.updateLayout({ paperSize: `${thermalCustomW}mm` });
+                  }}
+                  style={[styles.modeToggleBtn, thermalMode === m && styles.modeToggleBtnActive]}
+                >
+                  <Text style={[styles.modeToggleTxt, thermalMode === m && styles.modeToggleTxtActive]}>
+                    {m === 'preset' ? '⊞ Preset' : '✎ Custom mm'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {thermalMode === 'preset' ? (
+              <View style={styles.presetRow}>
+                {THERMAL_PRESETS.map((size) => (
+                  <TouchableOpacity
+                    key={size}
+                    onPress={() => layout.updateLayout({ paperSize: size })}
+                    style={[styles.presetBtn, layout.paperSize === size && styles.presetBtnActive]}
+                  >
+                    <Text style={[styles.presetBtnTxt, layout.paperSize === size && styles.presetBtnTxtActive]}>
+                      {size}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.customRow}>
+                <TextInput
+                  style={[styles.textInput, styles.customInput]}
+                  value={thermalCustomW}
+                  onChangeText={(val) => {
+                    setThermalCustomW(val);
+                    layout.updateLayout({ paperSize: `${val}mm` });
+                  }}
+                  placeholder="58"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>mm</Text>
+                <View style={styles.previewTag}>
+                  <Text style={styles.previewTagTxt}>= {thermalCustomW || '58'}mm</Text>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* ── DOCUMENT ── */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Ukuran Kertas Dokumen (Invoice/NCR/DO)</Text>
+            {/* Mode toggle */}
+            <View style={styles.modeToggleRow}>
+              {(['preset', 'custom'] as const).map((m) => (
+                <TouchableOpacity
+                  key={m}
+                  onPress={() => {
+                    setDocMode(m);
+                    if (m === 'preset') layout.updateLayout({ invoicePaperSize: DOCUMENT_PRESETS[0] });
+                    else layout.updateLayout({ invoicePaperSize: `${docCustomW}mm x ${docCustomH}mm` });
+                  }}
+                  style={[styles.modeToggleBtn, docMode === m && styles.modeToggleBtnActive]}
+                >
+                  <Text style={[styles.modeToggleTxt, docMode === m && styles.modeToggleTxtActive]}>
+                    {m === 'preset' ? '⊞ Preset' : '✎ W × H mm'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {docMode === 'preset' ? (
+              <View style={styles.presetRow}>
+                {DOCUMENT_PRESETS.map((size) => (
+                  <TouchableOpacity
+                    key={size}
+                    onPress={() => layout.updateLayout({ invoicePaperSize: size })}
+                    style={[styles.presetBtn, layout.invoicePaperSize === size && styles.presetBtnActive]}
+                  >
+                    <Text style={[styles.presetBtnTxt, layout.invoicePaperSize === size && styles.presetBtnTxtActive]}>
+                      {size}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.customRow}>
+                <TextInput
+                  style={[styles.textInput, styles.customInput]}
+                  value={docCustomW}
+                  onChangeText={(val) => {
+                    setDocCustomW(val);
+                    layout.updateLayout({ invoicePaperSize: `${val}mm x ${docCustomH}mm` });
+                  }}
+                  placeholder="210"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>mm</Text>
+                <Text style={[styles.unitLabel, { fontSize: 18, fontWeight: 'bold', marginHorizontal: 4, color: Colors.textTertiary }]}>×</Text>
+                <TextInput
+                  style={[styles.textInput, styles.customInput]}
+                  value={docCustomH}
+                  onChangeText={(val) => {
+                    setDocCustomH(val);
+                    layout.updateLayout({ invoicePaperSize: `${docCustomW}mm x ${val}mm` });
+                  }}
+                  placeholder="297"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>mm</Text>
+              </View>
+            )}
+            <Text style={styles.refText}>A4=210×297 · A5=148×210 · F4=215×330 · Letter=216×279</Text>
+          </View>
+        </GlassCard>
+
+
         {/* 2. Toggles Visibilitas */}
         <GlassCard padding={0} style={styles.controlGroup}>
           <View style={styles.switchRow}>
@@ -754,6 +900,91 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     fontSize: FontSize.sm,
     color: Colors.textPrimary,
+  },
+  // ── Paper size preset/custom styles ──
+  modeToggleRow: {
+    flexDirection: 'row',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  modeToggleBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    backgroundColor: '#FFFFFF',
+  },
+  modeToggleBtnActive: {
+    backgroundColor: Colors.primaryStart,
+  },
+  modeToggleTxt: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.medium,
+    color: Colors.textSecondary,
+  },
+  modeToggleTxtActive: {
+    color: '#FFFFFF',
+    fontWeight: FontWeight.bold,
+  },
+  presetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 2,
+  },
+  presetBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: '#FFFFFF',
+  },
+  presetBtnActive: {
+    backgroundColor: Colors.primaryStart,
+    borderColor: Colors.primaryStart,
+  },
+  presetBtnTxt: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
+  },
+  presetBtnTxtActive: {
+    color: '#FFFFFF',
+  },
+  customRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  customInput: {
+    width: 80,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.sm,
+  },
+  unitLabel: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.medium,
+  },
+  previewTag: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  previewTagTxt: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    fontFamily: 'monospace',
+  },
+  refText: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    marginTop: 6,
   },
   scaleBtn: {
     padding: 6,

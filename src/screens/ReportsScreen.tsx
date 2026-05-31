@@ -22,7 +22,7 @@ import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
 export const ReportsScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('daily');
   const [financials, setFinancials] = useState<FinancialReport | null>(null);
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -30,9 +30,21 @@ export const ReportsScreen: React.FC = () => {
 
   const fetchData = async (activePeriod = period) => {
     try {
+      let params: any = { period: activePeriod };
+      
+      // If yearly, send dateFrom and dateTo for the current year
+      // This is efficient and automatic for the next year
+      if (activePeriod === 'yearly') {
+        const currentYear = new Date().getFullYear();
+        params = {
+          dateFrom: new Date(currentYear, 0, 1).toISOString(),
+          dateTo: new Date(currentYear, 11, 31, 23, 59, 59, 999).toISOString(),
+        };
+      }
+
       const [finRes, salesRes] = await Promise.all([
-        reportService.getFinancialReport({ period: activePeriod }),
-        salesService.getSales({ limit: 10 }),
+        reportService.getFinancialReport(params),
+        salesService.getSales({ limit: activePeriod === 'yearly' ? 50 : 10, dateFrom: params.dateFrom, dateTo: params.dateTo }),
       ]);
 
       if (finRes.success && finRes.data) {
@@ -54,7 +66,7 @@ export const ReportsScreen: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handlePeriodChange = (newPeriod: 'daily' | 'weekly' | 'monthly') => {
+  const handlePeriodChange = (newPeriod: 'daily' | 'weekly' | 'monthly' | 'yearly') => {
     setPeriod(newPeriod);
     setLoading(true);
     fetchData(newPeriod);
@@ -68,7 +80,8 @@ export const ReportsScreen: React.FC = () => {
   const getPeriodLabel = () => {
     if (period === 'daily') return 'Hari Ini';
     if (period === 'weekly') return 'Minggu Ini';
-    return 'Bulan Ini';
+    if (period === 'monthly') return 'Bulan Ini';
+    return `Tahun ${new Date().getFullYear()}`;
   };
 
   const generateReportHtml = () => {
@@ -232,14 +245,14 @@ export const ReportsScreen: React.FC = () => {
     >
       {/* Period Selector Tabs */}
       <View style={styles.periodTabs}>
-        {(['daily', 'weekly', 'monthly'] as const).map((p) => (
+        {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
           <TouchableOpacity
             key={p}
             style={[styles.tab, period === p && styles.tabActive]}
             onPress={() => handlePeriodChange(p)}
           >
             <Text style={[styles.tabText, period === p && styles.tabTextActive]}>
-              {p === 'daily' ? 'Harian' : p === 'weekly' ? 'Mingguan' : 'Bulanan'}
+              {p === 'daily' ? 'Harian' : p === 'weekly' ? 'Mingguan' : p === 'monthly' ? 'Bulanan' : 'Tahunan'}
             </Text>
           </TouchableOpacity>
         ))}
