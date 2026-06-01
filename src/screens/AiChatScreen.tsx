@@ -667,9 +667,9 @@ const AiSettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () =
             <Text style={s.settingsSectionLabel}>MODEL AI OFFLINE (LOKAL)</Text>
             <View style={[s.modelCard, { flexDirection: 'column', alignItems: 'stretch' }]}>
               <View style={s.modelInfo}>
-                <Text style={s.modelName}>🧠 Qwen 2.5 3B Chat</Text>
-                <Text style={s.modelDesc}>Sangat pintar & akurat · ~2.1 GB · Q4_K_M quantized</Text>
-                <Text style={s.modelDesc}>Berjalan 100% offline di memori HP</Text>
+                <Text style={s.modelName}>🧠 MIDA AI Engine (Qwen 2.5 0.5B)</Text>
+                <Text style={s.modelDesc}>Super Kilat & Ringan · ~395 MB · Optimized Quantized</Text>
+                <Text style={s.modelDesc}>Berjalan 100% offline tanpa menguras RAM HP</Text>
               </View>
 
               {isModelDownloaded ? (

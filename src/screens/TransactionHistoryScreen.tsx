@@ -27,7 +27,7 @@ import type { Sale, PaymentMethod, SaleStatus } from '../types';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
 import { useRoute, useFocusEffect } from '@react-navigation/native';
 import { AppToast } from '../utils/toast';
-
+import * as Clipboard from 'expo-clipboard';
 // Badge warna untuk status pembayaran
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string; icon: string }> = {
   COMPLETED: { color: Colors.success, bg: Colors.successLight, label: 'Lunas', icon: 'checkmark-circle' },
@@ -545,7 +545,27 @@ export const TransactionHistoryScreen: React.FC = () => {
             <ScrollView contentContainerStyle={styles.detailContent}>
               {/* Invoice Info */}
               <GlassCard padding={20} style={styles.invoiceCard} tinted>
-                <Text style={styles.invoiceNo}>{selectedSale.invoiceNumber}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, width: '100%' }}>
+                  <Text style={styles.invoiceNo}>{selectedSale.invoiceNumber}</Text>
+                  
+                  <TouchableOpacity 
+                    onPress={async () => {
+                      await Clipboard.setStringAsync(selectedSale.invoiceNumber);
+                      AppToast.success('Tersalin', 'Nomor invoice berhasil disalin ke clipboard.');
+                    }}
+                    style={{ 
+                      padding: 6, 
+                      backgroundColor: Colors.primaryStart + '15', 
+                      borderRadius: BorderRadius.sm,
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="copy-outline" size={16} color={Colors.primaryStart} />
+                  </TouchableOpacity>
+                </View>
+
                 <Text style={styles.invoiceDateBig}>
                   {new Date(selectedSale.createdAt || selectedSale.saleDate).toLocaleDateString('id-ID', {
                     timeZone: 'Asia/Makassar',

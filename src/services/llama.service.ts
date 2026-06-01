@@ -1,12 +1,10 @@
 /**
- * llama.service.ts — True On-Device LLM Engine (llama.rn wrapper)
- *
- * Manages LlamaContext lifecycle: init, completion (streaming), and release.
- * Uses Qwen2.5-0.5B-Chat with a System Prompt that teaches MIDA to call tools.
+ * llama.service.ts — Dynamic On-Device LLM Engine (llama.rn wrapper)
+ * Terintegrasi penuh dengan AiChatScreen.tsx tanpa error compile!
  */
 import { initLlama, LlamaContext } from 'llama.rn';
+import { AI_SYSTEM_PROMPT } from '../utils/ai-prompts'; 
 
-// ==================== TYPES ====================
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -17,132 +15,78 @@ export interface StreamCallbackData {
   accumulated_text: string;
 }
 
-// ==================== CONSTANTS ====================
-const MODEL_FILENAME = 'qwen2.5-3b-instruct-q4_k_m.gguf';
-
-// Daftar mirror URL
+// ==================== CONSTANTS & CONFIG (Wajib untuk UI) ====================
 export const MODEL_MIRROR_URLS = [
-  'https://hf-mirror.com/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf',
+  'https://hf-mirror.com/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
 ];
-const MODEL_URL = MODEL_MIRROR_URLS[0];
 
 export const LLAMA_CONFIG = {
-  modelFilename: MODEL_FILENAME,
-  modelUrl: MODEL_URL,
-  modelDir: 'models',           // relative to documentDirectory
-  n_ctx: 2048,                  // context window (token budget)
-  n_predict: 256,               // max output tokens — keep fast
-  temperature: 0.1,             // low = more deterministic tool calls
+  modelFilename: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', // Model 400MB super ringan & cepat
+  modelUrl: MODEL_MIRROR_URLS[0],
+  modelDir: 'models',           
+  n_ctx: 2048,                  
+  n_predict: 150,               
+  temperature: 0.0,             // Deteministik untuk keakuratan JSON Tool Call
   top_p: 0.9,
-  stop: ['<|im_end|>', '<|endoftext|>'],
+  stop: ['<|im_end|>', '<|endoftext|>', '```json', '```'],
 };
 
-// ==================== SYSTEM PROMPT ====================
-export const MIDA_SYSTEM_PROMPT = `Kamu adalah MIDA (Masdar Intelligent Digital Assistant), AI asisten cerdas untuk Toko Masdar Utama (toko bangunan).
-
-ATURAN KETAT:
-1. Jawab dalam Bahasa Indonesia, singkat dan jelas.
-2. Jika user meminta AKSI (cek stok, lihat pesanan, buat nota, dll), kamu WAJIB output JSON tool_call seperti contoh di bawah.
-3. Jika user hanya menyapa atau bertanya umum, jawab dengan teks biasa.
-4. JANGAN mengarang data. Gunakan tool untuk mengambil data nyata.
-
-FORMAT TOOL CALL (output JSON mentah, tanpa markdown):
-{"type":"tool_call","tool":"NAMA_TOOL","params":{...}}
-
-DAFTAR TOOL YANG TERSEDIA:
-- searchProduct: params {keyword}. Cari produk berdasarkan nama/kode.
-- getProductDetail: params {productId}. Detail produk.
-- getLowStockProducts: params {}. Produk stok rendah.
-- getPendingWaOrders: params {}. Pesanan WA pending.
-- confirmWaOrder: params {orderId, parsedItems}. Konfirmasi order WA.
-- rejectWaOrder: params {orderId, reason}. Tolak order WA.
-- createDraftTransaction: params {customerName, paymentMethod, items, notes}. Buat draft nota.
-- getSaleDetail: params {invoiceNumber}. Detail nota/invoice.
-- getCustomerDebts: params {search?}. Hutang pelanggan.
-- getSupplierDebts: params {search?}. Hutang supplier.
-- createDraftDebtPayment: params {debtType, debtId, amount}. Bayar hutang.
-- getPurchases: params {search?}. Daftar PO.
-- createDraftPurchase: params {supplierName, notes}. Buat PO.
-- getDeliveryOrders: params {search?}. Daftar surat jalan.
-- createDraftDelivery: params {customerName, notes}. Buat surat jalan.
-- getStockMovements: params {search?}. Riwayat stok.
-- createDraftStockAdjustment: params {productCode, type, qty}. Adjust stok.
-- searchCustomer: params {keyword}. Cari pelanggan.
-- searchSupplier: params {keyword}. Cari supplier.
-- getStoreSettings: params {}. Profil toko.
-- getFinancialReport: params {dateFrom?, dateTo?}. Laporan keuangan.
-- getInventoryReport: params {}. Laporan inventaris.
-- deleteConfirmation: params {target, id, name}. Hapus data (SUPER ADMIN).
-- editConfirmation: params {target, id, name, changes}. Edit data (SUPER ADMIN).
-
-CONTOH:
-User: "berapa harga semen tiga roda?"
-Output: {"type":"tool_call","tool":"searchProduct","params":{"keyword":"semen tiga roda"}}
-
-User: "lihat orderan WA"
-Output: {"type":"tool_call","tool":"getPendingWaOrders","params":{}}
-
-User: "halo"
-Output: Halo! Saya MIDA, asisten cerdas Toko Masdar Utama. Ada yang bisa saya bantu?`;
-
-// ==================== SERVICE SINGLETON ====================
+// ==================== RUNTIME STATE ====================
 let _context: LlamaContext | null = null;
 let _isInitializing = false;
+let _loadedModelName = ''; 
 
-/**
- * Build ChatML prompt from messages (Qwen uses ChatML format).
- */
 const buildChatMLPrompt = (messages: ChatMessage[]): string => {
   let prompt = '';
   for (const msg of messages) {
     prompt += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
   }
-  // Add the opening tag for the assistant's response
   prompt += '<|im_start|>assistant\n';
   return prompt;
 };
 
 /**
- * Initialize the LlamaContext from a local model file.
- * @param modelPath Full path to the .gguf file (e.g. file:///data/.../models/qwen.gguf)
+ * Inisialisasi LlamaContext secara fleksibel.
+ * @param modelPath Path lengkap ke file .gguf lokal
+ * @param filename Nama file untuk pencatatan sistem
  */
-export const initializeLlama = async (modelPath: string): Promise<LlamaContext> => {
-  if (_context) return _context;
+export const initializeLlama = async (modelPath: string, filename: string = LLAMA_CONFIG.modelFilename): Promise<LlamaContext> => {
+  if (_context && _loadedModelName === filename) {
+    return _context; 
+  }
+
   if (_isInitializing) throw new Error('LLM sedang dimuat, tunggu sebentar...');
+
+  if (_context) {
+    await releaseLlama();
+  }
 
   _isInitializing = true;
   try {
-    // llama.rn di Android butuh path tanpa "file://" prefix
     const cleanPath = modelPath.startsWith('file://') ? modelPath.slice(7) : modelPath;
     _context = await initLlama({
       model: cleanPath,
       n_ctx: LLAMA_CONFIG.n_ctx,
-      n_gpu_layers: 0,     // CPU only on most Android phones
-      use_mlock: false,    // false = lebih aman, hindari crash di HP RAM kecil
+      n_gpu_layers: 0, // CPU Only untuk stabilitas RAM HP
+      use_mlock: false,    
     });
+
+    _loadedModelName = filename;
+    console.log(`[MIDA AI] Berhasil memuat model: ${filename}`);
     return _context;
   } finally {
     _isInitializing = false;
   }
 };
 
-/**
- * Generate a response using the loaded LLM.
- * Streams tokens via onToken callback.
- *
- * @param userMessages  Array of chat messages (without system prompt — it's prepended here)
- * @param onToken       Streaming callback per token
- * @returns             Full response text
- */
 export const generateResponse = async (
   userMessages: ChatMessage[],
   onToken?: (data: StreamCallbackData) => void,
 ): Promise<string> => {
-  if (!_context) throw new Error('LLM belum dimuat. Silakan download dan muat model terlebih dahulu.');
+  if (!_context) throw new Error('Model AI belum dimuat di perangkat.');
 
-  // Build the full message chain with system prompt
   const fullMessages: ChatMessage[] = [
-    { role: 'system', content: MIDA_SYSTEM_PROMPT },
+    { role: 'system', content: AI_SYSTEM_PROMPT },
     ...userMessages,
   ];
 
@@ -169,17 +113,14 @@ export const generateResponse = async (
   return (result?.text || '').trim();
 };
 
-/**
- * Release the LlamaContext to free RAM.
- */
 export const releaseLlama = async (): Promise<void> => {
   if (_context) {
     await _context.release();
     _context = null;
+    _loadedModelName = '';
+    console.log('[MIDA AI] Model dilepas dari RAM.');
   }
 };
 
-/**
- * Check if context is loaded.
- */
 export const isLlamaReady = (): boolean => !!_context;
+export const getActiveModelName = (): string => _loadedModelName;

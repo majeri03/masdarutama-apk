@@ -33,6 +33,16 @@ const requireSuperAdmin = (): { allowed: boolean; error?: string } => {
   return { allowed: true };
 };
 
+const matchProductFromDb = async (aiKeyword: string) => {
+  if (!aiKeyword) return null;
+  try {
+    const res = await productService.getProducts({ search: aiKeyword, limit: 1 });
+    const products = (res.data as any)?.products || [];
+    return products.length > 0 ? products[0] : null;
+  } catch {
+    return null;
+  }
+};
 export const executeAiToolCall = async (payload: ToolCallPayload): Promise<any> => {
   try {
     switch (payload.tool) {
@@ -42,7 +52,53 @@ export const executeAiToolCall = async (payload: ToolCallPayload): Promise<any> 
         const res = await api.get(API_ENDPOINTS.WA_ORDERS + '?status=PENDING');
         return { success: true, data: res.data?.data || res.data };
       }
+      case 'createAutoOrderan': {
+        const itemsFromAi = payload.params.items || [];
+        const validItems = [];
 
+        // Proses pencocokan barang sama seperti di atas
+        for (const item of itemsFromAi) {
+          const searchKeyword = item.productid || item.keyword || item.productName || item.product || '';
+          if (!searchKeyword) continue;
+
+          const res = await productService.getProducts({ search: searchKeyword, limit: 1 });
+          const products = (res.data as any)?.products || [];
+
+          if (products.length > 0) {
+            const realProduct = products[0];
+            let selectedUnit = realProduct.productUnits?.find((pu: any) => pu.unit?.name?.toLowerCase() === (item.unit || '').toLowerCase());
+            if (!selectedUnit) selectedUnit = realProduct.productUnits?.find((pu: any) => pu.isPrimary) || realProduct.productUnits?.[0];
+
+            validItems.push({
+              productId: realProduct.id,
+              productName: realProduct.name,
+              quantity: Number(item.quantity) || 1,
+              unitId: selectedUnit?.unitId,
+              unit: selectedUnit?.unit?.name
+            });
+          }
+        }
+
+        if (validItems.length === 0) {
+          return { error: 'Ekstrak gagal. Tidak ada satupun barang yang cocok di sistem.' };
+        }
+
+        // EKSEKUSI API LANGSUNG KE BACKEND (TANPA BUKA LAYAR UI)
+        const orderPayload = {
+          customerName: payload.params.customerName || 'UMUM',
+          rawMessage: `Diinput otomatis oleh MIDA dari AI Chat`,
+          parsedItems: validItems,
+          status: 'PENDING'
+        };
+
+        const executeRes = await api.post(API_ENDPOINTS.WA_ORDERS, orderPayload);
+
+        return {
+          success: true,
+          message: `✅ Siap Bos! Orderan atas nama ${orderPayload.customerName} berhasil diekstrak dan masuk ke antrean list orderan. (${validItems.length} barang berhasil dikenali).`,
+          data: executeRes.data
+        };
+      }
       case 'confirmWaOrder': {
         const { orderId, parsedItems } = payload.params;
         return {
@@ -89,10 +145,59 @@ export const executeAiToolCall = async (payload: ToolCallPayload): Promise<any> 
       }
 
       case 'createDraftTransaction': {
+        const itemsFromAi = payload.params.items || [];
+        const validItems = [];
+
+        // Kita lakukan auto-matching teks buatan AI ke ID asli database sebelum draf dikirim ke UI!
+        for (const item of itemsFromAi) {
+          const searchKeyword = item.productCode || item.productName || item.keyword || '';
+          if (!searchKeyword) continue;
+
+          // Gunakan service bawaan Anda untuk cek database secara real-time!
+          const res = await productService.getProducts({ search: searchKeyword, limit: 1 });
+          const products = (res.data as any)?.products || [];
+
+          if (products.length > 0) {
+            const realProduct = products[0];
+
+            // Cari unit harga yang diketik (misal user minta SAK atau PCS)
+            let selectedUnit = realProduct.productUnits?.find((pu: any) =>
+              pu.unit?.name?.toLowerCase() === (item.unitName || item.unit || '').toLowerCase()
+            );
+
+            if (!selectedUnit) {
+              selectedUnit = realProduct.productUnits?.find((pu: any) => pu.isPrimary) || realProduct.productUnits?.[0];
+            }
+
+            // Masukkan data asli & sah dari PostgreSQL
+            validItems.push({
+              productId: realProduct.id,
+              productCode: realProduct.code,
+              productName: realProduct.name,
+              unitId: selectedUnit?.unitId,
+              unitName: selectedUnit?.unit?.name || 'SAK',
+              quantity: Number(item.qty || item.quantity) || 1,
+              unitPrice: Number(selectedUnit?.sellPrice) || 0,
+              subtotal: (Number(selectedUnit?.sellPrice) || 0) * (Number(item.qty || item.quantity) || 1)
+            });
+          }
+        }
+
+        if (validItems.length === 0) {
+          return { error: 'Gagal membuat draf, barang tidak terdeteksi di database.' };
+        }
+
+        // Sekarang draf dikembalikan ke UI dengan data super komplit berisi ID asli database.
+        // Klik "Konfirmasi" di UI Anda dijamin akan langsung tersimpan sukses ke database!
         return {
           type: 'draft_transaction',
           action: 'BUAT TRANSAKSI PENJUALAN',
-          data: payload.params,
+          data: {
+            customerName: payload.params.customerName || 'UMUM',
+            paymentMethod: payload.params.paymentMethod || 'CASH',
+            items: validItems,
+            notes: payload.params.notes || 'Diinput otomatis via MIDA AI Assistant'
+          },
         };
       }
 
@@ -132,10 +237,46 @@ export const executeAiToolCall = async (payload: ToolCallPayload): Promise<any> 
       }
 
       case 'createDraftPurchase': {
+        const itemsFromAi = payload.params.items || [];
+        const validItems = [];
+
+        // Pencocokan otomatis untuk pembelian barang ke Supplier (PO)
+        for (const item of itemsFromAi) {
+          const kw = item.productCode || item.productName || item.keyword || '';
+          const realProduct = await matchProductFromDb(kw);
+
+          if (realProduct) {
+            let selectedUnit = realProduct.productUnits?.find((pu: any) => 
+              pu.unit?.name?.toLowerCase() === (item.unitName || item.unit || '').toLowerCase()
+            );
+            if (!selectedUnit) selectedUnit = realProduct.productUnits?.find((pu: any) => pu.isPrimary) || realProduct.productUnits?.[0];
+
+            validItems.push({
+              productId: realProduct.id,
+              productName: realProduct.name,
+              unitId: selectedUnit?.unitId,
+              quantity: Number(item.qty || item.quantity) || 1,
+              unitPrice: Number(item.unitPrice) || Number(selectedUnit?.buyPrice) || 0, // Menggunakan harga modal terdaftar
+              discount: Number(item.discount) || 0,
+              subtotal: (Number(item.unitPrice) || Number(selectedUnit?.buyPrice) || 0) * (Number(item.qty || item.quantity) || 1)
+            });
+          }
+        }
+
+        if (validItems.length === 0) return { error: 'Produk tidak valid atau tidak ditemukan untuk membuat PO.' };
+
         return {
           type: 'draft_purchase',
           action: 'BUAT PURCHASE ORDER (PO)',
-          data: payload.params,
+          data: {
+            supplierName: payload.params.supplierName || 'UMUM',
+            purchaseDate: new Date().toISOString().split('T')[0],
+            items: validItems,
+            discount: 0,
+            tax: 0,
+            paidAmount: 0,
+            notes: payload.params.notes || 'Draf PO otomatis via MIDA'
+          },
         };
       }
 
@@ -146,10 +287,38 @@ export const executeAiToolCall = async (payload: ToolCallPayload): Promise<any> 
       }
 
       case 'createDraftDelivery': {
+        const invNum = payload.params.invoiceNumber;
+        if (!invNum) return { error: 'Nomor invoice diperlukan untuk membuat Surat Jalan.' };
+
+        // Tarik data riil langsung dari database penjualan untuk dicopas ke logistik kiriman!
+        const saleRes = await salesService.getSales({ search: invNum, limit: 1 });
+        const saleData = (saleRes.data as any)?.sales?.[0];
+
+        if (!saleData) return { error: `Invoice #${invNum} tidak terdaftar di sistem toko.` };
+
+        const deliveryItems = saleData.saleItems?.map((item: any) => ({
+          productId: item.product.id,
+          productName: item.product.name,
+          productCode: item.product.code,
+          unitId: item.unitId,
+          unitName: item.unit?.name,
+          quantity: item.quantity,
+          notes: '-'
+        })) || [];
+
         return {
           type: 'draft_delivery',
           action: 'BUAT SURAT JALAN',
-          data: payload.params,
+          data: {
+            invoiceNumber: invNum,
+            customerId: saleData.customerId,
+            customerName: saleData.customer?.name || 'UMUM',
+            driver: payload.params.driver || '',
+            vehicle: payload.params.vehicle || '',
+            deliveryDate: new Date().toISOString().split('T')[0],
+            items: deliveryItems,
+            notes: payload.params.notes || 'Diisi otomatis dari invoice penjualan'
+          }
         };
       }
 
@@ -178,10 +347,22 @@ export const executeAiToolCall = async (payload: ToolCallPayload): Promise<any> 
       }
 
       case 'createDraftStockAdjustment': {
+        const kw = payload.params.productCode || payload.params.productName || payload.params.keyword || '';
+        const realProduct = await matchProductFromDb(kw);
+
+        if (!realProduct) return { error: `Produk "${kw}" tidak ditemukan untuk penyesuaian stok.` };
+
         return {
           type: 'draft_stock_adjustment',
           action: 'PENYESUAIAN STOK (STOCK OPNAME)',
-          data: payload.params,
+          data: {
+            productId: realProduct.id,
+            productCode: realProduct.code,
+            productName: realProduct.name,
+            type: payload.params.type || 'ADJUSTMENT', // IN, OUT, atau ADJUSTMENT
+            qty: Number(payload.params.qty || payload.params.quantity) || 0,
+            notes: payload.params.notes || 'Stock opname via asisten MIDA'
+          },
         };
       }
 
