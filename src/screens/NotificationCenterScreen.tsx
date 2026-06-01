@@ -26,33 +26,52 @@ export const NotificationCenterScreen: React.FC = () => {
     return `${d.toLocaleDateString('id-ID')} ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
-  const renderItem = ({ item }: { item: any }) => (
-    <TouchableOpacity
-      activeOpacity={0.7}
-      onPress={() => {
-        if (!item.isRead) markAsRead(item.id);
-        if (item.data?.screen) {
-          if (item.data?.params) {
-            navigation.navigate(item.data.screen, item.data.params);
-          } else {
-            navigation.navigate(item.data.screen);
+  const renderItem = ({ item }: { item: any }) => {
+    // Fallback jika data dari push notification Expo (struktur berbeda)
+    const title = item.title || item.request?.content?.title || 'Notifikasi Baru';
+    const body = item.body || item.request?.content?.body || item.subtitle || '';
+    const notifData = item.data || item.request?.content?.data || {};
+
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => {
+          if (!item.isRead) markAsRead(item.id);
+          const screen = notifData?.screen;
+          if (screen) {
+            try {
+              if (notifData?.params) {
+                navigation.navigate(screen, notifData.params);
+              } else {
+                navigation.navigate(screen);
+              }
+            } catch (e) {
+              // screen name mungkin tidak valid, abaikan
+            }
           }
-        } else if (item.data?.url) {
-          // You could handle external links here if needed
-        }
-      }}
-      style={{ marginBottom: Spacing.md }}
-    >
-      <GlassCard padding={16} style={{...styles.card, ...(!item.isRead ? styles.unreadCard : {})}}>
-        <View style={styles.cardHeader}>
-          <Text style={[styles.cardTitle, !item.isRead && { fontWeight: 'bold' }]}>{item.title}</Text>
-          {!item.isRead && <View style={styles.unreadDot} />}
-        </View>
-        <Text style={styles.cardBody}>{item.body}</Text>
-        <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
-      </GlassCard>
-    </TouchableOpacity>
-  );
+        }}
+        style={{ marginBottom: Spacing.md }}
+      >
+        <GlassCard padding={16} style={{...styles.card, ...(!item.isRead ? styles.unreadCard : {})}}>
+          <View style={styles.cardHeader}>
+            <Text style={[styles.cardTitle, !item.isRead && { fontWeight: 'bold' }]} numberOfLines={2}>
+              {title}
+            </Text>
+            {!item.isRead && <View style={styles.unreadDot} />}
+          </View>
+          {!!body && (
+            <Text style={styles.cardBody} numberOfLines={3}>{body}</Text>
+          )}
+          <View style={styles.cardFooter}>
+            <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
+            {notifData?.screen && (
+              <Text style={styles.tapHint}>Ketuk untuk membuka →</Text>
+            )}
+          </View>
+        </GlassCard>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -172,6 +191,17 @@ const styles = StyleSheet.create({
   cardDate: {
     fontSize: 10,
     color: Colors.textTertiary,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  tapHint: {
+    fontSize: 10,
+    color: Colors.primaryStart,
+    fontStyle: 'italic',
   },
   emptyContainer: {
     alignItems: 'center',

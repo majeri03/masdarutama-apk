@@ -18,11 +18,13 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as DocumentPicker from 'expo-document-picker';
 import { useAiStore, AiMessage } from '../stores/ai.store';
+import { useCartStore } from '../stores/cart.store';
 import { executeAiToolCall, ToolCallPayload } from '../services/ai-executor.service';
 import {
   initializeLlama, generateResponse, releaseLlama, isLlamaReady,
-  LLAMA_CONFIG, ChatMessage,
+  LLAMA_CONFIG, ChatMessage, MODEL_MIRROR_URLS,
 } from '../services/llama.service';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GradientButton } from '../components/ui/GradientButton';
@@ -165,8 +167,15 @@ const simulateLlmResponse = (userText: string): string => {
 
   if (/(detail|info).*(nota|transaksi|invoice|struk)/i.test(lower))
     return tc('getSaleDetail', { invoiceNumber: 'INV-UNKNOWN' });
-  if (/(buat|bikin|tambah).*(nota|transaksi|penjualan)/i.test(lower))
-    return tc('createDraftTransaction', { customerName: 'UMUM', paymentMethod: 'CASH', items: [], notes: userText });
+  if (/(buat|bikin|tambah|buatkan).*(nota|transaksi|penjualan)/i.test(lower)) {
+    // Ekstrak nama pelanggan dari kalimat
+    const nameMatch = userText.match(/(?:atas nama|a\.n\.|an\.|untuk|ke|kepada)\s+([A-Za-z][\w\s]{1,30})/i);
+    const customerName = nameMatch ? nameMatch[1].trim() : 'UMUM';
+    // Ekstrak metode pembayaran
+    const paymentMethod = /(kredit|hutang|piutang|bon)/i.test(lower) ? 'CREDIT'
+      : /(transfer|tf|bca|bri|mandiri)/i.test(lower) ? 'TRANSFER' : 'CASH';
+    return tc('createDraftTransaction', { customerName, paymentMethod, items: [], notes: userText });
+  }
 
   // C: Hutang & Piutang
   if (/(bayar|pembayaran|lunas).*(utang|hutang|piutang|bon)/i.test(lower))
@@ -175,12 +184,18 @@ const simulateLlmResponse = (userText: string): string => {
     return lower.includes('supplier') ? tc('getSupplierDebts', {}) : tc('getCustomerDebts', {});
 
   // D: Surat Jalan & PO
-  if (/(buat|bikin|tambah).*(surat jalan|do|delivery)/i.test(lower))
-    return tc('createDraftDelivery', { customerName: 'UMUM', notes: userText });
+  if (/(buat|bikin|tambah|buatkan).*(surat jalan|do|delivery)/i.test(lower)) {
+    const nameMatch = userText.match(/(?:atas nama|untuk|ke|kepada)\s+([A-Za-z][\w\s]{1,30})/i);
+    const customerName = nameMatch ? nameMatch[1].trim() : 'UMUM';
+    return tc('createDraftDelivery', { customerName, notes: userText });
+  }
   if (/(surat jalan|delivery|pengiriman)/i.test(lower))
     return tc('getDeliveryOrders', {});
-  if (/(buat|bikin|tambah).*(po|purchase order|pesanan ke supplier)/i.test(lower))
-    return tc('createDraftPurchase', { supplierName: 'UMUM', notes: userText });
+  if (/(buat|bikin|tambah|buatkan).*(po|purchase order|pesanan ke supplier)/i.test(lower)) {
+    const nameMatch = userText.match(/(?:ke|dari|supplier|vendor)\s+([A-Za-z][\w\s]{1,30})/i);
+    const supplierName = nameMatch ? nameMatch[1].trim() : 'UMUM';
+    return tc('createDraftPurchase', { supplierName, notes: userText });
+  }
   if (/(po|purchase order|pembelian)/i.test(lower))
     return tc('getPurchases', {});
 
@@ -411,10 +426,71 @@ const AiSettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () =
   const [isDownloading, setIsDownloading] = useState(false);
   const downloadRef = useRef<FileSystem.DownloadResumable | null>(null);
 
+  // Auto-detect file if placed manually by user via USB
+  useEffect(() => {
+    const checkFile = async () => {
+      if (isModelDownloaded) return;
+      try {
+        const info = await FileSystem.getInfoAsync(getModelPath());
+        if (info.exists && (info as any).size > 100 * 1024 * 1024) {
+          setModelDownloadStatus(true, 100);
+        }
+      } catch (e) {}
+    };
+    if (visible) checkFile();
+  }, [visible, isModelDownloaded]);
+
+  const handleImportModel = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const file = result.assets[0];
+      if (file.size && file.size < 100 * 1024 * 1024) {
+        Alert.alert('❌ File Terlalu Kecil', 'Pastikan Anda memilih file model GGUF yang benar (ukuran ~395 MB).');
+        return;
+      }
+
+      setIsDownloading(true);
+      setModelDownloadStatus(false, 0);
+
+      const dirInfo = await FileSystem.getInfoAsync(getModelDir());
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(getModelDir(), { intermediates: true });
+      }
+
+      await FileSystem.copyAsync({
+        from: file.uri,
+        to: getModelPath()
+      });
+
+      setModelDownloadStatus(true, 100);
+      Alert.alert('✅ Selesai!', 'Model AI berhasil di-import dari penyimpanan Anda!\n\nTutup pengaturan untuk mulai menggunakan AI.');
+    } catch (err: any) {
+      Alert.alert('❌ Import Gagal', err.message);
+      setModelDownloadStatus(false, 0);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const handleDownloadModel = async () => {
+    // Peringatan jika masih di Expo Go
+    if (typeof (global as any).__expo !== 'undefined' || typeof (global as any).__expoDebugChannel !== 'undefined') {
+      Alert.alert(
+        '⚠️ Expo Go Terdeteksi',
+        'True On-Device AI membutuhkan APK native (EAS Build).\n\nExpo Go tidak bisa menjalankan llama.rn.\n\nSilakan build APK dulu dengan:\neas build -p android --profile preview',
+        [{ text: 'Mengerti', style: 'default' }]
+      );
+      return;
+    }
+
     Alert.alert(
       '📥 Download Model AI',
-      `Model AI offline (Qwen 2.5 0.5B, ~395MB) akan diunduh dari HuggingFace.\n\nPastikan koneksi WiFi stabil dan storage tersedia.\nProses download membutuhkan waktu 5-15 menit.`,
+      `Model AI offline (Qwen 2.5 0.5B, ~395MB) akan diunduh.\n\nPastikan:\n• Koneksi WiFi stabil (bukan data seluler)\n• Storage tersedia minimal 500MB\n• Proses butuh 5-20 menit\n\nJangan tutup aplikasi selama download.`,
       [
         { text: 'Batal', style: 'cancel' },
         {
@@ -423,34 +499,101 @@ const AiSettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () =
             setIsDownloading(true);
             setModelDownloadStatus(false, 0);
             try {
-              // Ensure model directory exists
+              // Hapus file lama jika ada (mungkin corrupt)
+              const existingInfo = await FileSystem.getInfoAsync(getModelPath());
+              if (existingInfo.exists) {
+                await FileSystem.deleteAsync(getModelPath(), { idempotent: true });
+              }
+
+              // Buat folder jika belum ada
               const dirInfo = await FileSystem.getInfoAsync(getModelDir());
               if (!dirInfo.exists) {
                 await FileSystem.makeDirectoryAsync(getModelDir(), { intermediates: true });
               }
 
               const callback = (downloadProgress: FileSystem.DownloadProgressData) => {
-                const pct = (downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite) * 100;
-                setModelDownloadStatus(false, Math.min(pct, 99));
+                const total = downloadProgress.totalBytesExpectedToWrite;
+                const written = downloadProgress.totalBytesWritten;
+                if (total > 0) {
+                  const pct = (written / total) * 100;
+                  setModelDownloadStatus(false, Math.min(pct, 99));
+                } else {
+                  const estimatedPct = Math.min((written / (395 * 1024 * 1024)) * 100, 98);
+                  setModelDownloadStatus(false, estimatedPct);
+                }
               };
 
-              downloadRef.current = FileSystem.createDownloadResumable(
-                LLAMA_CONFIG.modelUrl,
-                getModelPath(),
-                {},
-                callback,
-              );
+              // === SINGLE DOWNLOAD URL ===
+              let downloadSuccess = false;
+              let lastError = '';
 
-              const result = await downloadRef.current.downloadAsync();
-              if (result?.uri) {
+              const mirrorUrl = MODEL_MIRROR_URLS[0];
+              const mirrorName = 'hf-mirror.com';
+              console.log(`[MIDA] Mencoba download dari ${mirrorName}...`);
+              setModelDownloadStatus(false, 0);
+
+              try {
+                downloadRef.current = FileSystem.createDownloadResumable(
+                  mirrorUrl,
+                  getModelPath(),
+                  {
+                    headers: {
+                      'User-Agent': 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                      'Accept': 'application/octet-stream, */*',
+                    },
+                  },
+                  callback,
+                );
+
+                const result = await downloadRef.current.downloadAsync();
+                downloadRef.current = null;
+
+                if (!result?.uri) {
+                  lastError = `${mirrorName}: tidak ada file diterima.`;
+                  throw new Error(lastError);
+                }
+
+                // Validasi ukuran file
+                const fileInfo = await FileSystem.getInfoAsync(result.uri);
+                const fileSizeBytes = (fileInfo as any).size || 0;
+                const fileSizeMB = fileSizeBytes / (1024 * 1024);
+
+                if (fileSizeMB < 100) {
+                  // File terlalu kecil — bukan model asli
+                  await FileSystem.deleteAsync(result.uri, { idempotent: true });
+                  lastError = `${mirrorName}: file terlalu kecil (${fileSizeMB.toFixed(1)}MB — bukan model GGUF).`;
+                  throw new Error(lastError);
+                }
+
+                // ✅ Berhasil!
+                downloadSuccess = true;
                 setModelDownloadStatus(true, 100);
-                Alert.alert('✅ Selesai', 'Model AI offline berhasil diunduh! MIDA kini menggunakan True On-Device AI.');
-              } else {
-                throw new Error('Download gagal — tidak ada file.');
+                Alert.alert(
+                  '✅ Selesai!',
+                  `Model AI (${fileSizeMB.toFixed(0)}MB) berhasil diunduh!\n\nMIDA kini menggunakan True On-Device AI 🧠\n\nTutup dan buka kembali layar chat untuk mengaktifkan.`
+                );
+
+              } catch (mirrorErr: any) {
+                downloadRef.current = null;
+                lastError = `${mirrorName}: ${mirrorErr.message || 'error tidak diketahui'}`;
+                console.warn(`[MIDA] Download gagal: ${lastError}`);
+                try {
+                  const partial = await FileSystem.getInfoAsync(getModelPath());
+                  if (partial.exists) await FileSystem.deleteAsync(getModelPath(), { idempotent: true });
+                } catch {}
               }
+
+              if (!downloadSuccess) {
+                throw new Error(
+                  `Download gagal.\n\nError: ${lastError}\n\n💡 Solusi: Gunakan tombol "Import File" untuk memilih model secara manual.`
+                );
+              }
+
             } catch (err: any) {
               setModelDownloadStatus(false, 0);
-              Alert.alert('❌ Gagal', `Download gagal: ${err.message}`);
+              Alert.alert('❌ Download Gagal', err.message || 'Terjadi kesalahan saat mendownload.', [
+                { text: 'Tutup', style: 'cancel' },
+              ]);
             } finally {
               setIsDownloading(false);
               downloadRef.current = null;
@@ -522,35 +665,44 @@ const AiSettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () =
           {/* Model offline */}
           <View style={s.settingsSection}>
             <Text style={s.settingsSectionLabel}>MODEL AI OFFLINE (LOKAL)</Text>
-            <View style={s.modelCard}>
+            <View style={[s.modelCard, { flexDirection: 'column', alignItems: 'stretch' }]}>
               <View style={s.modelInfo}>
-                <Text style={s.modelName}>🧠 Qwen 2.5 0.5B Chat</Text>
-                <Text style={s.modelDesc}>Ringan & cepat · ~395 MB · Q4_K_M quantized</Text>
+                <Text style={s.modelName}>🧠 Qwen 2.5 3B Chat</Text>
+                <Text style={s.modelDesc}>Sangat pintar & akurat · ~2.1 GB · Q4_K_M quantized</Text>
                 <Text style={s.modelDesc}>Berjalan 100% offline di memori HP</Text>
               </View>
 
               {isModelDownloaded ? (
-                <View style={{ alignItems: 'center', gap: 6 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 }}>
                   <View style={s.modelInstalled}>
                     <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
                     <Text style={[s.modelInstallText, { color: Colors.success }]}>Terpasang</Text>
                   </View>
-                  <TouchableOpacity onPress={handleDeleteModel}>
-                    <Text style={{ fontSize: 10, color: Colors.error }}>Hapus</Text>
+                  <TouchableOpacity onPress={handleDeleteModel} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: Colors.error + '10', borderRadius: 6 }}>
+                    <Text style={{ fontSize: 12, color: Colors.error, fontWeight: 'bold' }}>Hapus</Text>
                   </TouchableOpacity>
                 </View>
               ) : isDownloading || (modelDownloadProgress > 0 && modelDownloadProgress < 100) ? (
-                <View style={s.downloadProgress}>
-                  <View style={s.progressBar}>
-                    <View style={[s.progressFill, { width: `${modelDownloadProgress}%` as any }]} />
+                <View style={[s.downloadProgress, { marginTop: 8, width: '100%', alignItems: 'stretch' }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 11, color: Colors.textSecondary }}>Mengunduh model...</Text>
+                    <Text style={s.progressText}>{Math.round(modelDownloadProgress)}%</Text>
                   </View>
-                  <Text style={s.progressText}>{Math.round(modelDownloadProgress)}%</Text>
+                  <View style={[s.progressBar, { width: '100%', height: 8, borderRadius: 4 }]}>
+                    <View style={[s.progressFill, { width: `${modelDownloadProgress}%` as any, borderRadius: 4 }]} />
+                  </View>
                 </View>
               ) : (
-                <TouchableOpacity style={s.downloadBtn} onPress={handleDownloadModel} activeOpacity={0.8}>
-                  <Ionicons name="cloud-download-outline" size={16} color="#fff" />
-                  <Text style={s.downloadBtnText}>Download</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border }}>
+                  <TouchableOpacity style={[s.downloadBtn, { flex: 1, justifyContent: 'center', paddingVertical: 10 }]} onPress={handleDownloadModel} activeOpacity={0.8}>
+                    <Ionicons name="cloud-download-outline" size={18} color="#fff" />
+                    <Text style={[s.downloadBtnText, { fontSize: 13 }]}>Download</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.downloadBtn, { flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.primaryStart, justifyContent: 'center', paddingVertical: 10 }]} onPress={handleImportModel} activeOpacity={0.8}>
+                    <Ionicons name="folder-open-outline" size={18} color={Colors.primaryStart} />
+                    <Text style={[s.downloadBtnText, { color: Colors.primaryStart, fontSize: 13 }]}>Import File</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           </View>
@@ -658,15 +810,13 @@ export const AiChatScreen = () => {
       let llmResponse: string;
 
       if (isModelReady && isLlamaReady()) {
-        // ===== TRUE ON-DEVICE LLM =====
-        // Build chat history (last 6 messages for context, save tokens)
+        // ===== TRUE ON-DEVICE LLM (Qwen 3B) =====
         const recentMsgs = messages.slice(-6);
         const chatMsgs: ChatMessage[] = recentMsgs
           .filter(m => m.role !== 'system')
           .map(m => ({ role: m.role as 'user' | 'assistant', content: m.text }));
         chatMsgs.push({ role: 'user', content: userText });
 
-        // Add placeholder for streaming
         addMessage({ role: 'assistant', text: '...' });
 
         llmResponse = await generateResponse(chatMsgs, (data) => {
@@ -675,7 +825,6 @@ export const AiChatScreen = () => {
         });
 
         setStreamingText(null);
-        // Update with final text
         updateLastAssistantMessage(llmResponse);
       } else {
         // ===== FALLBACK: PATTERN MATCHING =====
@@ -744,6 +893,48 @@ export const AiChatScreen = () => {
           style: isDanger ? 'destructive' : 'default',
           onPress: async () => {
             setIsLoading(true);
+
+            // === NAVIGASI CERDAS BERDASARKAN TIPE DRAFT ===
+            if (draftData.type === 'draft_transaction') {
+              // Pre-fill cart dengan data dari AI
+              const d = draftData.data;
+              const cartStore = useCartStore.getState();
+              // Set catatan dan pelanggan (jika ada customerId)
+              cartStore.setNotes(d.notes || `Pesanan: ${d.customerName || 'UMUM'}`);
+              if (d.paymentMethod === 'CREDIT') {
+                // Hutang — bisa ditambahkan cart.setPaymentMethod nantinya
+              }
+              addMessage({
+                role: 'assistant',
+                text: `✅ Draft transaksi untuk **${d.customerName || 'UMUM'}** disiapkan!\n\nMembuka layar POS... Tambahkan produk di sana dan selesaikan pembayaran.`,
+              });
+              setIsLoading(false);
+              // Navigasi ke POS
+              setTimeout(() => navigation.navigate('POS' as never), 600);
+              return;
+            }
+
+            if (draftData.type === 'draft_delivery') {
+              addMessage({
+                role: 'assistant',
+                text: `✅ Membuka layar Surat Jalan untuk **${draftData.data.customerName || 'UMUM'}**...`,
+              });
+              setIsLoading(false);
+              setTimeout(() => navigation.navigate('Delivery' as never), 600);
+              return;
+            }
+
+            if (draftData.type === 'draft_purchase') {
+              addMessage({
+                role: 'assistant',
+                text: `✅ Membuka layar Purchase Order untuk supplier **${draftData.data.supplierName || 'UMUM'}**...`,
+              });
+              setIsLoading(false);
+              setTimeout(() => navigation.navigate('Purchase' as never), 600);
+              return;
+            }
+
+            // Untuk tipe lain (hapus, edit, bayar hutang, dll) — eksekusi langsung
             const result = await executeDraft(draftData);
             addMessage({ role: 'assistant', text: result.success ? `✅ ${result.message}` : `❌ ${result.message}` });
             setIsLoading(false);
@@ -751,7 +942,7 @@ export const AiChatScreen = () => {
         },
       ]
     );
-  }, [addMessage]);
+  }, [addMessage, navigation]);
 
   // ==================== RENDER MESSAGE ====================
   const renderMessage = (msg: AiMessage) => {

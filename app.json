@@ -50,7 +50,16 @@
       "expo-local-authentication",
       "expo-audio",
       "expo-updates",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "default",
+          "mode": "production",
+          "androidMode": "default",
+          "androidCollapsedTitle": "TB Masdar Utama",
+          "iosDisplayInForeground": true
+        }
+      ],
       "@react-native-community/datetimepicker",
       [
         "expo-build-properties",

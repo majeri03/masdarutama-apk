@@ -18,9 +18,13 @@ export interface StreamCallbackData {
 }
 
 // ==================== CONSTANTS ====================
-const MODEL_FILENAME = 'qwen2.5-0.5b-chat-q4_k_m.gguf';
-const MODEL_URL =
-  'https://huggingface.co/Qwen/Qwen2.5-0.5B-Chat-GGUF/resolve/main/qwen2.5-0.5b-chat-q4_k_m.gguf';
+const MODEL_FILENAME = 'qwen2.5-3b-instruct-q4_k_m.gguf';
+
+// Daftar mirror URL
+export const MODEL_MIRROR_URLS = [
+  'https://hf-mirror.com/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf',
+];
+const MODEL_URL = MODEL_MIRROR_URLS[0];
 
 export const LLAMA_CONFIG = {
   modelFilename: MODEL_FILENAME,
@@ -28,7 +32,7 @@ export const LLAMA_CONFIG = {
   modelDir: 'models',           // relative to documentDirectory
   n_ctx: 2048,                  // context window (token budget)
   n_predict: 256,               // max output tokens — keep fast
-  temperature: 0.4,             // low = more deterministic tool calls
+  temperature: 0.1,             // low = more deterministic tool calls
   top_p: 0.9,
   stop: ['<|im_end|>', '<|endoftext|>'],
 };
@@ -108,11 +112,13 @@ export const initializeLlama = async (modelPath: string): Promise<LlamaContext> 
 
   _isInitializing = true;
   try {
+    // llama.rn di Android butuh path tanpa "file://" prefix
+    const cleanPath = modelPath.startsWith('file://') ? modelPath.slice(7) : modelPath;
     _context = await initLlama({
-      model: modelPath,
+      model: cleanPath,
       n_ctx: LLAMA_CONFIG.n_ctx,
       n_gpu_layers: 0,     // CPU only on most Android phones
-      use_mlock: true,
+      use_mlock: false,    // false = lebih aman, hindari crash di HP RAM kecil
     });
     return _context;
   } finally {
@@ -152,11 +158,11 @@ export const generateResponse = async (
     },
     onToken
       ? (data: any) => {
-          onToken({
-            token: data.token || '',
-            accumulated_text: data.accumulated_text || '',
-          });
-        }
+        onToken({
+          token: data.token || '',
+          accumulated_text: data.accumulated_text || '',
+        });
+      }
       : undefined,
   );
 
