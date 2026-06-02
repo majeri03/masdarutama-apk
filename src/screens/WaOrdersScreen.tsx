@@ -275,17 +275,23 @@ export const WaOrdersScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>📋 Daftar Orderan</Text>
           <Text style={styles.headerSub}>
             {orders.length} data · Tap baris untuk detail
           </Text>
         </View>
+        <TouchableOpacity 
+          style={{ backgroundColor: Colors.primaryStart, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+          onPress={() => navigation.navigate('WaOrderConfirm', { isManual: true })}
+        >
+          <Ionicons name="add" size={16} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>Manual</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Filters */}

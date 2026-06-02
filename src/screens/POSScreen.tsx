@@ -45,6 +45,10 @@ export const POSScreen: React.FC = () => {
     setNotes,
     clearCart,
     getCalculation,
+    heldCarts,
+    holdCart,
+    resumeCart,
+    removeHeldCart,
   } = useCartStore();
 
   // Component States
@@ -79,6 +83,8 @@ export const POSScreen: React.FC = () => {
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [savingCustomer, setSavingCustomer] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [showHeldCartsModal, setShowHeldCartsModal] = useState(false);
 
   // Checkout Success Modal States
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -399,7 +405,20 @@ export const POSScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Categories Bar */}
+        <TouchableOpacity style={{marginLeft: 12, marginRight: 4}} onPress={() => setShowHeldCartsModal(true)}>
+          <View>
+            <Ionicons name="list-outline" size={28} color={Colors.primaryStart} />
+            {heldCarts.length > 0 && (
+              <View style={{position: 'absolute', top: -6, right: -6, backgroundColor: Colors.error, borderRadius: 10, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#FFF'}}>
+                <Text style={{color: '#fff', fontSize: 10, fontWeight: 'bold'}}>{heldCarts.length}</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Categories Bar */}
+      <View style={{ flexGrow: 0, paddingVertical: 12 }}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -534,13 +553,24 @@ export const POSScreen: React.FC = () => {
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.cartFooterButton}
-            onPress={() => setShowCartModal(true)}
-          >
-            <Text style={styles.cartFooterButtonText}>Tinjau Keranjang</Text>
-            <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
-          </TouchableOpacity>
+          <View style={{flexDirection: 'row', gap: 8}}>
+            <TouchableOpacity
+              style={[styles.cartFooterButton, {backgroundColor: Colors.warning, paddingHorizontal: 12}]}
+              onPress={() => {
+                holdCart();
+                AppToast.success('Tersimpan', 'Keranjang disimpan sementara.');
+              }}
+            >
+              <Ionicons name="pause-outline" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.cartFooterButton}
+              onPress={() => setShowCartModal(true)}
+            >
+              <Text style={styles.cartFooterButtonText}>Tinjau</Text>
+              <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -580,6 +610,75 @@ export const POSScreen: React.FC = () => {
         </View>
       </Modal>
 
+
+      {/* --- HELD CARTS MODAL --- */}
+      <Modal visible={showHeldCartsModal} transparent animationType="slide" onRequestClose={() => setShowHeldCartsModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowHeldCartsModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={styles.modalHeaderTitle}>Keranjang Tersimpan (Hold)</Text>
+              <View style={{ width: 24 }} />
+            </View>
+
+            <ScrollView style={{ padding: 16 }}>
+              {heldCarts.length === 0 ? (
+                <View style={{ alignItems: 'center', marginTop: 40 }}>
+                  <Ionicons name="cube-outline" size={48} color={Colors.textTertiary} />
+                  <Text style={{ marginTop: 12, color: Colors.textSecondary, fontSize: FontSize.sm }}>
+                    Belum ada keranjang yang disimpan.
+                  </Text>
+                </View>
+              ) : (
+                heldCarts.map((hc) => {
+                  const cust = customers.find(c => c.id === hc.selectedCustomerId);
+                  const totalItems = hc.items.reduce((acc, item) => acc + item.quantity, 0);
+                  const grandTotal = hc.items.reduce((acc, item) => acc + (item.unitPrice * item.quantity) - item.discount, 0) - hc.discount;
+
+                  return (
+                    <GlassCard key={hc.id} padding={16} style={{ marginBottom: 12 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: FontSize.sm, fontWeight: 'bold', color: Colors.textPrimary }}>
+                            {cust ? cust.name : 'Pelanggan Umum'}
+                          </Text>
+                          <Text style={{ fontSize: FontSize.xs, color: Colors.textTertiary, marginTop: 4 }}>
+                            {new Date(hc.timestamp).toLocaleTimeString('id-ID')} • {totalItems} Produk
+                          </Text>
+                          <Text style={{ fontSize: FontSize.sm, color: Colors.primaryStart, fontWeight: 'bold', marginTop: 4 }}>
+                            Rp {Math.max(0, grandTotal).toLocaleString('id-ID')}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <TouchableOpacity
+                            style={{ backgroundColor: Colors.error + '20', padding: 10, borderRadius: 8 }}
+                            onPress={() => removeHeldCart(hc.id)}
+                          >
+                            <Ionicons name="trash" size={18} color={Colors.error} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{ backgroundColor: Colors.primaryStart, padding: 10, borderRadius: 8, flexDirection: 'row', alignItems: 'center' }}
+                            onPress={() => {
+                              resumeCart(hc.id);
+                              setShowHeldCartsModal(false);
+                              AppToast.success('Dipanggil', 'Keranjang berhasil dipanggil.');
+                            }}
+                          >
+                            <Ionicons name="play" size={18} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </GlassCard>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* --- CART REVIEW MODAL --- */}
       <Modal visible={showCartModal} animationType="slide" onRequestClose={() => setShowCartModal(false)}>
         <SafeAreaView style={styles.fullModalContainer}>
@@ -602,9 +701,25 @@ export const POSScreen: React.FC = () => {
                 <Text style={{color: Colors.primary, fontSize: FontSize.xs, fontWeight: 'bold'}}>+ Tambah</Text>
               </TouchableOpacity>
             </View>
+            <TextInput
+              style={{
+                backgroundColor: Colors.surface,
+                borderWidth: 1,
+                borderColor: Colors.border,
+                borderRadius: BorderRadius.md,
+                height: 40,
+                paddingHorizontal: 12,
+                color: Colors.textPrimary,
+                marginBottom: Spacing.sm
+              }}
+              placeholder="Cari pelanggan..."
+              placeholderTextColor={Colors.textTertiary}
+              value={customerSearch}
+              onChangeText={setCustomerSearch}
+            />
             <View style={styles.pickerWrapper}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerScroll}>
-                {customers.map((cust) => (
+                {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).map((cust) => (
                   <TouchableOpacity
                     key={cust.id}
                     style={[
@@ -1288,6 +1403,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing['2xl'],
+  },
+  modalContent: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    width: '100%',
+    maxWidth: 400,
+    overflow: 'hidden',
   },
   unitModalCard: {
     width: '100%',

@@ -1,11 +1,12 @@
 /**
- * AiChatScreen — Premium AI Chat Interface for MIDA (Masdar Intelligent Digital Assistant)
+ * AiChatScreen — MIDA True Autonomous Agent Interface
  *
- * v3 — True On-Device LLM Integration:
- * - Real model download from HuggingFace via expo-file-system
- * - Streaming per-token output via llama.rn
- * - Fallback to regex pattern matching if model not downloaded
- * - Draft confirmation compact & responsive
+ * v4 — ReAct Agent Edition:
+ * - Hybrid ReAct Loop: Dynamic Context Injection + Multi-Turn ReAct
+ * - Dynamic Context: Top-20 produk relevan disuntik ke system prompt (0 hallucination)
+ * - ReAct Loop: AI bisa iterasi (Thought → Action → Observation) di background
+ * - UI bersih: hanya tampilkan hasil akhir / Draft Card ke user
+ * - Fallback deterministik (tanpa LLM): intent detect → pre-fetch → eksekusi
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
@@ -21,16 +22,20 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import { useAiStore, AiMessage } from '../stores/ai.store';
 import { useCartStore } from '../stores/cart.store';
-import { executeAiToolCall, ToolCallPayload } from '../services/ai-executor.service';
 import {
-  initializeLlama, generateResponse, releaseLlama, isLlamaReady,
-  LLAMA_CONFIG, ChatMessage, MODEL_MIRROR_URLS,
+  executeAiToolCall, ToolCallPayload, ToolResult,
+} from '../services/ai-executor.service';
+import {
+  initializeLlama, generateResponseWithContext,
+  releaseLlama, isLlamaReady, LLAMA_CONFIG, ChatMessage, MODEL_MIRROR_URLS,
 } from '../services/llama.service';
-import { GlassCard } from '../components/ui/GlassCard';
-import { GradientButton } from '../components/ui/GradientButton';
+import {
+  buildDynamicSystemPrompt, classifyFallbackIntent, ContextProduct,
+} from '../utils/ai-prompts';
 import { Colors, FontSize, FontWeight, Shadow, Spacing, BorderRadius, Gradients } from '../constants/theme';
 import { debtService } from '../services/debt.service';
 import { stockService } from '../services/stock.service';
+import { productService } from '../services/product.service';
 import api from '../services/api';
 import { API_ENDPOINTS } from '../constants/api';
 
@@ -41,6 +46,9 @@ interface DraftData {
   data: any;
   executeEndpoint?: string;
 }
+
+// Max ReAct loop iterations — cegah infinite loop & hemat RAM HP
+const REACT_MAX_ITERATIONS = 4;
 
 // ==================== MODEL FILE PATH ====================
 const getModelDir = () => `${FileSystem.documentDirectory}${LLAMA_CONFIG.modelDir}/`;
@@ -124,11 +132,13 @@ const executeDraft = async (draftData: DraftData): Promise<{ success: boolean; m
 
 // ==================== TOOL CALL PARSER ====================
 const extractToolCall = (text: string): ToolCallPayload | null => {
+  // Try exact JSON first
   try {
     const parsed = JSON.parse(text.trim());
     if (parsed?.type === 'tool_call' && parsed?.tool) return parsed;
   } catch { }
-  const jsonMatch = text.match(/\{[\s\S]*"type"\s*:\s*"tool_call"[\s\S]*\}/);
+  // Extract embedded JSON from mixed text
+  const jsonMatch = text.match(/\{[\s\S]*?"type"\s*:\s*"tool_call"[\s\S]*?\}/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
@@ -138,131 +148,90 @@ const extractToolCall = (text: string): ToolCallPayload | null => {
   return null;
 };
 
-const isDraftResponse = (r: any): boolean => typeof r?.type === 'string' && r.type.startsWith('draft_');
+// ==================== DYNAMIC CONTEXT PRE-FETCH ====================
+/**
+ * Fetch top-20 produk yang paling relevan dengan keyword user.
+ * Hasil diinjeksikan ke system prompt sebagai Quick Reference.
+ * Ini yang membuat AI tidak perlu "tebak" nama/kode produk.
+ */
+const fetchContextProducts = async (userText: string): Promise<ContextProduct[]> => {
+  try {
+    // Ekstrak 1-3 kata kunci dari kalimat user (buang kata bantu)
+    const stopWords = /^(buat|bikin|buatkan|tolong|minta|carikan|cek|cari|ada|berapa|harga|stok|lihat|tampil|orderan|nota|transaksi|surat|jalan|untuk|atas|nama|kepada|ke|dari|dengan|dan|atau|yang|ini|itu|saya|kami|kita|mau|ingin|perlu|butuh)$/i;
+    const words = userText
+      .replace(/[^a-zA-Z0-9 ]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !stopWords.test(w))
+      .slice(0, 3);
 
-// ==================== MOCK LLM (pattern matching fallback) ====================
-const simulateLlmResponse = (userText: string): string => {
-  const lower = userText.toLowerCase();
-  const tc = (tool: string, params: any) => JSON.stringify({ type: 'tool_call', tool, params });
+    if (words.length === 0) return [];
+    const keyword = words.join(' ');
 
-  // A: WA Orders
-  if (/(konfirmasi|terima|acc|setuju).*(order|pesanan)/i.test(lower))
-    return tc('confirmWaOrder', { orderId: 'O-123', parsedItems: [] });
-  if (/(tolak|batal|reject).*(order|pesanan)/i.test(lower))
-    return tc('rejectWaOrder', { orderId: 'O-123', reason: 'Ditolak via MIDA' });
-  if (/(orderan|pesanan).*(wa|whatsapp|pending)/i.test(lower) || lower.includes('lihat order'))
-    return tc('getPendingWaOrders', {});
+    const res = await productService.getProducts({ search: keyword, limit: 20 });
+    const products = (res.data as any)?.products || [];
 
-  // B: Produk & Transaksi
-  if (/(stok|stock).*(rendah|habis|kosong|minimum|menipis)/i.test(lower))
-    return tc('getLowStockProducts', {});
-  if (/(detail|info|spesifikasi).*(produk|barang)/i.test(lower))
-    return tc('getProductDetail', { productId: 'unknown' });
-
-  if (/(harga|stok|cari|ada|jual|beli|berapa|produk)/i.test(lower) && !/(nota|transaksi|surat jalan|po|purchase|laporan|setting)/i.test(lower)) {
-    let kw = lower.replace(/(berapa|harga|stok|cari|ada|jual|beli|tolong|carikan|produk|cek|info)\s*/gi, '').trim();
-    if (!kw || kw.length < 2) kw = lower;
-    return tc('searchProduct', { keyword: kw });
+    return products.map((p: any): ContextProduct => ({
+      code: p.code,
+      name: p.name,
+      currentStock: p.currentStock,
+      category: p.category?.name,
+      units: p.productUnits?.map((pu: any) => ({
+        unitName: pu.unit?.name,
+        sellPrice: pu.sellPrice,
+        buyPrice: pu.buyPrice,
+        isPrimary: pu.isPrimary,
+      })) || [],
+    }));
+  } catch {
+    return [];
   }
-
-  if (/(detail|info).*(nota|transaksi|invoice|struk)/i.test(lower))
-    return tc('getSaleDetail', { invoiceNumber: 'INV-UNKNOWN' });
-  if (/(buat|bikin|tambah|buatkan).*(nota|transaksi|penjualan)/i.test(lower)) {
-    // Ekstrak nama pelanggan dari kalimat
-    const nameMatch = userText.match(/(?:atas nama|a\.n\.|an\.|untuk|ke|kepada)\s+([A-Za-z][\w\s]{1,30})/i);
-    const customerName = nameMatch ? nameMatch[1].trim() : 'UMUM';
-    // Ekstrak metode pembayaran
-    const paymentMethod = /(kredit|hutang|piutang|bon)/i.test(lower) ? 'CREDIT'
-      : /(transfer|tf|bca|bri|mandiri)/i.test(lower) ? 'TRANSFER' : 'CASH';
-    return tc('createDraftTransaction', { customerName, paymentMethod, items: [], notes: userText });
-  }
-
-  // C: Hutang & Piutang
-  if (/(bayar|pembayaran|lunas).*(utang|hutang|piutang|bon)/i.test(lower))
-    return tc('createDraftDebtPayment', { debtType: 'customer', debtId: 'unknown', amount: 0 });
-  if (/(utang|hutang|piutang|bon)/i.test(lower))
-    return lower.includes('supplier') ? tc('getSupplierDebts', {}) : tc('getCustomerDebts', {});
-
-  // D: Surat Jalan & PO
-  if (/(buat|bikin|tambah|buatkan).*(surat jalan|do|delivery)/i.test(lower)) {
-    const nameMatch = userText.match(/(?:atas nama|untuk|ke|kepada)\s+([A-Za-z][\w\s]{1,30})/i);
-    const customerName = nameMatch ? nameMatch[1].trim() : 'UMUM';
-    return tc('createDraftDelivery', { customerName, notes: userText });
-  }
-  if (/(surat jalan|delivery|pengiriman)/i.test(lower))
-    return tc('getDeliveryOrders', {});
-  if (/(buat|bikin|tambah|buatkan).*(po|purchase order|pesanan ke supplier)/i.test(lower)) {
-    const nameMatch = userText.match(/(?:ke|dari|supplier|vendor)\s+([A-Za-z][\w\s]{1,30})/i);
-    const supplierName = nameMatch ? nameMatch[1].trim() : 'UMUM';
-    return tc('createDraftPurchase', { supplierName, notes: userText });
-  }
-  if (/(po|purchase order|pembelian)/i.test(lower))
-    return tc('getPurchases', {});
-
-  // E: Stock Opname
-  if (/(sesuaikan|ubah|edit|ganti).*(stok|stock)/i.test(lower))
-    return tc('createDraftStockAdjustment', { productCode: 'unknown', type: 'ADJUSTMENT', qty: 0 });
-  if (/(pergerakan|riwayat|histori|opname).*(stok|stock)/i.test(lower))
-    return tc('getStockMovements', {});
-
-  // F: Master & Laporan
-  if (/(setting|pengaturan|profil|toko)/i.test(lower))
-    return tc('getStoreSettings', {});
-  if (/(laporan|omzet|profit|pendapatan|revenue|keuntungan)/i.test(lower))
-    return tc('getFinancialReport', {});
-  if (/(inventaris|inventory|aset|asset)/i.test(lower))
-    return tc('getInventoryReport', {});
-  if (/(cari|lihat|daftar).*(customer|pelanggan)/i.test(lower))
-    return tc('searchCustomer', { keyword: lower.replace(/(cari|lihat|daftar|customer|pelanggan)\s*/gi, '').trim() });
-  if (/(cari|lihat|daftar).*(supplier|pabrik)/i.test(lower))
-    return tc('searchSupplier', { keyword: lower.replace(/(cari|lihat|daftar|supplier|pabrik)\s*/gi, '').trim() });
-
-  // G: Aksi Berbahaya
-  if (/(hapus|buang|delete)/i.test(lower))
-    return tc('deleteConfirmation', { target: 'product', id: 'unknown', name: userText });
-  if (/(ubah|edit|ganti)/i.test(lower))
-    return tc('editConfirmation', { target: 'product', id: 'unknown', name: userText, changes: {} });
-
-  // Greetings
-  const greetings = ['halo', 'hai', 'hi', 'pagi', 'siang', 'sore', 'malam', 'assalamualaikum'];
-  if (greetings.some(g => lower.startsWith(g))) {
-    return `Halo! Saya **MIDA** (didukung oleh Qwen 2.5), asisten cerdas Toko Masdar Utama 🏪\n\nSaya siap mengeksekusi perintah apa pun, mulai dari cek stok, membuat surat jalan, hingga merekap laporan keuangan. Apa yang bisa saya bantu hari ini?`;
-  }
-
-  if (lower.includes('siapa kamu') || lower.includes('apa yang bisa kamu lakukan')) {
-    return `Saya adalah **MIDA**, AI cerdas yang memiliki akses penuh ke seluruh fitur Masdar Utama. Saya bisa mengeksekusi semua hal yang Anda butuhkan:\n\n• **Transaksi:** Buat nota, cek utang/piutang\n• **Inventaris:** Cek stok, cari barang, stock opname\n• **Operasional:** Konfirmasi pesanan WA, buat PO, buat Surat Jalan\n• **Analisis:** Buka laporan omzet, profit, dan data pelanggan\n\nTinggal berikan perintah dalam bahasa sehari-hari, dan saya akan mengeksekusinya!`;
-  }
-
-  if (lower.includes('terima kasih') || lower.includes('makasih')) {
-    return 'Sama-sama! Selalu siap membantu Anda kapan saja. Ada hal lain yang perlu dieksekusi?';
-  }
-
-  return `Saya mengerti Anda ingin membahas tentang "${userText.length > 20 ? userText.substring(0, 20) + '...' : userText}".\n\nSebagai asisten cerdas, saya punya akses penuh ke sistem. Apakah Anda ingin saya **Mencarikan data spesifik**, **Membuat dokumen baru (Nota/DO/PO)**, atau **Menganalisis laporan** terkait hal tersebut? Sebutkan saja perintah spesifiknya!`;
 };
 
-// ==================== FORMAT TOOL RESULTS ====================
-const formatToolResult = (toolName: string, result: any): string => {
+// ==================== FORMAT TOOL RESULT FOR UI ====================
+/**
+ * Converts a DATA_RESPONSE ToolResult into human-readable markdown text.
+ * DRAFT_RESPONSE is handled separately by DraftCard component.
+ */
+const formatToolResultForUI = (toolName: string, result: ToolResult): string => {
+  if (result.resultType === 'ERROR_RESPONSE') return `⚠️ ${result.error}`;
+  if (result.resultType === 'DRAFT_RESPONSE') return JSON.stringify(result.draft);
+
   const data = result.data;
-  if (!data) return result.message || 'Tidak ada data.';
+  const msg = result.message;
+
+  if (!data) return msg || 'Tidak ada data.';
 
   if (Array.isArray(data)) {
-    if (data.length === 0) return result.message || '📭 Data kosong / tidak ditemukan.';
+    if (data.length === 0) return msg || '📭 Data kosong / tidak ditemukan.';
     switch (toolName) {
       case 'searchProduct':
       case 'getLowStockProducts':
-        return `📦 Ditemukan **${data.length}** produk:\n\n` + data.slice(0, 10).map((p: any, i: number) =>
-          `${i + 1}. **${p.name}** (${p.code})\n   Stok: ${p.currentStock} | Min: ${p.minStock || '-'}\n   ${p.units?.map((u: any) => `${u.unitName}: Rp${u.sellPrice?.toLocaleString('id-ID')}`).join(', ') || ''}`
-        ).join('\n\n');
+        return `📦 Ditemukan **${data.length}** produk:\n\n` +
+          data.slice(0, 10).map((p: any, i: number) =>
+            `${i + 1}. **${p.name}** (${p.code})\n   Stok: ${p.currentStock} | Min: ${p.minStock || '-'}\n   ${p.units?.map((u: any) => `${u.unitName}: Rp${u.sellPrice?.toLocaleString('id-ID')}`).join(', ') || ''}`
+          ).join('\n\n');
       case 'searchCustomer':
-        return `👥 Ditemukan **${data.length}** pelanggan:\n\n` + data.slice(0, 10).map((c: any, i: number) =>
-          `${i + 1}. **${c.name}** (${c.code}) — ${c.type || 'REGULER'}\n   📱 ${c.phone || '-'} | 📍 ${c.address || '-'}`
-        ).join('\n\n');
+        return `👥 Ditemukan **${data.length}** pelanggan:\n\n` +
+          data.slice(0, 10).map((c: any, i: number) =>
+            `${i + 1}. **${c.name}** (${c.code}) — ${c.type || 'REGULER'}\n   📱 ${c.phone || '-'} | 📍 ${c.address || '-'}`
+          ).join('\n\n');
       case 'searchSupplier':
-        return `🏭 Ditemukan **${data.length}** supplier:\n\n` + data.slice(0, 10).map((s: any, i: number) =>
-          `${i + 1}. **${s.name}** (${s.code})\n   📱 ${s.phone || '-'} | 📍 ${s.address || '-'}`
-        ).join('\n\n');
+        return `🏭 Ditemukan **${data.length}** supplier:\n\n` +
+          data.slice(0, 10).map((s: any, i: number) =>
+            `${i + 1}. **${s.name}** (${s.code})\n   📱 ${s.phone || '-'} | 📍 ${s.address || '-'}`
+          ).join('\n\n');
+      case 'getCustomerDebts':
+        return `💰 Data Piutang Pelanggan:\n\n` +
+          data.slice(0, 10).map((d: any, i: number) =>
+            `${i + 1}. **${d.customerName || d.customer?.name || '-'}**\n   Sisa: Rp${(d.remainingAmount || d.amount || 0).toLocaleString('id-ID')} | Status: ${d.status || '-'}`
+          ).join('\n\n');
+      case 'getSupplierDebts':
+        return `🏭 Data Utang Supplier:\n\n` +
+          data.slice(0, 10).map((d: any, i: number) =>
+            `${i + 1}. **${d.supplierName || d.supplier?.name || '-'}**\n   Sisa: Rp${(d.remainingAmount || d.amount || 0).toLocaleString('id-ID')} | Status: ${d.status || '-'}`
+          ).join('\n\n');
       default:
-        return `📋 Ditemukan **${data.length}** data.`;
+        return msg || `📋 Ditemukan **${data.length}** data.`;
     }
   }
 
@@ -271,22 +240,24 @@ const formatToolResult = (toolName: string, result: any): string => {
       case 'getProductDetail':
         return `📦 **Detail Produk: ${data.name}**\n\n• Kode: ${data.code}\n• Kategori: ${data.category?.name || '-'}\n• Stok Saat Ini: **${data.currentStock}** (Min: ${data.minStock})\n\n**Satuan & Harga:**\n${data.productUnits?.map((u: any) => `- ${u.unit?.name}: Beli Rp${u.buyPrice?.toLocaleString('id-ID')} | Jual Rp${u.sellPrice?.toLocaleString('id-ID')}`).join('\n') || '- -'}`;
       case 'getSaleDetail':
-        return `🧾 **Detail Nota: ${data.invoiceNumber}**\n\n• Tanggal: ${new Date(data.date).toLocaleDateString('id-ID')}\n• Pelanggan: ${data.customer?.name || 'UMUM'}\n• Total: **Rp${(data.finalTotal || 0).toLocaleString('id-ID')}**\n• Status: ${data.paymentStatus}\n\n**Item Pembelian:**\n${data.saleItems?.map((item: any) => `- ${item.quantity} ${item.unit?.name} ${item.product?.name} (Rp${item.price?.toLocaleString('id-ID')})`).join('\n') || '- -'}`;
+        return `🧾 **Detail Nota: ${data.invoiceNumber}**\n\n• Tanggal: ${new Date(data.date).toLocaleDateString('id-ID')}\n• Pelanggan: ${data.customer?.name || 'UMUM'}\n• Total: **Rp${(data.finalTotal || 0).toLocaleString('id-ID')}**\n• Status: ${data.paymentStatus}\n\n**Item:**\n${data.saleItems?.map((item: any) => `- ${item.quantity} ${item.unit?.name} ${item.product?.name} (Rp${item.price?.toLocaleString('id-ID')})`).join('\n') || '- -'}`;
       case 'getStoreSettings':
-        return `🏪 **Profil Toko**\n\n• Nama: **${data.name || '-'}**\n• Tagline: ${data.tagline || '-'}\n• Alamat: ${data.address || '-'}, ${data.city || ''}\n• Telepon: ${data.phone || '-'}\n• Email: ${data.email || '-'}\n• Bank: ${data.bankName || '-'} a.n. ${data.bankHolder || '-'}`;
+        return `🏪 **Profil Toko**\n\n• Nama: **${data.name || '-'}**\n• Tagline: ${data.tagline || '-'}\n• Alamat: ${data.address || '-'}, ${data.city || ''}\n• Telepon: ${data.phone || '-'}\n• Bank: ${data.bankName || '-'} a.n. ${data.bankHolder || '-'}`;
       case 'getFinancialReport':
         return `📊 **Laporan Keuangan**\n\n• Omzet: **Rp${(data.totalRevenue || 0).toLocaleString('id-ID')}**\n• Profit: **Rp${(data.totalProfit || 0).toLocaleString('id-ID')}**\n• Transaksi: **${data.totalTransactions || 0}x**\n• Rata-rata: Rp${(data.averageTransaction || 0).toLocaleString('id-ID')}`;
       case 'getInventoryReport':
         return `📦 **Inventaris**\n\n• Total Produk: **${data.totalProducts || 0}**\n• Nilai Stok: **Rp${(data.totalStockValue || 0).toLocaleString('id-ID')}**\n• Stok Rendah: ${data.lowStockProducts?.length || 0}\n• Stok Habis: ${data.outOfStockProducts?.length || 0}`;
       default:
-        return `📋 Data berhasil dimuat.`;
+        return msg || `📋 Data berhasil dimuat.`;
     }
   }
-  return result.message || String(data);
+  return msg || String(data);
 };
 
+
+
 // ==================== TYPING INDICATOR ====================
-const TypingIndicator = () => {
+const TypingIndicator = ({ statusText }: { statusText?: string }) => {
   const dot1 = useRef(new Animated.Value(0.3)).current;
   const dot2 = useRef(new Animated.Value(0.3)).current;
   const dot3 = useRef(new Animated.Value(0.3)).current;
@@ -312,7 +283,7 @@ const TypingIndicator = () => {
           <Animated.View key={i} style={[s.typingDot, { opacity: dot }]} />
         ))}
       </View>
-      <Text style={s.typingText}>MIDA sedang berpikir...</Text>
+      <Text style={s.typingText}>{statusText || 'MIDA sedang berpikir...'}</Text>
     </View>
   );
 };
@@ -357,7 +328,11 @@ const renderMarkdownText = (text: string, isUser: boolean): React.ReactNode[] =>
 const DraftCard = ({ msg, onConfirm }: { msg: AiMessage; onConfirm: (d: DraftData) => void }) => {
   const [expanded, setExpanded] = useState(false);
   let draftData: DraftData;
-  try { draftData = JSON.parse(msg.text); } catch { return null; }
+  try {
+    const raw = JSON.parse(msg.text);
+    // Support both old format { type, action, data } and new ToolResult.draft format
+    draftData = raw.draft ?? raw;
+  } catch { return null; }
 
   const isDanger = draftData.type === 'draft_delete';
   const isEdit = draftData.type === 'draft_edit';
@@ -734,7 +709,7 @@ export const AiChatScreen = () => {
   const navigation = useNavigation<any>();
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [agentStatus, setAgentStatus] = useState<string>('MIDA sedang berpikir...');
   const [showSettings, setShowSettings] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const {
@@ -743,12 +718,12 @@ export const AiChatScreen = () => {
     setModelLoading, setModelReady, setModelLoadError, setModelDownloadStatus,
   } = useAiStore();
 
-  // Scroll to bottom when new message or streaming
+  // Scroll to bottom when messages or loading state changes
   useEffect(() => {
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 100);
-  }, [messages.length, isLoading, streamingText]);
+  }, [messages.length, isLoading]);
 
   // Auto-load LLM context when model is downloaded
   useEffect(() => {
@@ -797,79 +772,181 @@ export const AiChatScreen = () => {
     };
   }, []);
 
-  // ==================== SEND MESSAGE ====================
+  // ==================== REACT AGENT ENGINE ====================
+
+  /**
+   * handleSend — Hybrid ReAct Agent Loop
+   *
+   * Mode A (LLM Ready): Dynamic Context → ReAct Loop (max 4 turns) di background
+   * Mode B (Fallback):  Intent Classify → Optional Pre-fetch → Direct Execute
+   *
+   * UI HANYA melihat hasil akhir — Draft Card atau teks jawaban.
+   * Semua proses Thought→Action→Observation terjadi di background.
+   */
   const handleSend = useCallback(async () => {
     if (!inputText.trim() || isLoading) return;
     const userText = inputText.trim();
     setInputText('');
     addMessage({ role: 'user', text: userText });
     setIsLoading(true);
-    setStreamingText(null);
+    setAgentStatus('MIDA sedang berpikir...');
 
     try {
-      let llmResponse: string;
-
       if (isModelReady && isLlamaReady()) {
-        // ===== TRUE ON-DEVICE LLM (Qwen 3B) =====
-        const recentMsgs = messages.slice(-6);
-        const chatMsgs: ChatMessage[] = recentMsgs
-          .filter(m => m.role !== 'system')
-          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.text }));
-        chatMsgs.push({ role: 'user', content: userText });
+        // ================================================================
+        // MODE A: TRUE REACT AGENT (On-Device LLM)
+        // ================================================================
 
+        // Step 1: Dynamic Context — fetch produk relevan dari DB
+        setAgentStatus('Menyiapkan konteks data...');
+        const contextProducts = await fetchContextProducts(userText);
+
+        // Step 2: Build initial messages array
+        const recentHistory = messages
+          .slice(-6)
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.text }));
+
+        const agentMessages: ChatMessage[] = [
+          { role: 'system', content: buildDynamicSystemPrompt(contextProducts) },
+          ...recentHistory,
+          { role: 'user', content: userText },
+        ];
+
+        // Step 3: Tambahkan placeholder pesan di UI
         addMessage({ role: 'assistant', text: '...' });
 
-        llmResponse = await generateResponse(chatMsgs, (data) => {
-          setStreamingText(data.accumulated_text);
-          updateLastAssistantMessage(data.accumulated_text);
+        // Step 4: ReAct Loop
+        let iteration = 0;
+        let agentDone = false;
+
+        while (iteration < REACT_MAX_ITERATIONS && !agentDone) {
+          iteration++;
+
+          // LLM berpikir — update status tapi TIDAK tampilkan ke chat
+          if (iteration === 1) {
+            setAgentStatus('MIDA sedang menganalisis perintah...');
+            updateLastAssistantMessage('...');
+          } else {
+            setAgentStatus(`Mengambil data (langkah ${iteration})...`);
+          }
+
+          // LLM inference — tidak streaming di iteration > 1 agar bersih
+          const llmResponse = await generateResponseWithContext(agentMessages);
+
+          const toolCall = extractToolCall(llmResponse);
+
+          if (!toolCall) {
+            // AI sudah selesai → tampilkan teks jawaban ke UI
+            updateLastAssistantMessage(llmResponse || 'Maaf, saya tidak bisa memproses perintah tersebut.');
+            agentDone = true;
+            break;
+          }
+
+          // Ada tool call → eksekusi di background
+          setAgentStatus(`Mengeksekusi: ${toolCall.tool}...`);
+          updateLastAssistantMessage('⏳ Sedang memproses...');
+
+          const toolResult = await executeAiToolCall(toolCall);
+
+          if (toolResult.resultType === 'DRAFT_RESPONSE') {
+            // Draft siap → tampilkan DraftCard ke UI → loop selesai
+            updateLastAssistantMessage(JSON.stringify(toolResult.draft));
+            agentDone = true;
+            break;
+          }
+
+          if (toolResult.resultType === 'ERROR_RESPONSE') {
+            // Error dari backend → sampaikan ke user → loop selesai
+            updateLastAssistantMessage(`⚠️ ${toolResult.error}`);
+            agentDone = true;
+            break;
+          }
+
+          // DATA_RESPONSE → inject sebagai Observation ke context, lanjut loop
+          agentMessages.push({ role: 'assistant', content: llmResponse });
+          agentMessages.push({
+            role: 'tool',
+            content: `Observation: ${JSON.stringify(toolResult.data).slice(0, 2000)}`, // limit agar context tidak meledak
+          });
+          // Loop kembali → LLM baca data dan ambil keputusan
+        }
+
+        // Jika loop habis tanpa selesai (edge case)
+        if (!agentDone) {
+          updateLastAssistantMessage('Saya memerlukan informasi lebih spesifik untuk melanjutkan. Bisa Anda jelaskan lebih detail?');
+        }
+
+      } else {
+        // ================================================================
+        // MODE B: FALLBACK DETERMINISTIK (Tanpa LLM)
+        // Pre-fetch data yang diperlukan → eksekusi langsung
+        // ================================================================
+        setAgentStatus('Menganalisis perintah...');
+        await new Promise(r => setTimeout(r, 300));
+
+        // Cek greeting & pertanyaan umum
+        const lower = userText.toLowerCase();
+        const greetings = ['halo', 'hai', 'hi', 'pagi', 'siang', 'sore', 'malam', 'assalamualaikum'];
+        if (greetings.some(g => lower.startsWith(g))) {
+          addMessage({ role: 'assistant', text: `Halo! Saya **MIDA** 👋, asisten cerdas Toko Masdar Utama.\n\nSaya bisa membantu:\n• 📦 Cek stok & harga produk\n• 🧾 Buat nota transaksi & PO\n• 🚚 Buat surat jalan\n• 💰 Cek hutang/piutang\n• 📊 Laporan keuangan\n\nApa yang perlu dieksekusi hari ini?` });
+          return;
+        }
+        if (lower.includes('siapa kamu') || lower.includes('apa yang bisa kamu lakukan')) {
+          addMessage({ role: 'assistant', text: `Saya **MIDA** (Masdar Intelligent Digital Assistant) 🤖\n\nSaya adalah agent AI otonom yang punya akses penuh ke:\n• **Transaksi:** Buat nota, kasir, piutang\n• **Inventaris:** Stok, harga, opname\n• **Operasional:** PO, Surat Jalan, WA Order\n• **Laporan:** Keuangan, inventaris, pergerakan stok\n\nCukup perintah dalam bahasa Indonesia — saya yang eksekusi!` });
+          return;
+        }
+        if (lower.includes('terima kasih') || lower.includes('makasih')) {
+          addMessage({ role: 'assistant', text: 'Sama-sama! Siap membantu kapan saja 😊' });
+          return;
+        }
+
+        // Klasifikasi intent & eksekusi
+        const intent = classifyFallbackIntent(userText);
+
+        if (!intent) {
+          addMessage({
+            role: 'assistant',
+            text: `Saya belum bisa memahami perintah tersebut. Coba lebih spesifik, misalnya:\n\n• "Cek stok semen merah"\n• "Buat PO cat tembok ke supplier Avian"\n• "Lihat hutang pelanggan Pak Budi"\n• "Laporan keuangan bulan ini"`,
+          });
+          return;
+        }
+
+        // Pre-fetch jika intent memerlukan data sebelum eksekusi final
+        let finalParams = intent.params;
+        if (intent.needsPreFetch) {
+          setAgentStatus('Mengambil data produk...');
+          const preFetchResult = await executeAiToolCall({
+            type: 'tool_call',
+            tool: intent.needsPreFetch.tool,
+            params: intent.needsPreFetch.params,
+          });
+          if (preFetchResult.resultType === 'DATA_RESPONSE' && preFetchResult.data) {
+            // Map hasil pencarian ke params final
+            finalParams = intent.needsPreFetch.mapResult(preFetchResult, intent.params);
+          }
+        }
+
+        // Eksekusi tool final
+        setAgentStatus(`Mengeksekusi: ${intent.tool}...`);
+        const result = await executeAiToolCall({
+          type: 'tool_call',
+          tool: intent.tool,
+          params: finalParams,
         });
 
-        setStreamingText(null);
-        updateLastAssistantMessage(llmResponse);
-      } else {
-        // ===== FALLBACK: PATTERN MATCHING =====
-        await new Promise(r => setTimeout(r, 500));
-        llmResponse = simulateLlmResponse(userText);
-      }
-
-      // Try to extract tool call from the response
-      const toolCall = extractToolCall(llmResponse);
-
-      if (toolCall) {
-        // If we used streaming, remove the raw JSON placeholder
-        if (isModelReady) {
-          updateLastAssistantMessage('⚙️ Mengeksekusi perintah...');
-        }
-
-        const toolResult = await executeAiToolCall(toolCall);
-        if (isDraftResponse(toolResult)) {
-          if (isModelReady) {
-            updateLastAssistantMessage(JSON.stringify(toolResult));
-          } else {
-            addMessage({ role: 'assistant', text: JSON.stringify(toolResult) });
-          }
-        } else if (toolResult.error) {
-          const errMsg = `⚠️ ${toolResult.error}`;
-          if (isModelReady) {
-            updateLastAssistantMessage(errMsg);
-          } else {
-            addMessage({ role: 'assistant', text: errMsg });
-          }
+        if (result.resultType === 'DRAFT_RESPONSE') {
+          addMessage({ role: 'assistant', text: JSON.stringify(result.draft) });
+        } else if (result.resultType === 'ERROR_RESPONSE') {
+          addMessage({ role: 'assistant', text: `⚠️ ${result.error}` });
         } else {
-          const formatted = formatToolResult(toolCall.tool, toolResult);
-          if (isModelReady) {
-            updateLastAssistantMessage(formatted);
-          } else {
-            addMessage({ role: 'assistant', text: formatted });
-          }
+          // DATA_RESPONSE → format untuk tampilan
+          const formatted = formatToolResultForUI(intent.tool, result);
+          addMessage({ role: 'assistant', text: formatted });
         }
-      } else if (!isModelReady) {
-        // Fallback: non-tool response
-        addMessage({ role: 'assistant', text: llmResponse });
       }
-      // If isModelReady && no toolCall, the streamed text is already in messages
     } catch (err: any) {
-      const errMsg = '❌ Maaf, terjadi kesalahan.';
+      const errMsg = `❌ Maaf, terjadi kesalahan: ${err?.message || 'Error tidak diketahui.'}`;
       if (isModelReady) {
         updateLastAssistantMessage(errMsg);
       } else {
@@ -877,7 +954,7 @@ export const AiChatScreen = () => {
       }
     } finally {
       setIsLoading(false);
-      setStreamingText(null);
+      setAgentStatus('MIDA sedang berpikir...');
     }
   }, [inputText, isLoading, addMessage, updateLastAssistantMessage, isModelReady, messages]);
 
@@ -948,8 +1025,9 @@ export const AiChatScreen = () => {
   const renderMessage = (msg: AiMessage) => {
     const isUser = msg.role === 'user';
 
-    // Draft card (compact)
-    if (msg.role === 'assistant' && msg.text.startsWith('{') && msg.text.includes('"type":"draft_')) {
+    // Draft card — support both old { type:"draft_*" } and new { draft: { type } }
+    if (msg.role === 'assistant' && msg.text.startsWith('{') &&
+      (msg.text.includes('"type":"draft_') || msg.text.includes('"draft":{"type":"draft_'))) {
       return <DraftCard key={msg.id} msg={msg} onConfirm={handleDraftConfirm} />;
     }
 
@@ -1091,9 +1169,9 @@ export const AiChatScreen = () => {
             </View>
           ) : (
             <>
-              {messages.map(renderMessage)}
-              {isLoading && !streamingText && <TypingIndicator />}
-            </>
+            {messages.map(renderMessage)}
+            {isLoading && <TypingIndicator statusText={agentStatus} />}
+          </>
           )}
         </ScrollView>
 

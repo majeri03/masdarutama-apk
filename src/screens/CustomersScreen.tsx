@@ -82,7 +82,8 @@ export const CustomersScreen: React.FC = () => {
   };
 
   const openAddForm = () => {
-    setFormData({ type: 'UMUM', name: '', phone: '', address: '' });
+    const hasUmum = customers.some(c => c.type === 'UMUM');
+    setFormData({ type: hasUmum ? 'REGULER' : 'UMUM', name: '', phone: '', address: '' });
     setShowForm(true);
   };
 
@@ -298,7 +299,9 @@ export const CustomersScreen: React.FC = () => {
 
               <Text style={styles.inputLabel}>Tipe Pelanggan</Text>
               <View style={styles.typeSelectorRow}>
-                {['UMUM', 'REGULER', 'GROSIR', 'PROYEK'].map(t => (
+                {['UMUM', 'REGULER', 'GROSIR', 'PROYEK']
+                  .filter(t => t !== 'UMUM' || formData.type === 'UMUM' || !customers.some(c => c.type === 'UMUM'))
+                  .map(t => (
                   <TouchableOpacity
                     key={t}
                     style={[styles.typeBtn, formData.type === t && styles.typeBtnActive]}

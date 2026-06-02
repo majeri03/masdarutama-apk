@@ -25,9 +25,10 @@ import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { salesService } from '../services/sales.service';
 import type { Sale, PaymentMethod, SaleStatus } from '../types';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
-import { useRoute, useFocusEffect } from '@react-navigation/native';
+import { useRoute, useFocusEffect, useNavigation } from '@react-navigation/native';
 import { AppToast } from '../utils/toast';
 import * as Clipboard from 'expo-clipboard';
+import * as LocalAuthentication from 'expo-local-authentication';
 // Badge warna untuk status pembayaran
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string; icon: string }> = {
   COMPLETED: { color: Colors.success, bg: Colors.successLight, label: 'Lunas', icon: 'checkmark-circle' },
@@ -55,7 +56,32 @@ interface FilterState {
 
 export const TransactionHistoryScreen: React.FC = () => {
   const route = useRoute<any>();
+  const navigation = useNavigation<any>();
   const [activeCustomerId, setActiveCustomerId] = useState<string | undefined>(route.params?.customerId);
+
+  const handleEditTransaction = async (sale: Sale) => {
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (hasHardware && isEnrolled) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Autentikasi diperlukan untuk mengedit transaksi',
+          fallbackLabel: 'Gunakan PIN/Password',
+        });
+
+        if (!result.success) {
+          AppToast.error('Akses Ditolak', 'Autentikasi gagal.');
+          return;
+        }
+      }
+      
+      setShowDetail(false);
+      navigation.navigate('EditTransaction', { saleId: sale.id });
+    } catch (error) {
+      AppToast.error('Error', 'Terjadi kesalahan saat memverifikasi akses.');
+    }
+  };
 
   useEffect(() => {
     if (route.params?.customerId) {
@@ -686,6 +712,15 @@ export const TransactionHistoryScreen: React.FC = () => {
 
               {/* Share & Print Buttons */}
               <View style={{ marginTop: Spacing.xl, marginBottom: Spacing['3xl'], gap: Spacing.md }}>
+                {selectedSale.status !== 'CANCELLED' && selectedSale.status !== 'RETURN' && (
+                  <GradientButton
+                    title="Edit Transaksi (Butuh Sidik Jari)"
+                    onPress={() => handleEditTransaction(selectedSale)}
+                    variant="secondary"
+                    fullWidth
+                    icon={<Ionicons name="create-outline" size={18} color="#fff" />}
+                  />
+                )}
                 <GradientButton
                   title="Cetak Struk / PDF"
                   onPress={() => printInvoice(selectedSale)}

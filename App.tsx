@@ -32,6 +32,7 @@ import { PurchaseScreen } from './src/screens/PurchaseScreen';
 import { DebtScreen } from './src/screens/DebtScreen';
 import { WaOrdersScreen } from './src/screens/WaOrdersScreen';
 import { WaOrderConfirmScreen } from './src/screens/WaOrderConfirmScreen';
+import { EditTransactionScreen } from './src/screens/EditTransactionScreen';
 import { CustomersScreen } from './src/screens/CustomersScreen';
 import { DeviceSettingsScreen } from './src/screens/DeviceSettingsScreen';
 import { NotificationCenterScreen } from './src/screens/NotificationCenterScreen';
@@ -431,6 +432,11 @@ export default function App() {
               <Stack.Screen
                 name="WaOrderConfirm"
                 component={WaOrderConfirmScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="EditTransaction"
+                component={EditTransactionScreen}
                 options={{ headerShown: false }}
               />
               <Stack.Screen

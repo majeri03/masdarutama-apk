@@ -24,7 +24,7 @@ interface MappedItem {
 export const WaOrderConfirmScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { order } = route.params;
+  const { order, isManual } = route.params || {};
 
   const [loading, setLoading] = useState(false);
   const [createDeliveryOrder, setCreateDeliveryOrder] = useState(true);
@@ -58,8 +58,8 @@ export const WaOrderConfirmScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    // Initialize mapped items — jika parsedItems dari bot AI sudah ada productId/unitId, pakai langsung
-    if (order.parsedItems && Array.isArray(order.parsedItems)) {
+    // Initialize mapped items
+    if (order && order.parsedItems && Array.isArray(order.parsedItems)) {
       const initialMap = order.parsedItems.map((pi: any) => ({
         originalName: pi.productName || 'Barang Tidak Dikenal',
         originalUnit: pi.unitName || pi.unit || '',
@@ -92,24 +92,20 @@ export const WaOrderConfirmScreen: React.FC = () => {
         ]);
 
         if (custRes.data.success && custRes.data.data.length > 0) {
-          const custData = custRes.data.data;
+        const custData = custRes.data.data;
           setCustomers(custData);
           
           // Cek apakah ada customer dari bot (customerName di order)
-          const botCustomer = order.customerName 
+          const botCustomer = order?.customerName 
             ? custData.find((c: any) => c.name.toLowerCase() === order.customerName?.toLowerCase())
             : null;
-          const umumCust = custData.find((c: any) => c.name.toLowerCase() === 'umum' || c.type === 'UMUM');
           
           if (botCustomer) {
             setSelectedCustomerId(botCustomer.id);
-          } else if (umumCust) {
-            setSelectedCustomerId(umumCust.id);
-          } else {
-            setSelectedCustomerId(custData[0].id);
+          } else if (custData.length > 0) {
+            setSelectedCustomerId(custData[0].id); // Default ke customer pertama
           }
         }
-
         if (prodRes.success && prodRes.data?.products) {
           const allProducts = prodRes.data.products;
           setProducts(allProducts);
@@ -196,11 +192,13 @@ export const WaOrderConfirmScreen: React.FC = () => {
         items: itemsPayload,
       };
 
-      const res = await api.post(API_ENDPOINTS.WA_ORDER_CONFIRM(order.id), payload);
+      const endpoint = isManual ? '/api/wa-orders/manual' : API_ENDPOINTS.WA_ORDER_CONFIRM(order.id);
+      const res = await api.post(endpoint, payload);
       if (res.data.success) {
-        const hasDo = createDeliveryOrder && res.data.data?.doNumber;
+        const deliveryOrder = res.data.data?.deliveryOrder;
+        const hasDo = createDeliveryOrder && deliveryOrder?.doNumber;
         const msgText = hasDo
-          ? `${res.data.message}\n\nNo. Surat Jalan: ${res.data.data.doNumber}\nBuka halaman pengiriman?`
+          ? `${res.data.message}\n\nNo. Surat Jalan: ${deliveryOrder.doNumber}\nBuka halaman pengiriman?`
           : res.data.message;
 
         Alert.alert(
@@ -263,19 +261,21 @@ export const WaOrderConfirmScreen: React.FC = () => {
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitleText}>Konfirmasi Order WA</Text>
+        <Text style={styles.headerTitleText}>{isManual ? 'Buat Order Manual' : 'Konfirmasi Order WA'}</Text>
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={{ padding: 16, gap: 16 }}>
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Pesan Asli</Text>
-          <Text style={styles.senderText}>{order.senderName} ({order.senderPhone})</Text>
-          <View style={styles.messageBox}>
-            <Text style={styles.messageText}>{order.rawMessage}</Text>
+        {!isManual && order && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Pesan Asli</Text>
+            <Text style={styles.senderText}>{order.senderName} ({order.senderPhone})</Text>
+            <View style={styles.messageBox}>
+              <Text style={styles.messageText}>{order.rawMessage}</Text>
+            </View>
           </View>
-        </View>
+        )}
 
-        {order.status === 'PENDING' ? (
+        {isManual || order?.status === 'PENDING' ? (
           <>
             <View style={styles.card}>
               <View style={styles.switchRow}>
@@ -427,25 +427,30 @@ export const WaOrderConfirmScreen: React.FC = () => {
             </View>
           </>
         ) : (
+          // Tampilan untuk order yang sudah CONFIRMED/REJECTED (bukan manual, bukan pending)
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Status Orderan</Text>
-            <Text style={[styles.helpText, { color: order.status === 'CONFIRMED' ? Colors.success : Colors.error, fontWeight: 'bold', fontSize: FontSize.md, marginTop: 8 }]}>
-              {order.status === 'CONFIRMED' ? 'Dikonfirmasi' : 'Ditolak'}
+            <Text style={[styles.helpText, { color: order?.status === 'CONFIRMED' ? Colors.success : Colors.error, fontWeight: 'bold', fontSize: FontSize.md, marginTop: 8 }]}>
+              {order?.status === 'CONFIRMED' ? 'Dikonfirmasi' : 'Ditolak'}
             </Text>
-            {order.status === 'REJECTED' && order.rejectedReason ? (
+            {order?.status === 'REJECTED' && order?.rejectedReason ? (
               <Text style={{ marginTop: 8, color: Colors.textSecondary }}>Alasan: {order.rejectedReason}</Text>
             ) : null}
           </View>
         )}
       </ScrollView>
 
-      {order.status === 'PENDING' && (
+      {/* Footer: tampil saat PENDING atau mode Manual */}
+      {(isManual || order?.status === 'PENDING') && (
         <View style={styles.footer}>
-          <TouchableOpacity style={[styles.btn, styles.btnReject]} onPress={handleReject} disabled={loading}>
-            <Text style={styles.btnRejectText}>Tolak</Text>
-          </TouchableOpacity>
+          {/* Tombol Tolak hanya untuk orderan WA yang PENDING, bukan manual */}
+          {!isManual && (
+            <TouchableOpacity style={[styles.btn, styles.btnReject]} onPress={handleReject} disabled={loading}>
+              <Text style={styles.btnRejectText}>Tolak</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={[styles.btn, styles.btnConfirm]} onPress={handleConfirm} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnConfirmText}>Konfirmasi</Text>}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnConfirmText}>{isManual ? 'Buat Orderan' : 'Konfirmasi'}</Text>}
           </TouchableOpacity>
         </View>
       )}

@@ -28,17 +28,39 @@ export const DeviceSettingsScreen: React.FC = () => {
 
   useEffect(() => {
     const init = async () => {
-      if (Platform.OS === 'android' && (Platform.Version as number) >= 31) {
+      let permissionsGranted = true;
+
+      if (Platform.OS === 'android') {
         try {
-          await PermissionsAndroid.requestMultiple([
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-          ]);
+          if ((Platform.Version as number) >= 31) {
+            const granted = await PermissionsAndroid.requestMultiple([
+              PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+              PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+            ]);
+            
+            if (
+              granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] !== PermissionsAndroid.RESULTS.GRANTED ||
+              granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] !== PermissionsAndroid.RESULTS.GRANTED
+            ) {
+              permissionsGranted = false;
+              AppToast.error('Akses Ditolak', 'Izin Bluetooth diperlukan untuk mencari printer.');
+            }
+          } else {
+            const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+            if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+              permissionsGranted = false;
+              AppToast.error('Akses Ditolak', 'Izin Lokasi diperlukan untuk mencari printer Bluetooth.');
+            }
+          }
         } catch (err) {
           console.warn(err);
+          permissionsGranted = false;
         }
       }
-      initService();
+
+      if (permissionsGranted) {
+        initService();
+      }
     };
     init();
   }, []);

@@ -7,6 +7,13 @@ import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { GlassCard } from '../components/ui';
 
+/**
+ * Tab screen names in Main tab navigator — navigasi ke sini butuh
+ * navigate('Main', { screen: 'NamaTab' }).
+ * Stack screens: navigate langsung.
+ */
+const TAB_SCREENS = new Set(['Dashboard', 'POS', 'Products', 'History', 'Reports', 'Settings']);
+
 export const NotificationCenterScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const {
@@ -26,6 +33,22 @@ export const NotificationCenterScreen: React.FC = () => {
     return `${d.toLocaleDateString('id-ID')} ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
+  /** Navigate ke screen yang tepat — bedakan Tab vs Stack */
+  const handleNavigate = (screen: string, params?: any) => {
+    try {
+      if (TAB_SCREENS.has(screen)) {
+        // Tab screen: harus navigate ke 'Main' dahulu, lalu ke tab yang dimaksud
+        navigation.navigate('Main', params ? { screen, params } : { screen });
+      } else {
+        // Stack screen: navigate langsung
+        params ? navigation.navigate(screen, params) : navigation.navigate(screen);
+      }
+    } catch (e) {
+      // screen name mungkin tidak valid, abaikan
+      console.warn('[NotifCenter] Navigasi gagal ke screen:', screen);
+    }
+  };
+
   const renderItem = ({ item }: { item: any }) => {
     // Fallback jika data dari push notification Expo (struktur berbeda)
     const title = item.title || item.request?.content?.title || 'Notifikasi Baru';
@@ -39,20 +62,12 @@ export const NotificationCenterScreen: React.FC = () => {
           if (!item.isRead) markAsRead(item.id);
           const screen = notifData?.screen;
           if (screen) {
-            try {
-              if (notifData?.params) {
-                navigation.navigate(screen, notifData.params);
-              } else {
-                navigation.navigate(screen);
-              }
-            } catch (e) {
-              // screen name mungkin tidak valid, abaikan
-            }
+            handleNavigate(screen, notifData?.params);
           }
         }}
         style={{ marginBottom: Spacing.md }}
       >
-        <GlassCard padding={16} style={{...styles.card, ...(!item.isRead ? styles.unreadCard : {})}}>
+        <GlassCard padding={16} style={{ ...styles.card, ...(!item.isRead ? styles.unreadCard : {}) }}>
           <View style={styles.cardHeader}>
             <Text style={[styles.cardTitle, !item.isRead && { fontWeight: 'bold' }]} numberOfLines={2}>
               {title}

@@ -84,6 +84,7 @@ export const DeliveryScreen: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
   const [driver, setDriver] = useState('');
   const [vehicle, setVehicle] = useState('');
   const [notes, setNotes] = useState('');
@@ -168,8 +169,8 @@ export const DeliveryScreen: React.FC = () => {
       ]);
       if (custRes.success && custRes.data?.customers) {
         setCustomers(custRes.data.customers);
-        // Pre-select reguler customer by default
-        const defaultCust = custRes.data.customers.find((c: any) => c.type === 'REGULER') || custRes.data.customers[0];
+        // Pre-select UMUM customer by default
+        const defaultCust = custRes.data.customers.find((c: any) => c.type === 'UMUM') || custRes.data.customers[0];
         if (defaultCust && !selectedCustomerId) {
           setSelectedCustomerId(defaultCust.id);
         }
@@ -432,12 +433,11 @@ export const DeliveryScreen: React.FC = () => {
   };
 
   const addItemToDo = () => {
-    if (!selectedProductId || !selectedUnitId || !quantity) {
+    if (!selectedProduct || !selectedUnitId || !quantity) {
       AppToast.error('Peringatan', 'Silakan pilih produk, satuan, dan masukkan kuantitas.');
       return;
     }
-    const product = products.find((p) => p.id === selectedProductId);
-    if (!product) return;
+    const product = selectedProduct;
 
     const unit = product.productUnits?.find((pu) => pu.unitId === selectedUnitId);
     if (!unit) return;
@@ -890,9 +890,16 @@ export const DeliveryScreen: React.FC = () => {
               {/* Customer Selector */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Pelanggan *</Text>
+                <TextInput
+                  style={[styles.textInput, { marginBottom: Spacing.sm, height: 40 }]}
+                  placeholder="Cari pelanggan..."
+                  placeholderTextColor={Colors.textTertiary}
+                  value={customerSearch}
+                  onChangeText={setCustomerSearch}
+                />
                 <View style={styles.pickerContainer}>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerScroll}>
-                    {customers.map((cust) => (
+                    {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).map((cust) => (
                       <TouchableOpacity
                         key={cust.id}
                         style={[styles.pickerOption, selectedCustomerId === cust.id && styles.pickerOptionActive]}

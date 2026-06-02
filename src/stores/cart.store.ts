@@ -4,12 +4,22 @@
 import { create } from 'zustand';
 import type { CartItem, Product, CartCalculation } from '../types';
 
+export interface HeldCart {
+  id: string;
+  timestamp: string;
+  items: CartItem[];
+  selectedCustomerId: string | null;
+  discount: number;
+  notes: string;
+}
+
 interface CartState {
   items: CartItem[];
   selectedCustomerId: string | null;
   discount: number;
   notes: string;
   tax: number;
+  heldCarts: HeldCart[];
 
   // Actions
   addItem: (product: Product, unitId: string) => void;
@@ -22,6 +32,9 @@ interface CartState {
   setNotes: (notes: string) => void;
   clearCart: () => void;
   getCalculation: () => CartCalculation;
+  holdCart: () => void;
+  resumeCart: (heldCartId: string) => void;
+  removeHeldCart: (heldCartId: string) => void;
 }
 
 export const useCartStore = create<CartState>((set, get) => ({
@@ -30,6 +43,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   discount: 0,
   notes: '',
   tax: 0,
+  heldCarts: [],
 
   addItem: (product: Product, unitId: string) => {
     const state = get();
@@ -164,5 +178,67 @@ export const useCartStore = create<CartState>((set, get) => ({
       tax,
       grandTotal: Math.max(0, grandTotal),
     };
+  },
+
+  holdCart: () => {
+    const state = get();
+    if (state.items.length === 0) return;
+
+    const newHeldCart: HeldCart = {
+      id: `HOLD-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      items: [...state.items],
+      selectedCustomerId: state.selectedCustomerId,
+      discount: state.discount,
+      notes: state.notes,
+    };
+
+    set({
+      heldCarts: [...state.heldCarts, newHeldCart],
+      items: [],
+      selectedCustomerId: null,
+      discount: 0,
+      notes: '',
+      tax: 0,
+    });
+  },
+
+  resumeCart: (heldCartId: string) => {
+    const state = get();
+    const held = state.heldCarts.find((hc) => hc.id === heldCartId);
+    if (!held) return;
+
+    // If current cart has items, we should put them back to hold before resuming?
+    // For now, let's just clear current cart or assume user already held it.
+    // Actually, a better UX: if current cart is not empty, hold it first automatically.
+    let updatedHeld = state.heldCarts.filter((hc) => hc.id !== heldCartId);
+    
+    if (state.items.length > 0) {
+      updatedHeld = [
+        ...updatedHeld,
+        {
+          id: `HOLD-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          items: [...state.items],
+          selectedCustomerId: state.selectedCustomerId,
+          discount: state.discount,
+          notes: state.notes,
+        }
+      ];
+    }
+
+    set({
+      items: held.items,
+      selectedCustomerId: held.selectedCustomerId,
+      discount: held.discount,
+      notes: held.notes,
+      heldCarts: updatedHeld,
+    });
+  },
+
+  removeHeldCart: (heldCartId: string) => {
+    set({
+      heldCarts: get().heldCarts.filter((hc) => hc.id !== heldCartId),
+    });
   },
 }));
