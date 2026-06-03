@@ -20,7 +20,22 @@ export interface AiState {
   isModelLoading: boolean;
   isModelReady: boolean;
   modelLoadError: string | null;
+  // Info model offline yang aktif (diisi saat model berhasil dimuat)
+  localModelFileName: string;
+  localModelFamily: string;
+  // Multi-Engine Settings
+  aiEngine: 'local' | 'groq';
+  groqApiKeys: string[];
+  groqModel: string;
+  currentGroqKeyIndex: number;
+  
   // Actions
+  setAiEngine: (engine: 'local' | 'groq') => void;
+  setGroqApiKeys: (keys: string[]) => void;
+  setGroqModel: (model: string) => void;
+  setCurrentGroqKeyIndex: (index: number) => void;
+  rotateGroqKey: () => void;
+  setLocalModelInfo: (fileName: string, family: string) => void;
   addMessage: (msg: Omit<AiMessage, 'id' | 'timestamp'>) => void;
   updateLastAssistantMessage: (text: string) => void;
   clearHistory: () => void;
@@ -40,6 +55,31 @@ export const useAiStore = create<AiState>()(
       isModelLoading: false,
       isModelReady: false,
       modelLoadError: null,
+      localModelFileName: '',
+      localModelFamily: '',
+
+      // Multi-Engine Settings defaults
+      // Fallback to env vars if available, otherwise empty/defaults
+      aiEngine: 'groq', // default to groq for better performance
+      groqApiKeys: process.env.EXPO_PUBLIC_GROQ_API_KEYS 
+        ? process.env.EXPO_PUBLIC_GROQ_API_KEYS.split(',').map((k: string) => k.trim()) 
+        : [],
+      groqModel: process.env.EXPO_PUBLIC_GROQ_MODEL || 'llama-3.3-70b-versatile',
+      currentGroqKeyIndex: 0,
+
+      setAiEngine: (engine) => set({ aiEngine: engine }),
+      setGroqApiKeys: (keys) => set({ groqApiKeys: keys }),
+      setGroqModel: (model) => set({ groqModel: model }),
+      setCurrentGroqKeyIndex: (index) => set({ currentGroqKeyIndex: index }),
+      rotateGroqKey: () => {
+        const state = get();
+        if (state.groqApiKeys.length > 0) {
+          const nextIndex = (state.currentGroqKeyIndex + 1) % state.groqApiKeys.length;
+          set({ currentGroqKeyIndex: nextIndex });
+          console.log(`[MIDA] Groq API Key rotated to index ${nextIndex}`);
+        }
+      },
+      setLocalModelInfo: (fileName, family) => set({ localModelFileName: fileName, localModelFamily: family }),
 
       addMessage: (msg) => {
         const newMessage: AiMessage = {
@@ -86,6 +126,12 @@ export const useAiStore = create<AiState>()(
         messages: state.messages,
         isModelDownloaded: state.isModelDownloaded,
         modelDownloadProgress: state.modelDownloadProgress,
+        aiEngine: state.aiEngine,
+        groqApiKeys: state.groqApiKeys,
+        groqModel: state.groqModel,
+        currentGroqKeyIndex: state.currentGroqKeyIndex,
+        localModelFileName: state.localModelFileName,
+        localModelFamily: state.localModelFamily,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {

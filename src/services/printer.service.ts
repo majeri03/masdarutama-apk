@@ -20,9 +20,9 @@ class PrinterService {
   async init() {
     if (this.isInitialized) return;
     try {
-      await BLEPrinter.init();
-      await USBPrinter.init();
-      await NetPrinter.init();
+      try { await BLEPrinter.init(); } catch (e) { console.warn('BLE init error', e); }
+      try { await USBPrinter.init(); } catch (e) { console.warn('USB init error', e); }
+      try { await NetPrinter.init(); } catch (e) { console.warn('NET init error', e); }
       this.isInitialized = true;
       
       // Load saved printer

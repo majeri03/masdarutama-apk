@@ -93,6 +93,15 @@ export const masterService = {
     }
   },
 
+  async deleteSupplier(id: string): Promise<ApiResponse<void>> {
+    try {
+      const response = await api.delete<ApiResponse<void>>(API_ENDPOINTS.SUPPLIER_DETAIL(id));
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal menghapus supplier' };
+    }
+  },
+
   // ==================== UNITS ====================
   async getUnits(): Promise<ApiResponse<{ units: Unit[] }>> {
     try {

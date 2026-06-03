@@ -25,12 +25,13 @@ import { useCartStore } from '../stores/cart.store';
 import {
   executeAiToolCall, ToolCallPayload, ToolResult,
 } from '../services/ai-executor.service';
+import { generateResponseWithGroq } from '../services/groq.service';
 import {
   initializeLlama, generateResponseWithContext,
-  releaseLlama, isLlamaReady, LLAMA_CONFIG, ChatMessage, MODEL_MIRROR_URLS,
+  releaseLlama, isLlamaReady, LLAMA_CONFIG, ChatMessage, MODEL_MIRROR_URLS, getActiveModelProfile,
 } from '../services/llama.service';
 import {
-  buildDynamicSystemPrompt, classifyFallbackIntent, ContextProduct,
+  buildDynamicSystemPrompt, buildCompactSystemPrompt, ContextProduct,
 } from '../utils/ai-prompts';
 import { Colors, FontSize, FontWeight, Shadow, Spacing, BorderRadius, Gradients } from '../constants/theme';
 import { debtService } from '../services/debt.service';
@@ -47,12 +48,16 @@ interface DraftData {
   executeEndpoint?: string;
 }
 
-// Max ReAct loop iterations — cegah infinite loop & hemat RAM HP
-const REACT_MAX_ITERATIONS = 4;
+// Max ReAct loop iterations — lebih banyak = AI bisa multi-step reasoning
+const REACT_MAX_ITERATIONS = 6;
 
 // ==================== MODEL FILE PATH ====================
 const getModelDir = () => `${FileSystem.documentDirectory}${LLAMA_CONFIG.modelDir}/`;
-const getModelPath = () => `${getModelDir()}${LLAMA_CONFIG.modelFilename}`;
+const getModelPath = () => {
+  const storeFilename = useAiStore.getState().localModelFileName;
+  const filename = storeFilename || LLAMA_CONFIG.modelFilename;
+  return `${getModelDir()}${filename}`;
+};
 
 // ==================== DRAFT EXECUTION ====================
 const executeDraft = async (draftData: DraftData): Promise<{ success: boolean; message: string }> => {
@@ -171,11 +176,13 @@ const fetchContextProducts = async (userText: string): Promise<ContextProduct[]>
     const products = (res.data as any)?.products || [];
 
     return products.map((p: any): ContextProduct => ({
+      id: p.id,
       code: p.code,
       name: p.name,
       currentStock: p.currentStock,
       category: p.category?.name,
       units: p.productUnits?.map((pu: any) => ({
+        unitId: pu.unitId,
         unitName: pu.unit?.name,
         sellPrice: pu.sellPrice,
         buyPrice: pu.buyPrice,
@@ -397,9 +404,28 @@ const AiSettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () =
   const {
     isModelDownloaded, modelDownloadProgress, setModelDownloadStatus,
     isModelLoading, isModelReady,
+    aiEngine, setAiEngine, groqApiKeys, setGroqApiKeys, groqModel, setGroqModel,
+    localModelFileName, localModelFamily
   } = useAiStore();
+
   const [isDownloading, setIsDownloading] = useState(false);
+  const [tempGroqKeys, setTempGroqKeys] = useState(groqApiKeys.join('\n'));
+  const [tempGroqModel, setTempGroqModel] = useState(groqModel);
   const downloadRef = useRef<FileSystem.DownloadResumable | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      setTempGroqKeys(groqApiKeys.join('\n'));
+      setTempGroqModel(groqModel);
+    }
+  }, [visible, groqApiKeys, groqModel]);
+
+  const handleSaveGroq = () => {
+    const keys = tempGroqKeys.split('\n').map((k: string) => k.trim()).filter((k: string) => k.length > 0);
+    setGroqApiKeys(keys);
+    setGroqModel(tempGroqModel);
+    Alert.alert('Tersimpan', 'Pengaturan Groq berhasil disimpan.');
+  };
 
   // Auto-detect file if placed manually by user via USB
   useEffect(() => {
@@ -439,8 +465,11 @@ const AiSettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () =
 
       await FileSystem.copyAsync({
         from: file.uri,
-        to: getModelPath()
+        to: `${getModelDir()}${file.name}`
       });
+
+      // Simpan nama file asli ke state agar bisa dibaca model detector
+      useAiStore.getState().setLocalModelInfo(file.name, '');
 
       setModelDownloadStatus(true, 100);
       Alert.alert('✅ Selesai!', 'Model AI berhasil di-import dari penyimpanan Anda!\n\nTutup pengaturan untuk mulai menggunakan AI.');
@@ -595,7 +624,8 @@ const AiSettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () =
               const info = await FileSystem.getInfoAsync(getModelPath());
               if (info.exists) await FileSystem.deleteAsync(getModelPath());
               setModelDownloadStatus(false, 0);
-              Alert.alert('✅', 'Model AI berhasil dihapus. MIDA kembali ke mode Pattern Matching.');
+              useAiStore.getState().setLocalModelInfo('', '');
+              Alert.alert('✅', 'Model AI berhasil dihapus.');
             } catch (err: any) {
               Alert.alert('❌', `Gagal menghapus: ${err.message}`);
             }
@@ -612,92 +642,137 @@ const AiSettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () =
           <View style={s.settingsHandle} />
           <Text style={s.settingsTitle}>⚙️ Pengaturan AI MIDA</Text>
 
-          {/* Status saat ini */}
-          <View style={s.settingsSection}>
-            <Text style={s.settingsSectionLabel}>STATUS SAAT INI</Text>
-            <View style={s.statusRow}>
-              <View style={[s.statusDot, {
-                backgroundColor: isModelReady
-                  ? Colors.success
-                  : isModelLoading
-                    ? Colors.warning
-                    : isModelDownloaded
-                      ? Colors.info
-                      : Colors.error,
-              }]} />
-              <Text style={s.statusLabel}>
-                {isModelReady
-                  ? 'On-Device AI Aktif ✨'
-                  : isModelLoading
-                    ? 'Memuat model ke RAM...'
-                    : isModelDownloaded
-                      ? 'Model tersedia — belum dimuat'
-                      : 'Pattern Matching (Fallback)'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Model offline */}
-          <View style={s.settingsSection}>
-            <Text style={s.settingsSectionLabel}>MODEL AI OFFLINE (LOKAL)</Text>
-            <View style={[s.modelCard, { flexDirection: 'column', alignItems: 'stretch' }]}>
-              <View style={s.modelInfo}>
-                <Text style={s.modelName}>🧠 MIDA AI Engine (Qwen 2.5 0.5B)</Text>
-                <Text style={s.modelDesc}>Super Kilat & Ringan · ~395 MB · Optimized Quantized</Text>
-                <Text style={s.modelDesc}>Berjalan 100% offline tanpa menguras RAM HP</Text>
+          <ScrollView contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            {/* Engine Selector */}
+            <View style={s.settingsSection}>
+              <Text style={s.settingsSectionLabel}>ENGINE AI</Text>
+              <View style={{ flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: 8, padding: 4 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: aiEngine === 'local' ? Colors.primaryStart : 'transparent', borderRadius: 6 }}
+                  onPress={() => setAiEngine('local')}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: aiEngine === 'local' ? 'bold' : 'normal', color: aiEngine === 'local' ? '#fff' : Colors.textSecondary }}>On-Device (Llama)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: aiEngine === 'groq' ? Colors.primaryStart : 'transparent', borderRadius: 6 }}
+                  onPress={() => setAiEngine('groq')}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: aiEngine === 'groq' ? 'bold' : 'normal', color: aiEngine === 'groq' ? '#fff' : Colors.textSecondary }}>Cloud API (Groq)</Text>
+                </TouchableOpacity>
               </View>
-
-              {isModelDownloaded ? (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 }}>
-                  <View style={s.modelInstalled}>
-                    <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
-                    <Text style={[s.modelInstallText, { color: Colors.success }]}>Terpasang</Text>
-                  </View>
-                  <TouchableOpacity onPress={handleDeleteModel} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: Colors.error + '10', borderRadius: 6 }}>
-                    <Text style={{ fontSize: 12, color: Colors.error, fontWeight: 'bold' }}>Hapus</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : isDownloading || (modelDownloadProgress > 0 && modelDownloadProgress < 100) ? (
-                <View style={[s.downloadProgress, { marginTop: 8, width: '100%', alignItems: 'stretch' }]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <Text style={{ fontSize: 11, color: Colors.textSecondary }}>Mengunduh model...</Text>
-                    <Text style={s.progressText}>{Math.round(modelDownloadProgress)}%</Text>
-                  </View>
-                  <View style={[s.progressBar, { width: '100%', height: 8, borderRadius: 4 }]}>
-                    <View style={[s.progressFill, { width: `${modelDownloadProgress}%` as any, borderRadius: 4 }]} />
-                  </View>
-                </View>
-              ) : (
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border }}>
-                  <TouchableOpacity style={[s.downloadBtn, { flex: 1, justifyContent: 'center', paddingVertical: 10 }]} onPress={handleDownloadModel} activeOpacity={0.8}>
-                    <Ionicons name="cloud-download-outline" size={18} color="#fff" />
-                    <Text style={[s.downloadBtnText, { fontSize: 13 }]}>Download</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[s.downloadBtn, { flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.primaryStart, justifyContent: 'center', paddingVertical: 10 }]} onPress={handleImportModel} activeOpacity={0.8}>
-                    <Ionicons name="folder-open-outline" size={18} color={Colors.primaryStart} />
-                    <Text style={[s.downloadBtnText, { color: Colors.primaryStart, fontSize: 13 }]}>Import File</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
             </View>
-          </View>
 
-          {/* Info cara kerja */}
-          <View style={s.settingsSection}>
-            <Text style={s.settingsSectionLabel}>CARA KERJA</Text>
-            <View style={s.infoBox}>
-              <Text style={s.infoText}>
-                {'• Jika model offline terpasang → AI berjalan di perangkat Anda tanpa internet\n'}
-                {'• Jika belum → MIDA menggunakan pattern matching pintar (offline, cepat)\n'}
-                {'• Semua data & tools tetap terhubung ke server toko Anda\n'}
-                {'• Model dimuat ke RAM saat membuka chat (~5-15 detik pertama)'}
-              </Text>
+            {aiEngine === 'local' ? (
+              <>
+                <View style={s.settingsSection}>
+                  <Text style={s.settingsSectionLabel}>STATUS LOKAL (ON-DEVICE)</Text>
+                  <View style={s.statusRow}>
+                    <View style={[s.statusDot, { backgroundColor: isModelReady ? Colors.success : isModelLoading ? Colors.warning : isModelDownloaded ? Colors.info : Colors.error }]} />
+                    <Text style={s.statusLabel}>
+                      {isModelReady ? 'On-Device AI Aktif ✨' : isModelLoading ? 'Memuat model ke RAM...' : isModelDownloaded ? 'Model tersedia — belum dimuat' : 'Belum diunduh'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={s.settingsSection}>
+                  <Text style={s.settingsSectionLabel}>MODEL OFFLINE (GGUF)</Text>
+                  <View style={[s.modelCard, { flexDirection: 'column', alignItems: 'stretch' }]}>
+                    <View style={s.modelInfo}>
+                      <Ionicons name="cube-outline" size={24} color={Colors.primaryStart} />
+                      <View style={{ flex: 1, paddingLeft: 12 }}>
+                        <Text style={s.modelName}>
+                          {localModelFileName || LLAMA_CONFIG.modelFilename}
+                        </Text>
+                        {localModelFamily ? (
+                          <Text style={{ fontSize: 11, color: Colors.primaryStart, fontWeight: 'bold', marginTop: 2 }}>
+                            {`Family: ${localModelFamily.toUpperCase()}`}
+                          </Text>
+                        ) : null}
+                        <Text style={s.modelDesc}>True AI — Berjalan otonom tanpa internet di memori perangkat.</Text>
+                      </View>
+                    </View>
+
+                    {isModelDownloaded ? (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 }}>
+                        <View style={s.modelInstalled}>
+                          <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+                          <Text style={[s.modelInstallText, { color: Colors.success }]}>Terpasang</Text>
+                        </View>
+                        <TouchableOpacity onPress={handleDeleteModel} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: Colors.error + '10', borderRadius: 6 }}>
+                          <Text style={{ fontSize: 12, color: Colors.error, fontWeight: 'bold' }}>Hapus</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : isDownloading || (modelDownloadProgress > 0 && modelDownloadProgress < 100) ? (
+                      <View style={[s.downloadProgress, { marginTop: 8, width: '100%', alignItems: 'stretch' }]}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <Text style={{ fontSize: 11, color: Colors.textSecondary }}>Mengunduh model...</Text>
+                          <Text style={s.progressText}>{Math.round(modelDownloadProgress)}%</Text>
+                        </View>
+                        <View style={[s.progressBar, { width: '100%', height: 8, borderRadius: 4 }]}>
+                          <View style={[s.progressFill, { width: `${modelDownloadProgress}%` as any, borderRadius: 4 }]} />
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border }}>
+                        <TouchableOpacity style={[s.downloadBtn, { flex: 1, justifyContent: 'center', paddingVertical: 10 }]} onPress={handleDownloadModel} activeOpacity={0.8}>
+                          <Ionicons name="cloud-download-outline" size={18} color="#fff" />
+                          <Text style={[s.downloadBtnText, { fontSize: 13 }]}>Download</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[s.downloadBtn, { flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.primaryStart, justifyContent: 'center', paddingVertical: 10 }]} onPress={handleImportModel} activeOpacity={0.8}>
+                          <Ionicons name="folder-open-outline" size={18} color={Colors.primaryStart} />
+                          <Text style={[s.downloadBtnText, { color: Colors.primaryStart, fontSize: 13 }]}>Import File</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={s.settingsSection}>
+                  <Text style={s.settingsSectionLabel}>API KEY GROQ (SATU PER BARIS)</Text>
+                  <TextInput
+                    style={[s.input, { height: 100, textAlignVertical: 'top' }]}
+                    multiline
+                    value={tempGroqKeys}
+                    onChangeText={setTempGroqKeys}
+                    placeholder="gsk_xxxxx..."
+                    autoCapitalize="none"
+                  />
+                  <Text style={{ fontSize: 11, color: Colors.textSecondary, marginTop: 4 }}>Sistem akan merotasi key otomatis jika kena limit (429).</Text>
+                </View>
+                <View style={s.settingsSection}>
+                  <Text style={s.settingsSectionLabel}>MODEL GROQ</Text>
+                  <TextInput
+                    style={[s.input, { paddingVertical: 8 }]}
+                    value={tempGroqModel}
+                    onChangeText={setTempGroqModel}
+                    placeholder="llama-3.3-70b-versatile"
+                    autoCapitalize="none"
+                  />
+                </View>
+                <TouchableOpacity style={[s.downloadBtn, { marginTop: 10 }]} onPress={handleSaveGroq}>
+                  <Text style={s.downloadBtnText}>Simpan Pengaturan Groq</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Info cara kerja */}
+            <View style={s.settingsSection}>
+              <Text style={s.settingsSectionLabel}>INFO</Text>
+              <View style={s.infoBox}>
+                <Text style={s.infoText}>
+                  {aiEngine === 'local' 
+                    ? '• Model berjalan 100% offline di RAM Anda.\n• Gratis selamanya, tetapi memakan memori.'
+                    : '• Menggunakan Groq Cloud API super cepat.\n• Butuh koneksi internet.\n• Cocok untuk HP spesifikasi rendah.'}
+                </Text>
+              </View>
             </View>
-          </View>
 
-          <TouchableOpacity style={s.settingsCloseBtn} onPress={onClose} activeOpacity={0.8}>
-            <Text style={s.settingsCloseBtnText}>Tutup</Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={s.settingsCloseBtn} onPress={onClose} activeOpacity={0.8}>
+              <Text style={s.settingsCloseBtnText}>Tutup</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -716,6 +791,7 @@ export const AiChatScreen = () => {
     messages, addMessage, updateLastAssistantMessage,
     isModelDownloaded, isModelReady,
     setModelLoading, setModelReady, setModelLoadError, setModelDownloadStatus,
+    aiEngine, localModelFileName, localModelFamily, setLocalModelInfo
   } = useAiStore();
 
   // Scroll to bottom when messages or loading state changes
@@ -746,9 +822,17 @@ export const AiChatScreen = () => {
       setModelLoading(true);
       setModelLoadError(null);
       try {
-        await initializeLlama(getModelPath());
+        const fileUri = getModelPath();
+        const parts = fileUri.split('/');
+        const filename = parts[parts.length - 1] || LLAMA_CONFIG.modelFilename;
+        
+        await initializeLlama(fileUri, filename);
         if (!cancelled) {
           setModelReady(true);
+          const profile = getActiveModelProfile();
+          if (profile) {
+            setLocalModelInfo(profile.displayName, profile.family);
+          }
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -792,9 +876,10 @@ export const AiChatScreen = () => {
     setAgentStatus('MIDA sedang berpikir...');
 
     try {
-      if (isModelReady && isLlamaReady()) {
+      // Izinkan eksekusi jika (Groq) ATAU (Lokal dan siap)
+      if (aiEngine === 'groq' || (aiEngine === 'local' && isModelReady && isLlamaReady())) {
         // ================================================================
-        // MODE A: TRUE REACT AGENT (On-Device LLM)
+        // MODE A: TRUE REACT AGENT (On-Device LLM or Groq API)
         // ================================================================
 
         // Step 1: Dynamic Context — fetch produk relevan dari DB
@@ -802,13 +887,21 @@ export const AiChatScreen = () => {
         const contextProducts = await fetchContextProducts(userText);
 
         // Step 2: Build initial messages array
+        // Groq (70B): pakai prompt penuh dan detail (token tidak terbatas)
+        // Llama (0.5B): pakai prompt ringkas agar sisa context cukup untuk reasoning
+        const systemPrompt = aiEngine === 'groq'
+          ? buildDynamicSystemPrompt(contextProducts)
+          : buildCompactSystemPrompt(contextProducts);
+
+        // Batasi history lebih ketat untuk Llama (context window terbatas)
+        const historyLimit = aiEngine === 'groq' ? 8 : 4;
         const recentHistory = messages
-          .slice(-6)
+          .slice(-historyLimit)
           .filter(m => m.role === 'user' || m.role === 'assistant')
           .map(m => ({ role: m.role as 'user' | 'assistant', content: m.text }));
 
         const agentMessages: ChatMessage[] = [
-          { role: 'system', content: buildDynamicSystemPrompt(contextProducts) },
+          { role: 'system', content: systemPrompt },
           ...recentHistory,
           { role: 'user', content: userText },
         ];
@@ -820,19 +913,33 @@ export const AiChatScreen = () => {
         let iteration = 0;
         let agentDone = false;
 
+        // ANIMASI BERPIKIR UNTUK MULTI-TURN
+        const thinkingMessages = [
+          '🤔 Menganalisis permintaan...',
+          '🔍 Mencari data di sistem...',
+          '🧠 Memproses informasi...',
+          '💡 Menyusun draf...',
+          '⏳ Sebentar lagi selesai...',
+        ];
+
         while (iteration < REACT_MAX_ITERATIONS && !agentDone) {
           iteration++;
 
-          // LLM berpikir — update status tapi TIDAK tampilkan ke chat
+          // Update status dengan pesan yang dinamis dan tidak membosankan
+          const thinkMsg = thinkingMessages[Math.min(iteration - 1, thinkingMessages.length - 1)];
+          setAgentStatus(thinkMsg);
+          
           if (iteration === 1) {
-            setAgentStatus('MIDA sedang menganalisis perintah...');
             updateLastAssistantMessage('...');
-          } else {
-            setAgentStatus(`Mengambil data (langkah ${iteration})...`);
           }
 
           // LLM inference — tidak streaming di iteration > 1 agar bersih
-          const llmResponse = await generateResponseWithContext(agentMessages);
+          let llmResponse = '';
+          if (aiEngine === 'groq') {
+            llmResponse = await generateResponseWithGroq(agentMessages);
+          } else {
+            llmResponse = await generateResponseWithContext(agentMessages);
+          }
 
           const toolCall = extractToolCall(llmResponse);
 
@@ -844,8 +951,7 @@ export const AiChatScreen = () => {
           }
 
           // Ada tool call → eksekusi di background
-          setAgentStatus(`Mengeksekusi: ${toolCall.tool}...`);
-          updateLastAssistantMessage('⏳ Sedang memproses...');
+          updateLastAssistantMessage(`⏳ MIDA sedang memanggil: ${toolCall.tool}...`);
 
           const toolResult = await executeAiToolCall(toolCall);
 
@@ -857,17 +963,29 @@ export const AiChatScreen = () => {
           }
 
           if (toolResult.resultType === 'ERROR_RESPONSE') {
-            // Error dari backend → sampaikan ke user → loop selesai
-            updateLastAssistantMessage(`⚠️ ${toolResult.error}`);
-            agentDone = true;
-            break;
+            // KRITIS: Jangan langsung tampilkan error ke user!
+            // Inject error sebagai Observation agar AI bisa memperbaiki dirinya sendiri
+            // Contoh: AI kirim items tanpa ID → error → AI baca error → AI panggil searchProduct
+            const errorObservation = `Observation (ERROR): ${toolResult.error}`;
+            agentMessages.push({ role: 'assistant', content: llmResponse });
+            agentMessages.push({
+              role: aiEngine === 'groq' ? 'user' : 'tool' as any,
+              content: errorObservation,
+            });
+            // Jika sudah di iterasi terakhir baru tampilkan error ke user
+            if (iteration >= REACT_MAX_ITERATIONS) {
+              updateLastAssistantMessage(`⚠️ ${toolResult.error}`);
+              agentDone = true;
+            }
+            // Lanjut loop → AI coba lagi dengan informasi error tersebut
+            continue;
           }
 
           // DATA_RESPONSE → inject sebagai Observation ke context, lanjut loop
           agentMessages.push({ role: 'assistant', content: llmResponse });
           agentMessages.push({
-            role: 'tool',
-            content: `Observation: ${JSON.stringify(toolResult.data).slice(0, 2000)}`, // limit agar context tidak meledak
+            role: aiEngine === 'groq' ? 'user' : 'tool' as any,
+            content: `Observation (DATA): ${JSON.stringify(toolResult.data).slice(0, 3000)}`,
           });
           // Loop kembali → LLM baca data dan ambil keputusan
         }
@@ -878,72 +996,8 @@ export const AiChatScreen = () => {
         }
 
       } else {
-        // ================================================================
-        // MODE B: FALLBACK DETERMINISTIK (Tanpa LLM)
-        // Pre-fetch data yang diperlukan → eksekusi langsung
-        // ================================================================
-        setAgentStatus('Menganalisis perintah...');
-        await new Promise(r => setTimeout(r, 300));
-
-        // Cek greeting & pertanyaan umum
-        const lower = userText.toLowerCase();
-        const greetings = ['halo', 'hai', 'hi', 'pagi', 'siang', 'sore', 'malam', 'assalamualaikum'];
-        if (greetings.some(g => lower.startsWith(g))) {
-          addMessage({ role: 'assistant', text: `Halo! Saya **MIDA** 👋, asisten cerdas Toko Masdar Utama.\n\nSaya bisa membantu:\n• 📦 Cek stok & harga produk\n• 🧾 Buat nota transaksi & PO\n• 🚚 Buat surat jalan\n• 💰 Cek hutang/piutang\n• 📊 Laporan keuangan\n\nApa yang perlu dieksekusi hari ini?` });
-          return;
-        }
-        if (lower.includes('siapa kamu') || lower.includes('apa yang bisa kamu lakukan')) {
-          addMessage({ role: 'assistant', text: `Saya **MIDA** (Masdar Intelligent Digital Assistant) 🤖\n\nSaya adalah agent AI otonom yang punya akses penuh ke:\n• **Transaksi:** Buat nota, kasir, piutang\n• **Inventaris:** Stok, harga, opname\n• **Operasional:** PO, Surat Jalan, WA Order\n• **Laporan:** Keuangan, inventaris, pergerakan stok\n\nCukup perintah dalam bahasa Indonesia — saya yang eksekusi!` });
-          return;
-        }
-        if (lower.includes('terima kasih') || lower.includes('makasih')) {
-          addMessage({ role: 'assistant', text: 'Sama-sama! Siap membantu kapan saja 😊' });
-          return;
-        }
-
-        // Klasifikasi intent & eksekusi
-        const intent = classifyFallbackIntent(userText);
-
-        if (!intent) {
-          addMessage({
-            role: 'assistant',
-            text: `Saya belum bisa memahami perintah tersebut. Coba lebih spesifik, misalnya:\n\n• "Cek stok semen merah"\n• "Buat PO cat tembok ke supplier Avian"\n• "Lihat hutang pelanggan Pak Budi"\n• "Laporan keuangan bulan ini"`,
-          });
-          return;
-        }
-
-        // Pre-fetch jika intent memerlukan data sebelum eksekusi final
-        let finalParams = intent.params;
-        if (intent.needsPreFetch) {
-          setAgentStatus('Mengambil data produk...');
-          const preFetchResult = await executeAiToolCall({
-            type: 'tool_call',
-            tool: intent.needsPreFetch.tool,
-            params: intent.needsPreFetch.params,
-          });
-          if (preFetchResult.resultType === 'DATA_RESPONSE' && preFetchResult.data) {
-            // Map hasil pencarian ke params final
-            finalParams = intent.needsPreFetch.mapResult(preFetchResult, intent.params);
-          }
-        }
-
-        // Eksekusi tool final
-        setAgentStatus(`Mengeksekusi: ${intent.tool}...`);
-        const result = await executeAiToolCall({
-          type: 'tool_call',
-          tool: intent.tool,
-          params: finalParams,
-        });
-
-        if (result.resultType === 'DRAFT_RESPONSE') {
-          addMessage({ role: 'assistant', text: JSON.stringify(result.draft) });
-        } else if (result.resultType === 'ERROR_RESPONSE') {
-          addMessage({ role: 'assistant', text: `⚠️ ${result.error}` });
-        } else {
-          // DATA_RESPONSE → format untuk tampilan
-          const formatted = formatToolResultForUI(intent.tool, result);
-          addMessage({ role: 'assistant', text: formatted });
-        }
+        // AI Belum Siap — Tolak Eksekusi
+        addMessage({ role: 'assistant', text: 'MIDA AI Engine belum siap. Harap tunggu proses inisialisasi selesai, atau pastikan API Key Groq sudah diatur.' });
       }
     } catch (err: any) {
       const errMsg = `❌ Maaf, terjadi kesalahan: ${err?.message || 'Error tidak diketahui.'}`;
@@ -1101,7 +1155,7 @@ export const AiChatScreen = () => {
           <View>
             <Text style={s.headerTitle}>MIDA</Text>
             <Text style={s.headerSubtitle}>
-              {isModelReady ? '🟢 On-Device AI (Qwen 2.5)' : isModelDownloaded ? '🟡 Model tersedia' : '⚪ Pattern Matching'}
+              {aiEngine === 'groq' ? '☁️ Cloud AI (Groq)' : isModelReady ? '🟢 On-Device AI' : isModelDownloaded ? '🟡 Model tersedia' : '🔴 Model belum diunduh'}
             </Text>
           </View>
         </View>
@@ -1147,9 +1201,11 @@ export const AiChatScreen = () => {
               </LinearGradient>
               <Text style={s.emptyTitle}>Halo! Saya MIDA 👋</Text>
               <Text style={s.emptySubtitle}>
-                {isModelReady
-                  ? 'AI On-Device aktif! Saya berjalan langsung di HP Anda tanpa internet.'
-                  : 'Asisten AI Toko Masdar Utama.\nSaya bisa bantu cek stok, buat nota, lihat laporan, dan banyak lagi!'}
+                {aiEngine === 'groq'
+                  ? 'Cloud AI (Groq) aktif! Super cepat dan ringan.'
+                  : isModelReady
+                    ? 'AI On-Device aktif! Saya berjalan langsung di HP Anda tanpa internet.'
+                    : 'Asisten AI Toko Masdar Utama.\nHarap unduh model Lokal atau atur kunci Groq Cloud di pengaturan.'}
               </Text>
               <View style={s.chipContainer}>
                 {[

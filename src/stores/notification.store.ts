@@ -25,27 +25,7 @@ interface NotificationState {
 let intervalId: NodeJS.Timeout | null = null;
 let appStateSubscription: any = null;
 
-// Kirim notifikasi lokal (terlihat di luar aplikasi)
-// channelId: 'default' wajib di Android, tanpanya notifikasi dibuang diam-diam
-const sendLocalNotification = async (title: string, body: string, data?: any) => {
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        data: data || {},
-        sound: true,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 1,
-        channelId: 'default',
-      },
-    });
-  } catch (e) {
-    console.warn('[Notification] Failed to send local notification:', e);
-  }
-};
+// Notifikasi push di-handle murni via Expo Server (backend) agar tidak terjadi double-push.
 
 export const useNotificationStore = create<NotificationState>()(
   persist(
@@ -78,13 +58,6 @@ export const useNotificationStore = create<NotificationState>()(
                   body: `Ada ${total} orderan WA yang menunggu konfirmasi.`,
                   data: { screen: 'WaOrders' },
                 });
-                if (total > prev) {
-                  await sendLocalNotification(
-                    '📦 Orderan WA Baru!',
-                    `Ada ${total} orderan WA yang menunggu konfirmasi.`,
-                    { screen: 'WaOrders' }
-                  );
-                }
               }
 
               set({ waOrdersPending: total, _prevWaPending: total });
@@ -109,10 +82,6 @@ export const useNotificationStore = create<NotificationState>()(
                   body: msg,
                   data: { screen: 'Debt' },
                 });
-
-                if (count > prev) {
-                  await sendLocalNotification('⚠️ Hutang Jatuh Tempo!', msg, { screen: 'Debt' });
-                }
               }
 
               set({ overdueDebts: count, _prevOverdueDebts: count });
@@ -133,14 +102,6 @@ export const useNotificationStore = create<NotificationState>()(
                   body: `Ada ${count} PO yang belum dikonfirmasi/diterima.`,
                   data: { screen: 'Purchase' },
                 });
-
-                if (count > prev) {
-                  await sendLocalNotification(
-                    '🛒 Purchase Order Pending',
-                    `Ada ${count} PO yang belum dikonfirmasi/diterima.`,
-                    { screen: 'Purchase' }
-                  );
-                }
               }
 
               set({ pendingPurchases: count, _prevPendingPurchases: count });

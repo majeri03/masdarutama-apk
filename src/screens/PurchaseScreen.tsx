@@ -89,6 +89,15 @@ export const PurchaseScreen: React.FC = () => {
   const [paidAmount, setPaidAmount] = useState('0');
   const [notes, setNotes] = useState('');
 
+  // Supplier CRUD Modal
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [suppId, setSuppId] = useState('');
+  const [suppName, setSuppName] = useState('');
+  const [suppCode, setSuppCode] = useState('');
+  const [suppPhone, setSuppPhone] = useState('');
+  const [suppAddress, setSuppAddress] = useState('');
+  const [savingSupplier, setSavingSupplier] = useState(false);
+
   // Add Item Form
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -362,6 +371,69 @@ export const PurchaseScreen: React.FC = () => {
             }
           },
         },
+      ]
+    );
+  };
+
+  const handleSaveSupplier = async () => {
+    if (!suppName || !suppCode) {
+      AppToast.error('Gagal', 'Nama dan Kode Supplier wajib diisi.');
+      return;
+    }
+    setSavingSupplier(true);
+    try {
+      const payload = {
+        name: suppName,
+        code: suppCode,
+        phone: suppPhone || undefined,
+        address: suppAddress || undefined,
+      };
+      
+      let res;
+      if (suppId) {
+        res = await masterService.updateSupplier(suppId, payload);
+      } else {
+        res = await masterService.createSupplier(payload);
+      }
+
+      if (res.success) {
+        AppToast.success('Sukses', suppId ? 'Supplier diperbarui' : 'Supplier berhasil ditambahkan');
+        setSuppId('');
+        setSuppName('');
+        setSuppCode('');
+        setSuppPhone('');
+        setSuppAddress('');
+        loadMasterData(); // Refresh supplier list
+      } else {
+        AppToast.error('Gagal', res.error || 'Gagal menyimpan supplier');
+      }
+    } catch (e) {
+      AppToast.error('Error', 'Terjadi kesalahan sistem');
+    } finally {
+      setSavingSupplier(false);
+    }
+  };
+
+  const handleDeleteSupplier = (id: string) => {
+    Alert.alert(
+      'Hapus Supplier',
+      'Yakin ingin menghapus supplier ini? Tidak bisa dihapus jika ada transaksi PO yang terhubung.',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await masterService.deleteSupplier(id);
+            if (res.success) {
+              AppToast.success('Sukses', 'Supplier dihapus');
+              if (selectedSupplierId === id) setSelectedSupplierId('');
+              loadMasterData();
+            } else {
+              AppToast.error('Gagal', res.error || 'Gagal menghapus supplier');
+            }
+          }
+        }
       ]
     );
   };
@@ -660,7 +732,12 @@ export const PurchaseScreen: React.FC = () => {
 
               {/* Supplier Selector */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Pilih Supplier *</Text>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.inputLabel}>Pilih Supplier *</Text>
+                  <TouchableOpacity onPress={() => setShowSupplierModal(true)}>
+                    <Text style={{ fontSize: FontSize.xs, color: Colors.primaryStart, fontWeight: 'bold' }}>+ Kelola Supplier</Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.pickerContainer}>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerScroll}>
                     {suppliers.map((supp) => (
