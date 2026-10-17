@@ -23,7 +23,12 @@ import { API_ENDPOINTS } from '../constants/api';
 import { Image } from 'react-native';
 
 export const DashboardScreen = ({ navigation }: { navigation: any }) => {
-  const { user } = useAuthStore();
+  const { user, allowedPages } = useAuthStore();
+
+  const isAllowed = (pageKey: string) => {
+    if (user?.role === 'SUPER_ADMIN') return true;
+    return allowedPages.includes(pageKey);
+  };
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
@@ -242,18 +247,20 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
       {/* Quick Navigation Cards */}
       <Text style={styles.sectionTitle}>Akses Cepat</Text>
       <View style={styles.gridContainer}>
-        <TouchableOpacity
-          style={styles.gridCard}
-          onPress={() => navigation.navigate('POS')}
-        >
-          <GlassCard padding={16} style={styles.glassCardInner}>
-            <View style={[styles.iconBox, { backgroundColor: Colors.successLight }]}>
-              <Ionicons name="calculator-outline" size={24} color={Colors.success} />
-            </View>
-            <Text style={styles.gridCardTitle}>Buat Transaksi</Text>
-            <Text style={styles.gridCardDesc}>Point of Sale POS</Text>
-          </GlassCard>
-        </TouchableOpacity>
+        {isAllowed('pos') && (
+          <TouchableOpacity
+            style={styles.gridCard}
+            onPress={() => navigation.navigate('POS')}
+          >
+            <GlassCard padding={16} style={styles.glassCardInner}>
+              <View style={[styles.iconBox, { backgroundColor: Colors.successLight }]}>
+                <Ionicons name="calculator-outline" size={24} color={Colors.success} />
+              </View>
+              <Text style={styles.gridCardTitle}>Buat Transaksi</Text>
+              <Text style={styles.gridCardDesc}>Point of Sale POS</Text>
+            </GlassCard>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={styles.gridCard}
@@ -270,18 +277,20 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
       </View>
 
       <View style={[styles.gridContainer, { marginTop: Spacing.md }]}>
-        <TouchableOpacity
-          style={styles.gridCard}
-          onPress={() => navigation.navigate('StockOpname')}
-        >
-          <GlassCard padding={16} style={styles.glassCardInner}>
-            <View style={[styles.iconBox, { backgroundColor: Colors.warningLight }]}>
-              <Ionicons name="clipboard-outline" size={24} color={Colors.warning} />
-            </View>
-            <Text style={styles.gridCardTitle}>Stock Opname</Text>
-            <Text style={styles.gridCardDesc}>Penyesuaian stok</Text>
-          </GlassCard>
-        </TouchableOpacity>
+        {isAllowed('stock_opname') && (
+          <TouchableOpacity
+            style={styles.gridCard}
+            onPress={() => navigation.navigate('StockOpname')}
+          >
+            <GlassCard padding={16} style={styles.glassCardInner}>
+              <View style={[styles.iconBox, { backgroundColor: Colors.warningLight }]}>
+                <Ionicons name="clipboard-outline" size={24} color={Colors.warning} />
+              </View>
+              <Text style={styles.gridCardTitle}>Stock Opname</Text>
+              <Text style={styles.gridCardDesc}>Penyesuaian stok</Text>
+            </GlassCard>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={styles.gridCard}

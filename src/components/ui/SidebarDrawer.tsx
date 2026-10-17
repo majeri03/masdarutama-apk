@@ -32,7 +32,6 @@ interface MenuRoute {
 export const SidebarDrawer: React.FC = () => {
   const { isOpen, closeSidebar } = useSidebarStore();
   const { user, logout } = useAuthStore();
-  const waOrdersPending = useNotificationStore((state) => state.waOrdersPending);
   const deliveriesPending = useNotificationStore((state) => state.deliveriesPending);
 
 
@@ -72,6 +71,8 @@ export const SidebarDrawer: React.FC = () => {
     }
   }, [isOpen]);
 
+  const allowedPages = useAuthStore((state) => state.allowedPages);
+
   const handleNavigate = (routeName: string) => {
     closeSidebar();
 
@@ -96,16 +97,27 @@ export const SidebarDrawer: React.FC = () => {
     }, 150);
   };
 
-  const routes: MenuRoute[] = [
-    { name: 'StockOpname', label: 'Stock Opname', icon: 'clipboard-outline' },
+  interface MenuRouteWithKey extends MenuRoute {
+    pageKey?: string;
+  }
+
+  const routes: MenuRouteWithKey[] = [
+    { name: 'StockOpname', label: 'Stock Opname', icon: 'clipboard-outline', pageKey: 'stock_opname' },
     { name: 'Delivery', label: 'Surat Jalan & Pengiriman', icon: 'paper-plane-outline' },
-    { name: 'Purchase', label: 'Purchase Order (PO)', icon: 'cart-outline' },
+    { name: 'Purchase', label: 'Purchase Order (PO)', icon: 'cart-outline', pageKey: 'po' },
     { name: 'Debt', label: 'Manajemen Utang & Piutang', icon: 'journal-outline' },
-    { name: 'InvoiceLayout', label: 'Desain & Layout Invoice', icon: 'color-palette-outline' },
+    { name: 'InvoiceLayout', label: 'Desain & Layout Invoice', icon: 'color-palette-outline', pageKey: 'invoice_layout' },
     { name: 'DeviceSettings', label: 'Pengaturan Perangkat & Printer', icon: 'print-outline' },
-    { name: 'WaOrders', label: 'Orderan', icon: 'list-outline' },
     { name: 'Customers', label: 'Pelanggan', icon: 'people-outline' },
   ];
+
+  const filteredRoutes = routes.filter((route) => {
+    if (user?.role === 'SUPER_ADMIN') return true;
+    if (route.pageKey) {
+      return allowedPages.includes(route.pageKey);
+    }
+    return true;
+  });
 
   if (!isOpen) return null;
 
@@ -157,10 +169,9 @@ export const SidebarDrawer: React.FC = () => {
 
                 <ScrollView style={styles.menuScroll} contentContainerStyle={styles.menuContent}>
                   <Text style={styles.menuSectionTitle}>Navigasi Fitur</Text>
-                  {routes.map((route) => {
+                  {filteredRoutes.map((route) => {
                     // Check for badges
                     let badgeCount = 0;
-                    if (route.name === 'WaOrders') badgeCount = waOrdersPending;
                     if (route.name === 'Delivery') badgeCount = deliveriesPending;
 
                     return (

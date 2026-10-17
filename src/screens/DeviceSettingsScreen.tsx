@@ -20,7 +20,9 @@ import { AppToast } from '../utils/toast';
 
 export const DeviceSettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);  // Default true saat pertama load
+  const [initDone, setInitDone] = useState(false);
+  const [initErrorMsg, setInitErrorMsg] = useState<string | null>(null);
   const [activePrinter, setActivePrinter] = useState<any>(null);
   
   const [bleDevices, setBleDevices] = useState<any[]>([]);
@@ -59,7 +61,20 @@ export const DeviceSettingsScreen: React.FC = () => {
       }
 
       if (permissionsGranted) {
-        initService();
+        // Tampilkan loading saat init agar screen tidak blank hitam
+        setLoading(true);
+        setInitErrorMsg(null);
+        try {
+          await initService();
+        } catch (e: any) {
+          setInitErrorMsg(e?.message || 'Gagal inisialisasi printer');
+        } finally {
+          setLoading(false);
+          setInitDone(true);
+        }
+      } else {
+        setLoading(false);
+        setInitDone(true);
       }
     };
     init();
@@ -68,16 +83,17 @@ export const DeviceSettingsScreen: React.FC = () => {
   const initService = async () => {
     await printerService.init();
     setActivePrinter(printerService.getActivePrinter());
-    scanDevices();
+    await scanDevices();
   };
 
   const scanDevices = async () => {
     setLoading(true);
     try {
-      const bles = await printerService.getBlePrinters();
+      const [bles, usbs] = await Promise.all([
+        printerService.getBlePrinters(),
+        printerService.getUsbPrinters(),
+      ]);
       setBleDevices(bles || []);
-
-      const usbs = await printerService.getUsbPrinters();
       setUsbDevices(usbs || []);
     } catch (e) {
       console.warn('Scan Error', e);
@@ -149,11 +165,42 @@ export const DeviceSettingsScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>PENGATURAN PERANGKAT</Text>
-        <TouchableOpacity onPress={scanDevices} style={styles.scanBtn}>
-          <Ionicons name="refresh" size={24} color={Colors.primaryStart} />
+        <TouchableOpacity onPress={scanDevices} style={styles.scanBtn} disabled={loading}>
+          <Ionicons name="refresh" size={24} color={loading ? Colors.textTertiary : Colors.primaryStart} />
         </TouchableOpacity>
       </View>
 
+      {/* Loading State — mencegah blank hitam */}
+      {loading && !initDone && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primaryStart} />
+          <Text style={styles.loadingText}>Menginisialisasi printer...</Text>
+          <Text style={styles.loadingSubText}>Memuat modul Bluetooth dan USB</Text>
+        </View>
+      )}
+
+      {/* Error State */}
+      {initErrorMsg && (
+        <View style={styles.errorContainer}>
+          <Ionicons name="warning-outline" size={32} color={Colors.error} />
+          <Text style={styles.errorTitle}>Gagal Menginisialisasi</Text>
+          <Text style={styles.errorDesc}>{initErrorMsg}</Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={async () => {
+              setLoading(true);
+              setInitErrorMsg(null);
+              try { await initService(); } catch (e: any) { setInitErrorMsg(e?.message); }
+              finally { setLoading(false); setInitDone(true); }
+            }}
+          >
+            <Text style={styles.retryBtnText}>Coba Lagi</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Content — hanya tampil setelah init selesai */}
+      {(initDone || !loading) && !initErrorMsg && (
       <ScrollView contentContainerStyle={styles.content}>
         {/* Active Printer Status */}
         <GlassCard padding={16} style={styles.card}>
@@ -210,11 +257,13 @@ export const DeviceSettingsScreen: React.FC = () => {
             <Ionicons name="bluetooth" size={20} color={Colors.info} />
           </View>
           <Text style={styles.descText}>
-            Pastikan Anda sudah melakukan pairing/sanding dengan printer melalui pengaturan Bluetooth HP Anda terlebih dahulu.
+            Pastikan Anda sudah melakukan pairing dengan printer melalui pengaturan Bluetooth HP terlebih dahulu.
           </Text>
           
           {bleDevices.length === 0 ? (
-            <Text style={styles.emptyText}>Tidak ada perangkat Bluetooth printer terdeteksi.</Text>
+            <Text style={styles.emptyText}>
+              {loading ? 'Sedang mencari perangkat...' : 'Tidak ada perangkat Bluetooth printer terdeteksi.'}
+            </Text>
           ) : (
             bleDevices.map((dev, i) => (
               <View key={i} style={styles.deviceRow}>
@@ -241,7 +290,9 @@ export const DeviceSettingsScreen: React.FC = () => {
           </View>
           
           {usbDevices.length === 0 ? (
-            <Text style={styles.emptyText}>Tidak ada perangkat USB terdeteksi.</Text>
+            <Text style={styles.emptyText}>
+              {loading ? 'Sedang mencari perangkat...' : 'Tidak ada perangkat USB terdeteksi.'}
+            </Text>
           ) : (
             usbDevices.map((dev, i) => (
               <View key={i} style={styles.deviceRow}>
@@ -272,6 +323,7 @@ export const DeviceSettingsScreen: React.FC = () => {
         </GlassCard>
 
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 };
@@ -298,6 +350,57 @@ const styles = StyleSheet.create({
   },
   content: { padding: Spacing.lg },
   card: { marginBottom: Spacing.lg },
+  // Loading state
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  loadingSubText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  // Error state
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    gap: 12,
+  },
+  errorTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.error,
+    textAlign: 'center',
+  },
+  errorDesc: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryBtn: {
+    marginTop: 8,
+    backgroundColor: Colors.primaryStart,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+  },
+  retryBtnText: {
+    color: '#fff',
+    fontWeight: FontWeight.bold,
+    fontSize: FontSize.sm,
+  },
   sectionTitle: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,

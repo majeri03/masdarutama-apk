@@ -51,12 +51,9 @@ const SCREEN_ROUTES: Record<
   Debt: { type: 'stack', stackName: 'Debt' },
   Purchase: { type: 'stack', stackName: 'Purchase' },
   Delivery: { type: 'stack', stackName: 'Delivery' },
-  WaOrders: { type: 'stack', stackName: 'WaOrders' },
-  WaOrderConfirm: { type: 'stack', stackName: 'WaOrderConfirm' },
   Customers: { type: 'stack', stackName: 'Customers' },
   NotificationCenter: { type: 'stack', stackName: 'NotificationCenter' },
   StockOpname: { type: 'stack', stackName: 'StockOpname' },
-  AiChat: { type: 'stack', stackName: 'AiChat' },
   DeviceSettings: { type: 'stack', stackName: 'DeviceSettings' },
 
   // === TAB SCREENS (harus navigate ke 'Main' dulu) ===
@@ -143,12 +140,15 @@ export function usePushNotifications() {
     notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
       const { title, body, data } = notification.request.content;
 
-      // Cegah duplikat jika notifikasi ini sudah ada di center (misal dari polling)
+      // Skip notifikasi dengan konten kosong (mencegah entri blank di notification center)
+      if (!title || !body || title.trim() === '' || body.trim() === '') return;
+
+      // Cegah duplikat: cek kombinasi title+body dalam 5 menit terakhir
       const state = useNotificationCenterStore.getState();
+      const DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 menit
       const alreadyExists = state.notifications.some(
         (n) => n.title === (title || '') && n.body === (body || '') &&
-          // Hanya cek dalam 10 detik terakhir untuk cegah spam tapi bukan duplikat lama
-          (Date.now() - new Date(n.date).getTime()) < 10_000
+          (Date.now() - new Date(n.date).getTime()) < DEDUP_WINDOW_MS
       );
 
       if (!alreadyExists) {
@@ -168,17 +168,21 @@ export function usePushNotifications() {
       const screen = (data as any)?.screen;
       const params = (data as any)?.params;
 
-      // Simpan ke history jika belum ada
-      const state = useNotificationCenterStore.getState();
-      const exists = state.notifications.some(
-        (n) => n.title === title && n.body === body
-      );
-      if (!exists) {
-        state.addNotification({
-          title: title || 'Notifikasi Baru',
-          body: body || '',
-          data: data || {},
-        });
+      // Hanya simpan jika ada konten yang valid
+      if (title && body && title.trim() !== '' && body.trim() !== '') {
+        const state = useNotificationCenterStore.getState();
+        const DEDUP_WINDOW_MS = 5 * 60 * 1000;
+        const exists = state.notifications.some(
+          (n) => n.title === title && n.body === body &&
+            (Date.now() - new Date(n.date).getTime()) < DEDUP_WINDOW_MS
+        );
+        if (!exists) {
+          state.addNotification({
+            title: title || 'Notifikasi Baru',
+            body: body || '',
+            data: data || {},
+          });
+        }
       }
 
       // Navigasi ke layar yang relevan

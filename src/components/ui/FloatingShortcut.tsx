@@ -89,25 +89,25 @@ export const FloatingShortcut: React.FC = () => {
           <View style={styles.menuBox}>
             {/* Row 1 */}
             <View style={styles.menuRow}>
-              <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('AiChat')}>
-                <View style={[styles.iconCircle, { backgroundColor: '#6C63FF' }]}><Ionicons name="sparkles" size={24} color="#fff" /></View>
-                <Text style={styles.menuText}>MIDA</Text>
-              </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('POS')}>
-                <View style={styles.iconCircle}><Ionicons name="calculator" size={24} color="#fff" /></View>
+                <View style={[styles.iconCircle, { backgroundColor: '#6C63FF' }]}><Ionicons name="calculator" size={24} color="#fff" /></View>
                 <Text style={styles.menuText}>Kasir</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('Products')}>
+                <View style={styles.iconCircle}><Ionicons name="cube" size={24} color="#fff" /></View>
+                <Text style={styles.menuText}>Produk</Text>
               </TouchableOpacity>
             </View>
             
             {/* Row 2 */}
             <View style={styles.menuRow}>
-              <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('Products')}>
-                <View style={styles.iconCircle}><Ionicons name="cube" size={24} color="#fff" /></View>
-                <Text style={styles.menuText}>Produk</Text>
+              <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('History')}>
+                <View style={styles.iconCircle}><Ionicons name="receipt" size={24} color="#fff" /></View>
+                <Text style={styles.menuText}>Riwayat</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('WaOrders')}>
-                <View style={styles.iconCircle}><Ionicons name="logo-whatsapp" size={24} color="#fff" /></View>
-                <Text style={styles.menuText}>Orderan</Text>
+              <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('Delivery')}>
+                <View style={styles.iconCircle}><Ionicons name="paper-plane" size={24} color="#fff" /></View>
+                <Text style={styles.menuText}>Surat Jalan</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -3,18 +3,21 @@
  */
 import { create } from 'zustand';
 import { authService } from '../services/auth.service';
+import api from '../services/api';
 import type { AuthUser, Role } from '../types';
 
 interface AuthState {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  allowedPages: string[];
 
   // Actions
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   checkSession: () => Promise<boolean>;
   logout: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
+  fetchAllowedPages: () => Promise<void>;
 
   // Role helpers
   isKasir: () => boolean;
@@ -33,6 +36,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isLoading: true,
   isAuthenticated: false,
+  allowedPages: [],
 
   login: async (email: string, password: string) => {
     set({ isLoading: true });
@@ -44,6 +48,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         isLoading: false,
       });
+      // Fetch allowed pages immediately after login
+      await get().fetchAllowedPages();
       return { success: true };
     }
 
@@ -58,27 +64,48 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const storedUser = await authService.getStoredUser();
     if (storedUser) {
       set({ user: storedUser, isAuthenticated: true });
+      // Fetch allowed pages in background
+      get().fetchAllowedPages().catch(err => console.error("Error loading pages", err));
     }
 
     // Then verify with server
     const serverUser = await authService.checkSession();
     if (serverUser) {
       set({ user: serverUser, isAuthenticated: true, isLoading: false });
+      await get().fetchAllowedPages();
       return true;
     }
 
     // Session invalid
-    set({ user: null, isAuthenticated: false, isLoading: false });
+    set({ user: null, isAuthenticated: false, isLoading: false, allowedPages: [] });
     return false;
   },
 
   logout: async () => {
     await authService.logout();
-    set({ user: null, isAuthenticated: false, isLoading: false });
+    set({ user: null, isAuthenticated: false, isLoading: false, allowedPages: [] });
   },
 
   setUser: (user) => {
     set({ user, isAuthenticated: !!user });
+    if (user) {
+      get().fetchAllowedPages().catch(err => console.error(err));
+    } else {
+      set({ allowedPages: [] });
+    }
+  },
+
+  fetchAllowedPages: async () => {
+    try {
+      const res = await api.get('/api/page-access');
+      if (res.data?.success && res.data?.data?.allowedPages) {
+        set({ allowedPages: res.data.data.allowedPages });
+      } else if (res.data?.success && res.data?.allowedPages) {
+        set({ allowedPages: res.data.allowedPages });
+      }
+    } catch (error) {
+      console.warn('Gagal memuat dynamic allowed pages:', error);
+    }
   },
 
   isKasir: () => get().user?.role === 'KASIR',

@@ -3,20 +3,22 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
 import { AppState } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import { useNotificationCenterStore } from './notificationCenter.store';
 
 interface NotificationState {
-  waOrdersPending: number;
   deliveriesPending: number;
   overdueDebts: number;
   pendingPurchases: number;
   lastFetched: number | null;
   isPolling: boolean;
-  // Snapshot sebelumnya untuk deteksi perubahan (di-persist agar tidak spam saat restart)
-  _prevWaPending: number;
+  // Snapshot sebelumnya untuk deteksi perubahan
   _prevOverdueDebts: number;
   _prevPendingPurchases: number;
+  _prevWaPending: number;
+  // Timestamp terakhir tiap jenis notifikasi (untuk dedup 5 menit)
+  _lastDebtNotifAt: number;
+  _lastPoNotifAt: number;
+  _lastStockNotifAt: number;
   startPolling: () => void;
   stopPolling: () => void;
   fetchCounts: () => Promise<void>;
@@ -25,46 +27,49 @@ interface NotificationState {
 let intervalId: NodeJS.Timeout | null = null;
 let appStateSubscription: any = null;
 
-// Notifikasi push di-handle murni via Expo Server (backend) agar tidak terjadi double-push.
+// Jeda minimum antar notifikasi jenis yang sama: 5 menit
+const NOTIF_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * shouldSendNotif — Cek apakah notifikasi layak dikirim.
+ * Mencegah double notif dan konten kosong.
+ */
+const shouldSendNotif = (
+  lastNotifAt: number,
+  title: string,
+  body: string,
+): boolean => {
+  // Skip notifikasi dengan konten kosong
+  if (!title || !body || title.trim() === '' || body.trim() === '') return false;
+
+  // Cooldown: jangan kirim notif jenis yang sama dalam 5 menit terakhir
+  const timeSinceLast = Date.now() - lastNotifAt;
+  if (timeSinceLast < NOTIF_COOLDOWN_MS) return false;
+
+  return true;
+};
 
 export const useNotificationStore = create<NotificationState>()(
   persist(
     (set, get) => ({
-      waOrdersPending: 0,
       deliveriesPending: 0,
       overdueDebts: 0,
       pendingPurchases: 0,
       lastFetched: null,
       isPolling: false,
-      _prevWaPending: 0,
-      _prevOverdueDebts: 0,
-      _prevPendingPurchases: 0,
+      _prevOverdueDebts: -1,
+      _prevPendingPurchases: -1,
+      _prevWaPending: -1,
+      _lastDebtNotifAt: 0,
+      _lastPoNotifAt: 0,
+      _lastStockNotifAt: 0,
 
       fetchCounts: async () => {
         try {
           const state = get();
           const addNotif = useNotificationCenterStore.getState().addNotification;
 
-          // 1. WA Orders pending
-          try {
-            const waRes = await api.get('/api/wa-orders?status=PENDING&limit=1');
-            if (waRes.data?.success || waRes.data?.status === 'success') {
-              const total = waRes.data?.meta?.total ?? (waRes.data?.data?.length || 0);
-              const prev = state._prevWaPending;
-
-              if (total > 0 && total !== prev) {
-                addNotif({
-                  title: '📦 Orderan WA Baru!',
-                  body: `Ada ${total} orderan WA yang menunggu konfirmasi.`,
-                  data: { screen: 'WaOrders' },
-                });
-              }
-
-              set({ waOrdersPending: total, _prevWaPending: total });
-            }
-          } catch {}
-
-          // 2. Hutang / Piutang Jatuh Tempo
+          // 1. Hutang / Piutang Jatuh Tempo
           try {
             const debtRes = await api.get('/api/debts?overdue=true&limit=50');
             if (debtRes.data?.success || debtRes.data?.status === 'success') {
@@ -72,16 +77,15 @@ export const useNotificationStore = create<NotificationState>()(
               const count = Array.isArray(overdueList) ? overdueList.length : 0;
               const prev = state._prevOverdueDebts;
 
-              if (count > 0 && count !== prev) {
+              if (count > 0 && count !== prev && prev !== -1) {
                 const totalAmount = overdueList.reduce((sum: number, d: any) =>
                   sum + (d.remainingAmount || d.amount || 0), 0);
-                const msg = `${count} hutang/piutang jatuh tempo. Total: Rp${totalAmount.toLocaleString('id-ID')}`;
-
-                addNotif({
-                  title: '⚠️ Hutang Jatuh Tempo!',
-                  body: msg,
-                  data: { screen: 'Debt' },
-                });
+                const title = '⚠️ Hutang Jatuh Tempo!';
+                const body = `${count} hutang/piutang jatuh tempo. Total: Rp${totalAmount.toLocaleString('id-ID')}`;
+                if (shouldSendNotif(state._lastDebtNotifAt, title, body)) {
+                  addNotif({ title, body, data: { screen: 'Debt' } });
+                  set({ _lastDebtNotifAt: Date.now() });
+                }
               }
 
               set({ overdueDebts: count, _prevOverdueDebts: count });
@@ -96,37 +100,33 @@ export const useNotificationStore = create<NotificationState>()(
               const count = Array.isArray(poList) ? poList.length : 0;
               const prev = state._prevPendingPurchases;
 
-              if (count > 0 && count !== prev) {
-                addNotif({
-                  title: '🛒 Purchase Order Pending',
-                  body: `Ada ${count} PO yang belum dikonfirmasi/diterima.`,
-                  data: { screen: 'Purchase' },
-                });
+              if (count > 0 && count > prev && prev !== -1) {
+                const title = '🛒 Purchase Order Pending';
+                const body = `Ada ${count} PO yang belum dikonfirmasi/diterima.`;
+                if (shouldSendNotif(state._lastPoNotifAt, title, body)) {
+                  addNotif({ title, body, data: { screen: 'Purchase' } });
+                  set({ _lastPoNotifAt: Date.now() });
+                }
               }
 
               set({ pendingPurchases: count, _prevPendingPurchases: count });
             }
           } catch {}
 
-          // 4. Stok rendah (in-app only — push luar terlalu sering)
+          // 4. Stok rendah (1x per hari max)
           try {
             const stockRes = await api.get('/api/products?lowStock=true&limit=50');
             if (stockRes.data?.success || stockRes.data?.status === 'success') {
               const stockList = stockRes.data?.data?.products || stockRes.data?.products || [];
               const count = Array.isArray(stockList) ? stockList.length : 0;
               if (count > 0) {
-                const existingNotifs = useNotificationCenterStore.getState().notifications;
-                const today = new Date().toDateString();
-                const alreadyNotified = existingNotifs.some(n =>
-                  n.title.includes('Stok Rendah') &&
-                  new Date(n.date).toDateString() === today
-                );
-                if (!alreadyNotified) {
-                  addNotif({
-                    title: '📉 Stok Rendah!',
-                    body: `${count} produk di bawah stok minimum. Segera lakukan pembelian.`,
-                    data: { screen: 'Products' },
-                  });
+                const title = '📉 Stok Rendah!';
+                const body = `${count} produk di bawah stok minimum. Segera lakukan pembelian.`;
+                // Cooldown 1 hari untuk stok rendah (tidak perlu tiap 5 menit)
+                const timeSinceLast = Date.now() - get()._lastStockNotifAt;
+                if (timeSinceLast > 24 * 60 * 60 * 1000 && shouldSendNotif(get()._lastStockNotifAt, title, body)) {
+                  addNotif({ title, body, data: { screen: 'Products' } });
+                  set({ _lastStockNotifAt: Date.now() });
                 }
               }
             }
@@ -141,8 +141,16 @@ export const useNotificationStore = create<NotificationState>()(
       startPolling: () => {
         if (get().isPolling) return;
 
-        // Fetch pertama kali segera
-        get().fetchCounts();
+        // Reset snapshot saat mulai polling agar deteksi perubahan fresh
+        // Tapi jangan reset ke -1 kalau sudah pernah fetch (hanya saat pertama kali)
+        const state = get();
+        if (state._prevWaPending === -1) {
+          // Pertama kali: fetch dulu, set baseline, tidak trigger notif
+          get().fetchCounts();
+        } else {
+          // Sudah pernah fetch: langsung fetch, notif hanya jika ada perubahan
+          get().fetchCounts();
+        }
 
         // Interval setiap 60 detik (hemat baterai)
         intervalId = setInterval(() => {
@@ -153,6 +161,7 @@ export const useNotificationStore = create<NotificationState>()(
         appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
           if (nextAppState === 'active') {
             if (!intervalId) {
+              // App kembali aktif: fetch segera
               get().fetchCounts();
               intervalId = setInterval(() => get().fetchCounts(), 60000);
             }
@@ -180,13 +189,14 @@ export const useNotificationStore = create<NotificationState>()(
       },
     }),
     {
-      name: 'notification-store-storage',
+      name: 'notification-store-storage-v3', // bump version untuk reset
       storage: createJSONStorage(() => AsyncStorage),
-      // Hanya persist _prev counters — state lainnya (polling, dll) tidak perlu
       partialize: (state) => ({
-        _prevWaPending: state._prevWaPending,
         _prevOverdueDebts: state._prevOverdueDebts,
         _prevPendingPurchases: state._prevPendingPurchases,
+        _lastDebtNotifAt: state._lastDebtNotifAt,
+        _lastPoNotifAt: state._lastPoNotifAt,
+        _lastStockNotifAt: state._lastStockNotifAt,
       }),
     }
   )

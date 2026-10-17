@@ -30,13 +30,10 @@ import { InvoiceLayoutScreen } from './src/screens/InvoiceLayoutScreen';
 import { DeliveryScreen } from './src/screens/DeliveryScreen';
 import { PurchaseScreen } from './src/screens/PurchaseScreen';
 import { DebtScreen } from './src/screens/DebtScreen';
-import { WaOrdersScreen } from './src/screens/WaOrdersScreen';
-import { WaOrderConfirmScreen } from './src/screens/WaOrderConfirmScreen';
 import { EditTransactionScreen } from './src/screens/EditTransactionScreen';
 import { CustomersScreen } from './src/screens/CustomersScreen';
 import { DeviceSettingsScreen } from './src/screens/DeviceSettingsScreen';
 import { NotificationCenterScreen } from './src/screens/NotificationCenterScreen';
-import AiChatScreen from './src/screens/AiChatScreen';
 
 // Import Sidebar Drawer
 import { SidebarDrawer } from './src/components/ui/SidebarDrawer';
@@ -145,6 +142,14 @@ const HeaderNotificationButton: React.FC = () => {
 
 // Tab Navigator for Authenticated User
 const MainTabNavigator = () => {
+  const allowedPages = useAuthStore((state) => state.allowedPages);
+  const user = useAuthStore((state) => state.user);
+
+  const isAllowed = (pageKey: string) => {
+    if (user?.role === 'SUPER_ADMIN') return true;
+    return allowedPages.includes(pageKey);
+  };
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -210,14 +215,16 @@ const MainTabNavigator = () => {
           headerTitle: 'BERANDA',
         }}
       />
-      <Tab.Screen
-        name="POS"
-        component={POSScreen}
-        options={{
-          headerTitle: 'TERMINAL KASIR (POS)',
-          headerLeft: () => <HeaderBackButton />,
-        }}
-      />
+      {isAllowed('pos') && (
+        <Tab.Screen
+          name="POS"
+          component={POSScreen}
+          options={{
+            headerTitle: 'TERMINAL KASIR (POS)',
+            headerLeft: () => <HeaderBackButton />,
+          }}
+        />
+      )}
       <Tab.Screen
         name="Products"
         component={ProductsScreen}
@@ -232,20 +239,24 @@ const MainTabNavigator = () => {
           headerTitle: 'RIWAYAT TRANSAKSI',
         }}
       />
-      <Tab.Screen
-        name="Reports"
-        component={ReportsScreen}
-        options={{
-          headerTitle: 'LAPORAN KEUANGAN',
-        }}
-      />
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{
-          headerTitle: 'PENGATURAN',
-        }}
-      />
+      {isAllowed('reports_settings') && (
+        <Tab.Screen
+          name="Reports"
+          component={ReportsScreen}
+          options={{
+            headerTitle: 'LAPORAN KEUANGAN',
+          }}
+        />
+      )}
+      {isAllowed('reports_settings') && (
+        <Tab.Screen
+          name="Settings"
+          component={SettingsScreen}
+          options={{
+            headerTitle: 'PENGATURAN',
+          }}
+        />
+      )}
     </Tab.Navigator>
   );
 };
@@ -425,16 +436,6 @@ export default function App() {
                 }}
               />
               <Stack.Screen
-                name="WaOrders"
-                component={WaOrdersScreen}
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen
-                name="WaOrderConfirm"
-                component={WaOrderConfirmScreen}
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen
                 name="EditTransaction"
                 component={EditTransactionScreen}
                 options={{ headerShown: false }}
@@ -454,17 +455,12 @@ export default function App() {
                 component={NotificationCenterScreen}
                 options={{ headerShown: false }}
               />
-              <Stack.Screen
-                name="AiChat"
-                component={AiChatScreen}
-                options={{ headerShown: false }}
-              />
             </>
           )}
         </Stack.Navigator>
       </NavigationContainer>
 
-      {isAuthenticated && currentRoute !== 'AiChat' && <FloatingShortcut />}
+      {isAuthenticated && <FloatingShortcut />}
       <Toast />
     </SafeAreaProvider>
   );
