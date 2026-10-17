@@ -24,8 +24,8 @@ interface NotificationState {
   fetchCounts: () => Promise<void>;
 }
 
-let intervalId: NodeJS.Timeout | null = null;
-let appStateSubscription: any = null;
+let intervalId: ReturnType<typeof setInterval> | null = null;
+let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
 
 // Jeda minimum antar notifikasi jenis yang sama: 5 menit
 const NOTIF_COOLDOWN_MS = 5 * 60 * 1000;
@@ -78,7 +78,7 @@ export const useNotificationStore = create<NotificationState>()(
               const prev = state._prevOverdueDebts;
 
               if (count > 0 && count !== prev && prev !== -1) {
-                const totalAmount = overdueList.reduce((sum: number, d: any) =>
+                const totalAmount = overdueList.reduce((sum: number, d: { remainingAmount?: number; amount?: number }) =>
                   sum + (d.remainingAmount || d.amount || 0), 0);
                 const title = '⚠️ Hutang Jatuh Tempo!';
                 const body = `${count} hutang/piutang jatuh tempo. Total: Rp${totalAmount.toLocaleString('id-ID')}`;
