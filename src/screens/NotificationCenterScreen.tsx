@@ -22,10 +22,12 @@ export const NotificationCenterScreen: React.FC = () => {
     markAllAsRead,
     clearAll,
     cleanupOldNotifications,
+    fetchRemoteNotifications,
   } = useNotificationCenterStore();
 
   useEffect(() => {
     cleanupOldNotifications();
+    fetchRemoteNotifications();
   }, []);
 
   const formatDate = (isoString: string) => {

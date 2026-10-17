@@ -20,16 +20,24 @@ Notifications.setNotificationHandler({
 
 // ── Buat Android channel di module-level (sebelum kirim notif apa pun) ─────
 if (Platform.OS === 'android') {
-  Notifications.setNotificationChannelAsync('default', {
-    name: 'Notifikasi Utama',
-    description: 'Notifikasi pesanan WA, hutang, dan stok',
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#2563EB',
-    enableVibrate: true,
-    showBadge: true,
-    sound: 'default',
-  }).catch(() => {});
+  const channels = [
+    { id: 'default', name: 'Notifikasi Utama', desc: 'Notifikasi umum sistem' },
+    { id: 'orders', name: 'Pesanan & Penjualan', desc: 'Pesanan POS baru dan orderan WA' },
+    { id: 'deliveries', name: 'Surat Jalan & Pengiriman', desc: 'Status pengiriman dan armada' },
+    { id: 'finance', name: 'Keuangan & Piutang', desc: 'Pembayaran cicilan dan jatuh tempo' },
+  ];
+  for (const ch of channels) {
+    Notifications.setNotificationChannelAsync(ch.id, {
+      name: ch.name,
+      description: ch.desc,
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#2563EB',
+      enableVibrate: true,
+      showBadge: true,
+      sound: 'default',
+    }).catch(() => {});
+  }
 }
 
 /**
@@ -124,9 +132,14 @@ export function usePushNotifications() {
       .then((token) => {
         if (token) {
           setExpoPushToken(token);
-          // Kirim token ke backend agar server bisa push notifikasi
-          api.post('/api/users/push-token', { token }).catch((err) => {
-            console.warn('[PushNotif] Gagal simpan token ke backend:', err?.message);
+          // Kirim token ke backend multi-device registration
+          api.post('/api/notifications/register-token', {
+            token,
+            platform: Platform.OS,
+            deviceName: Device.modelName ?? undefined,
+          }).catch(() => {
+            // Fallback ke endpoint legacy
+            api.post('/api/users/push-token', { token }).catch(() => {});
           });
           console.log('[PushNotif] Token terdaftar:', token.slice(0, 40) + '...');
         }
