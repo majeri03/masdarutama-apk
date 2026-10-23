@@ -78,4 +78,17 @@ export const salesService = {
       return { success: false, error: error.response?.data?.error || 'Gagal memuat detail penjualan' };
     }
   },
+
+  async updateProof(id: string, proofUrl: string | null, notes?: string): Promise<ApiResponse<Sale>> {
+    try {
+      const response = await api.patch<ApiResponse<Sale>>(API_ENDPOINTS.SALE_DETAIL(id), {
+        proofUrl,
+        notes,
+      });
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal memperbarui bukti pembayaran' };
+    }
+  },
 };
+

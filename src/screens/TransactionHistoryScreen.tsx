@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
 import { DatePickerInput } from '../components/ui/DatePickerInput';
+import { ProofImageUploader } from '../components/ui/ProofImageUploader';
 import { salesService } from '../services/sales.service';
 import type { Sale, PaymentMethod, SaleStatus } from '../types';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
@@ -30,6 +31,7 @@ import { useRoute, useFocusEffect, useNavigation } from '@react-navigation/nativ
 import { AppToast } from '../utils/toast';
 import * as Clipboard from 'expo-clipboard';
 import * as LocalAuthentication from 'expo-local-authentication';
+
 // Badge warna untuk status pembayaran
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string; icon: string }> = {
   COMPLETED: { color: Colors.success, bg: Colors.successLight, label: 'Lunas', icon: 'checkmark-circle' },
@@ -115,6 +117,28 @@ export const TransactionHistoryScreen: React.FC = () => {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   const [showZoomModal, setShowZoomModal] = useState(false);
+  const [updatingProof, setUpdatingProof] = useState(false);
+
+  const handleUpdateProof = async (saleId: string, newUrl: string | null) => {
+    setUpdatingProof(true);
+    try {
+      const res = await salesService.updateProof(saleId, newUrl);
+      if (res.success && res.data) {
+        setSelectedSale((prev) => (prev ? { ...prev, notes: res.data?.notes || '' } : null));
+        setSales((prev) =>
+          prev.map((s) => (s.id === saleId ? { ...s, notes: res.data?.notes || '' } : s))
+        );
+        AppToast.success('Berhasil', newUrl ? 'Foto bukti pembayaran tersimpan' : 'Foto bukti dihapus');
+      } else {
+        AppToast.error('Gagal', res.error || 'Gagal memperbarui bukti');
+      }
+    } catch (e: any) {
+      AppToast.error('Gagal', e?.message || 'Terjadi kesalahan sistem');
+    } finally {
+      setUpdatingProof(false);
+    }
+  };
+
 
   const fetchSales = useCallback(
     async (pageNum = 1, resetList = true, isSilent = false) => {
@@ -706,7 +730,7 @@ export const TransactionHistoryScreen: React.FC = () => {
                 </View>
               </GlassCard>
 
-              {/* Bukti Transfer / Pembayaran jika ada */}
+              {/* Bukti Transfer / Pembayaran & Pengunggahan Setelah Transaksi */}
               {(() => {
                 const proofMatch = selectedSale.notes?.match(/\[BUKTI_TF\]:\s*([^\s\]\n]+)/);
                 const proofUrl = proofMatch ? proofMatch[1] : null;
@@ -714,46 +738,24 @@ export const TransactionHistoryScreen: React.FC = () => {
 
                 return (
                   <>
-                    {proofUrl && (
-                      <GlassCard padding={16} style={{ marginTop: Spacing.md }}>
-                        <Text style={{ fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.textSecondary, textTransform: 'uppercase', marginBottom: Spacing.sm }}>
-                          Foto Bukti Transfer / QRIS
+                    <GlassCard padding={16} style={{ marginTop: Spacing.md }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+                        <Text style={{ fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.textSecondary, textTransform: 'uppercase' }}>
+                          Bukti Pembayaran / Struk Transfer
                         </Text>
-                        <TouchableOpacity
-                          activeOpacity={0.85}
-                          onPress={() => {
-                            setZoomImageUrl(proofUrl);
-                            setShowZoomModal(true);
-                          }}
-                          style={{
-                            borderRadius: BorderRadius.md,
-                            overflow: 'hidden',
-                            height: 180,
-                            backgroundColor: '#000',
-                            position: 'relative',
-                          }}
-                        >
-                          <Image source={{ uri: proofUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                          <View
-                            style={{
-                              position: 'absolute',
-                              bottom: 8,
-                              right: 8,
-                              backgroundColor: 'rgba(0,0,0,0.7)',
-                              paddingHorizontal: 8,
-                              paddingVertical: 4,
-                              borderRadius: 12,
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 4,
-                            }}
-                          >
-                            <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
-                            <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>Perbesar</Text>
-                          </View>
-                        </TouchableOpacity>
-                      </GlassCard>
-                    )}
+                        {updatingProof && (
+                          <ActivityIndicator size="small" color={Colors.primaryStart} />
+                        )}
+                      </View>
+
+                      <ProofImageUploader
+                        label="Foto Bukti Transaksi"
+                        imageUrl={proofUrl}
+                        folder="proofs_payment"
+                        onImageUploaded={(url) => handleUpdateProof(selectedSale.id, url)}
+                      />
+
+                    </GlassCard>
 
                     {cleanNotes ? (
                       <GlassCard padding={12} style={styles.notesCard}>
@@ -764,6 +766,7 @@ export const TransactionHistoryScreen: React.FC = () => {
                   </>
                 );
               })()}
+
 
               {/* Share & Print Buttons */}
               <View style={{ marginTop: Spacing.xl, marginBottom: Spacing['3xl'], gap: Spacing.md }}>
