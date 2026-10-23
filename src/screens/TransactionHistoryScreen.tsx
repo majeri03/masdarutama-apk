@@ -16,6 +16,7 @@ import {
   RefreshControl,
   Alert,
   Share,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -112,6 +113,8 @@ export const TransactionHistoryScreen: React.FC = () => {
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
+  const [showZoomModal, setShowZoomModal] = useState(false);
 
   const fetchSales = useCallback(
     async (pageNum = 1, resetList = true, isSilent = false) => {
@@ -703,12 +706,64 @@ export const TransactionHistoryScreen: React.FC = () => {
                 </View>
               </GlassCard>
 
-              {selectedSale.notes && (
-                <GlassCard padding={12} style={styles.notesCard}>
-                  <Text style={styles.notesLabel}>Catatan:</Text>
-                  <Text style={styles.notesText}>{selectedSale.notes}</Text>
-                </GlassCard>
-              )}
+              {/* Bukti Transfer / Pembayaran jika ada */}
+              {(() => {
+                const proofMatch = selectedSale.notes?.match(/\[BUKTI_TF\]:\s*([^\s\]\n]+)/);
+                const proofUrl = proofMatch ? proofMatch[1] : null;
+                const cleanNotes = (selectedSale.notes || '').replace(/\[BUKTI_TF\]:\s*[^\s\]\n]+/g, '').trim();
+
+                return (
+                  <>
+                    {proofUrl && (
+                      <GlassCard padding={16} style={{ marginTop: Spacing.md }}>
+                        <Text style={{ fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.textSecondary, textTransform: 'uppercase', marginBottom: Spacing.sm }}>
+                          Foto Bukti Transfer / QRIS
+                        </Text>
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          onPress={() => {
+                            setZoomImageUrl(proofUrl);
+                            setShowZoomModal(true);
+                          }}
+                          style={{
+                            borderRadius: BorderRadius.md,
+                            overflow: 'hidden',
+                            height: 180,
+                            backgroundColor: '#000',
+                            position: 'relative',
+                          }}
+                        >
+                          <Image source={{ uri: proofUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                          <View
+                            style={{
+                              position: 'absolute',
+                              bottom: 8,
+                              right: 8,
+                              backgroundColor: 'rgba(0,0,0,0.7)',
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              borderRadius: 12,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
+                            <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>Perbesar</Text>
+                          </View>
+                        </TouchableOpacity>
+                      </GlassCard>
+                    )}
+
+                    {cleanNotes ? (
+                      <GlassCard padding={12} style={styles.notesCard}>
+                        <Text style={styles.notesLabel}>Catatan:</Text>
+                        <Text style={styles.notesText}>{cleanNotes}</Text>
+                      </GlassCard>
+                    ) : null}
+                  </>
+                );
+              })()}
 
               {/* Share & Print Buttons */}
               <View style={{ marginTop: Spacing.xl, marginBottom: Spacing['3xl'], gap: Spacing.md }}>
@@ -739,6 +794,30 @@ export const TransactionHistoryScreen: React.FC = () => {
             </ScrollView>
           ) : null}
         </SafeAreaView>
+      </Modal>
+
+      {/* ── FULLSCREEN ZOOM MODAL ── */}
+      <Modal
+        visible={showZoomModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowZoomModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 40, paddingBottom: 10 }}>
+            <Text style={{ fontSize: FontSize.md, fontWeight: FontWeight.bold, color: '#FFFFFF' }}>
+              Bukti Transfer / Pembayaran
+            </Text>
+            <TouchableOpacity onPress={() => setShowZoomModal(false)} style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 }}>
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+          {zoomImageUrl ? (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 10 }}>
+              <Image source={{ uri: zoomImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+            </View>
+          ) : null}
+        </View>
       </Modal>
     </View>
   );

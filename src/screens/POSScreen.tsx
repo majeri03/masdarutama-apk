@@ -23,7 +23,7 @@ import { productService } from '../services/product.service';
 import { masterService } from '../services/master.service';
 import { salesService, CheckoutPayload } from '../services/sales.service';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight } from '../constants/theme';
-import { GlassCard, GradientButton } from '../components/ui';
+import { GlassCard, GradientButton, ProofImageUploader } from '../components/ui';
 import type { Product, Category, Customer, CartItem, PaymentMethod } from '../types';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
@@ -68,6 +68,7 @@ export const POSScreen: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
   const [paidAmount, setPaidAmount] = useState('');
   const [processingCheckout, setProcessingCheckout] = useState(false);
+  const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
 
   // Unit Selection Modal for adding item
   const [showUnitModal, setShowUnitModal] = useState(false);
@@ -355,7 +356,9 @@ export const POSScreen: React.FC = () => {
         paymentMethod,
         paidAmount: effectivePaid,
         changeAmount,                        // ← KRITIS: kembalian
-        notes: notes || undefined,
+        notes: paymentProofUrl
+          ? (notes ? `${notes}\n[BUKTI_TF]: ${paymentProofUrl}` : `[BUKTI_TF]: ${paymentProofUrl}`)
+          : (notes || undefined),
       };
 
       const res = await salesService.checkout(payload);
@@ -363,6 +366,7 @@ export const POSScreen: React.FC = () => {
         // "Secepat kilat": Segera kosongkan keranjang dan buka modal sukses
         clearCart();
         setPaidAmount('');
+        setPaymentProofUrl(null);
         setShowCheckoutModal(false);
         setShowCartModal(false);
         setShowSuccessModal(true); 
@@ -1036,6 +1040,19 @@ export const POSScreen: React.FC = () => {
                     Rp {Math.max(0, calculation.grandTotal - Number(paidAmount)).toLocaleString('id-ID')}
                   </Text>
                 </View>
+              </View>
+            )}
+
+            {/* Bukti Transfer / QRIS */}
+            {(paymentMethod === 'TRANSFER' || paymentMethod === 'QRIS') && (
+              <View style={{ marginVertical: Spacing.sm }}>
+                <ProofImageUploader
+                  label="Foto Bukti Transfer / QRIS"
+                  sublabel="Foto struk ATM, screenshot m-Banking, atau struk QRIS (Kamera langsung)"
+                  imageUrl={paymentProofUrl}
+                  onImageUploaded={setPaymentProofUrl}
+                  folder="proofs_payment"
+                />
               </View>
             )}
 

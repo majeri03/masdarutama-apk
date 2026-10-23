@@ -1,7 +1,12 @@
 import { BLEPrinter, USBPrinter, NetPrinter } from 'react-native-thermal-receipt-printer-image-qr';
+import { NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type PrinterType = 'BLE' | 'USB' | 'NET' | 'SYSTEM';
+
+const hasRNBLEPrinter = !!(NativeModules && NativeModules.RNBLEPrinter);
+const hasRNUSBPrinter = !!(NativeModules && NativeModules.RNUSBPrinter);
+const hasRNNetPrinter = !!(NativeModules && NativeModules.RNNetPrinter);
 
 interface ConnectedPrinter {
   type: PrinterType;
@@ -44,34 +49,35 @@ class PrinterService {
   /**
    * init — Inisialisasi semua modul printer dengan timeout per modul.
    * Tidak akan throw atau hang — semua error ditangkap per modul.
-   * Timeout 5 detik per modul untuk mencegah blank screen.
    */
   async init() {
     if (this.isInitialized) return;
     this.initError = null;
 
-    // BLE init dengan timeout 5 detik
-    try {
-      await withTimeout(BLEPrinter.init(), 5000, 'BLEPrinter.init');
-    } catch (e: any) {
-      console.warn('[PrinterService] BLE init gagal/timeout:', e?.message);
+    if (hasRNBLEPrinter) {
+      try {
+        await withTimeout(BLEPrinter.init(), 3000, 'BLEPrinter.init');
+      } catch (e: any) {
+        console.warn('[PrinterService] BLE init gagal/timeout:', e?.message);
+      }
     }
 
-    // USB init dengan timeout 5 detik
-    try {
-      await withTimeout(USBPrinter.init(), 5000, 'USBPrinter.init');
-    } catch (e: any) {
-      console.warn('[PrinterService] USB init gagal/timeout:', e?.message);
+    if (hasRNUSBPrinter) {
+      try {
+        await withTimeout(USBPrinter.init(), 3000, 'USBPrinter.init');
+      } catch (e: any) {
+        console.warn('[PrinterService] USB init gagal/timeout:', e?.message);
+      }
     }
 
-    // NET init dengan timeout 3 detik
-    try {
-      await withTimeout(NetPrinter.init(), 3000, 'NetPrinter.init');
-    } catch (e: any) {
-      console.warn('[PrinterService] NET init gagal/timeout:', e?.message);
+    if (hasRNNetPrinter) {
+      try {
+        await withTimeout(NetPrinter.init(), 2000, 'NetPrinter.init');
+      } catch (e: any) {
+        console.warn('[PrinterService] NET init gagal/timeout:', e?.message);
+      }
     }
 
-    // Tandai sudah diinisialisasi meskipun ada error (mencegah infinite loading)
     this.isInitialized = true;
 
     // Load saved printer (dengan error handling)
@@ -79,10 +85,13 @@ class PrinterService {
       const saved = await AsyncStorage.getItem('saved_printer');
       if (saved) {
         const printer: ConnectedPrinter = JSON.parse(saved);
-        // Koneksi ulang dengan timeout
-        await this.connect(printer).catch(() => {
-          console.warn('[PrinterService] Gagal reconnect ke printer tersimpan');
-        });
+        if (printer.type === 'SYSTEM') {
+          this.activePrinter = printer;
+        } else {
+          await this.connect(printer).catch(() => {
+            console.warn('[PrinterService] Gagal reconnect ke printer tersimpan');
+          });
+        }
       }
     } catch (e) {
       console.warn('[PrinterService] Gagal load saved printer:', e);
@@ -96,9 +105,20 @@ class PrinterService {
     return this.initError;
   }
 
+  isBleSupported(): boolean {
+    return hasRNBLEPrinter;
+  }
+
+  isUsbSupported(): boolean {
+    return hasRNUSBPrinter;
+  }
+
   async getBlePrinters() {
+    if (!hasRNBLEPrinter) {
+      return [];
+    }
     try {
-      const result = await withTimeout(BLEPrinter.getDeviceList(), 8000, 'getDeviceList');
+      const result = await withTimeout(BLEPrinter.getDeviceList(), 5000, 'getDeviceList');
       return result || [];
     } catch (e: any) {
       console.warn('[PrinterService] Get BLE devices gagal/timeout:', e?.message);
@@ -107,8 +127,11 @@ class PrinterService {
   }
 
   async getUsbPrinters() {
+    if (!hasRNUSBPrinter) {
+      return [];
+    }
     try {
-      const result = await withTimeout(USBPrinter.getDeviceList(), 5000, 'getUsbDeviceList');
+      const result = await withTimeout(USBPrinter.getDeviceList(), 3000, 'getUsbDeviceList');
       return result || [];
     } catch (e: any) {
       console.warn('[PrinterService] Get USB devices gagal/timeout:', e?.message);

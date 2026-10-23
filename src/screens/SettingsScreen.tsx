@@ -23,6 +23,7 @@ import api from '../services/api';
 import { API_ENDPOINTS } from '../constants/api';
 import type { StoreSetting } from '../types';
 import { AppToast } from '../utils/toast';
+import { CURRENT_VERSION, CURRENT_VERSION_CODE } from '../services/update.service';
 
 export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -308,6 +309,21 @@ export const SettingsScreen: React.FC = () => {
               </View>
               <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
             </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.settingItem} onPress={() => navigation.navigate('FleetTracking')}>
+              <View style={styles.settingItemLeft}>
+                <View style={[styles.iconBox, { backgroundColor: Colors.success + '18' }]}>
+                  <Ionicons name="car-outline" size={20} color={Colors.success} />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Tracking Armada</Text>
+                  <Text style={styles.settingDesc}>Pantau lokasi armada & sopir real-time</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+            </TouchableOpacity>
           </GlassCard>
         </View>
 
@@ -389,7 +405,6 @@ export const SettingsScreen: React.FC = () => {
           </GlassCard>
         </View>
 
-        {/* INFO & SUPPORT */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Lainnya</Text>
           <GlassCard padding={0}>
@@ -408,6 +423,42 @@ export const SettingsScreen: React.FC = () => {
 
             <View style={styles.divider} />
 
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={() => navigation.navigate('AppUpdate')}
+            >
+              <View style={styles.settingItemLeft}>
+                <View style={[styles.iconBox, { backgroundColor: Colors.success + '18' }]}>
+                  <Ionicons name="cloud-download-outline" size={20} color={Colors.success} />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Pembaruan Aplikasi</Text>
+                  <Text style={styles.settingDesc}>Cek & download versi terbaru</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={() => navigation.navigate('StorageManager')}
+            >
+              <View style={styles.settingItemLeft}>
+                <View style={[styles.iconBox, { backgroundColor: '#38BDF818' }]}>
+                  <Ionicons name="cloud-outline" size={20} color="#38BDF8" />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Penyimpanan Cloudflare R2</Text>
+                  <Text style={styles.settingDesc}>Pantau kuota 10 GB & bersihkan foto per kategori</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
             <View style={styles.settingItem}>
               <View style={styles.settingItemLeft}>
                 <View style={[styles.iconBox, { backgroundColor: Colors.textTertiary + '18' }]}>
@@ -415,7 +466,7 @@ export const SettingsScreen: React.FC = () => {
                 </View>
                 <View>
                   <Text style={styles.settingLabel}>Versi Aplikasi</Text>
-                  <Text style={styles.settingDesc}>v1.0.0 (Build 12)</Text>
+                  <Text style={styles.settingDesc}>v{CURRENT_VERSION} (Build {CURRENT_VERSION_CODE})</Text>
                 </View>
               </View>
             </View>

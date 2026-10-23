@@ -32,6 +32,14 @@ const ROLE_HIERARCHY: Record<Role, number> = {
   KASIR: 1,
 };
 
+const normalizeUser = (user: AuthUser | null): AuthUser | null => {
+  if (!user) return null;
+  return {
+    ...user,
+    role: (user.role || 'KASIR').toUpperCase() as Role,
+  };
+};
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isLoading: true,
@@ -43,8 +51,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const result = await authService.login(email, password);
 
     if (result.success && result.data?.user) {
+      const normalized = normalizeUser(result.data.user);
       set({
-        user: result.data.user,
+        user: normalized,
         isAuthenticated: true,
         isLoading: false,
       });
@@ -63,7 +72,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // First try stored user for instant feedback
     const storedUser = await authService.getStoredUser();
     if (storedUser) {
-      set({ user: storedUser, isAuthenticated: true });
+      const normalized = normalizeUser(storedUser);
+      set({ user: normalized, isAuthenticated: true });
       // Fetch allowed pages in background
       get().fetchAllowedPages().catch(err => console.error("Error loading pages", err));
     }
@@ -71,7 +81,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Then verify with server
     const serverUser = await authService.checkSession();
     if (serverUser) {
-      set({ user: serverUser, isAuthenticated: true, isLoading: false });
+      const normalized = normalizeUser(serverUser);
+      set({ user: normalized, isAuthenticated: true, isLoading: false });
       await get().fetchAllowedPages();
       return true;
     }
@@ -87,8 +98,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setUser: (user) => {
-    set({ user, isAuthenticated: !!user });
-    if (user) {
+    const normalized = normalizeUser(user);
+    set({ user: normalized, isAuthenticated: !!normalized });
+    if (normalized) {
       get().fetchAllowedPages().catch(err => console.error(err));
     } else {
       set({ allowedPages: [] });
@@ -96,6 +108,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   fetchAllowedPages: async () => {
+    // SUPER_ADMIN always gets full access — no API call needed
+    const currentUser = get().user;
+    const userRole = (currentUser?.role || '').toUpperCase();
+    if (userRole === 'SUPER_ADMIN') {
+      set({
+        allowedPages: [
+          'pos', 'products', 'reports_settings', 'stock_opname', 'po',
+          'invoice_layout', 'delivery', 'purchase', 'debt', 'customers',
+          'fleet_tracking', 'users_management', 'system_settings',
+        ],
+      });
+      return;
+    }
+
     try {
       const res = await api.get('/api/page-access');
       if (res.data?.success && res.data?.data?.allowedPages) {
@@ -105,18 +131,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     } catch (error) {
       console.warn('Gagal memuat dynamic allowed pages:', error);
+      // Fallback: If ADMIN, give basic access
+      if (userRole === 'ADMIN') {
+        set({
+          allowedPages: ['pos', 'products', 'reports_settings', 'stock_opname', 'delivery', 'purchase', 'debt', 'customers'],
+        });
+      }
     }
   },
 
-  isKasir: () => get().user?.role === 'KASIR',
+  isKasir: () => (get().user?.role || '').toUpperCase() === 'KASIR',
   isAdmin: () => {
-    const role = get().user?.role;
+    const role = (get().user?.role || '').toUpperCase();
     return role === 'ADMIN' || role === 'SUPER_ADMIN';
   },
-  isSuperAdmin: () => get().user?.role === 'SUPER_ADMIN',
+  isSuperAdmin: () => (get().user?.role || '').toUpperCase() === 'SUPER_ADMIN',
   hasMinRole: (role: Role) => {
-    const userRole = get().user?.role;
+    const userRole = (get().user?.role || '').toUpperCase() as Role;
     if (!userRole) return false;
-    return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[role];
+    return (ROLE_HIERARCHY[userRole] || 0) >= (ROLE_HIERARCHY[role] || 0);
   },
 }));

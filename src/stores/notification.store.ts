@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
 import { AppState } from 'react-native';
 import { useNotificationCenterStore } from './notificationCenter.store';
+import { scheduleLocalNotification } from '../hooks/usePushNotifications';
 
 interface NotificationState {
   deliveriesPending: number;
@@ -84,6 +85,7 @@ export const useNotificationStore = create<NotificationState>()(
                 const body = `${count} hutang/piutang jatuh tempo. Total: Rp${totalAmount.toLocaleString('id-ID')}`;
                 if (shouldSendNotif(state._lastDebtNotifAt, title, body)) {
                   addNotif({ title, body, data: { screen: 'Debt' } });
+                  scheduleLocalNotification(title, body, { screen: 'Debt' }, 'finance');
                   set({ _lastDebtNotifAt: Date.now() });
                 }
               }
@@ -105,6 +107,7 @@ export const useNotificationStore = create<NotificationState>()(
                 const body = `Ada ${count} PO yang belum dikonfirmasi/diterima.`;
                 if (shouldSendNotif(state._lastPoNotifAt, title, body)) {
                   addNotif({ title, body, data: { screen: 'Purchase' } });
+                  scheduleLocalNotification(title, body, { screen: 'Purchase' }, 'orders');
                   set({ _lastPoNotifAt: Date.now() });
                 }
               }
@@ -126,6 +129,7 @@ export const useNotificationStore = create<NotificationState>()(
                 const timeSinceLast = Date.now() - get()._lastStockNotifAt;
                 if (timeSinceLast > 24 * 60 * 60 * 1000 && shouldSendNotif(get()._lastStockNotifAt, title, body)) {
                   addNotif({ title, body, data: { screen: 'Products' } });
+                  scheduleLocalNotification(title, body, { screen: 'Products' }, 'default');
                   set({ _lastStockNotifAt: Date.now() });
                 }
               }

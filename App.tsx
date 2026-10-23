@@ -34,6 +34,9 @@ import { EditTransactionScreen } from './src/screens/EditTransactionScreen';
 import { CustomersScreen } from './src/screens/CustomersScreen';
 import { DeviceSettingsScreen } from './src/screens/DeviceSettingsScreen';
 import { NotificationCenterScreen } from './src/screens/NotificationCenterScreen';
+import { FleetTrackingScreen } from './src/screens/FleetTrackingScreen';
+import AppUpdateScreen from './src/screens/AppUpdateScreen';
+import { StorageManagerScreen } from './src/screens/StorageManagerScreen';
 
 // Import Sidebar Drawer
 import { SidebarDrawer } from './src/components/ui/SidebarDrawer';
@@ -453,6 +456,21 @@ export default function App() {
               <Stack.Screen
                 name="NotificationCenter"
                 component={NotificationCenterScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="FleetTracking"
+                component={FleetTrackingScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="AppUpdate"
+                component={AppUpdateScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="StorageManager"
+                component={StorageManagerScreen}
                 options={{ headerShown: false }}
               />
             </>

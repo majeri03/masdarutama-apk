@@ -102,6 +102,7 @@ export const SidebarDrawer: React.FC = () => {
   }
 
   const routes: MenuRouteWithKey[] = [
+    { name: 'FleetTracking', label: 'Tracking Armada', icon: 'car-outline', pageKey: 'fleet_tracking' },
     { name: 'StockOpname', label: 'Stock Opname', icon: 'clipboard-outline', pageKey: 'stock_opname' },
     { name: 'Delivery', label: 'Surat Jalan & Pengiriman', icon: 'paper-plane-outline' },
     { name: 'Purchase', label: 'Purchase Order (PO)', icon: 'cart-outline', pageKey: 'po' },
@@ -112,7 +113,8 @@ export const SidebarDrawer: React.FC = () => {
   ];
 
   const filteredRoutes = routes.filter((route) => {
-    if (user?.role === 'SUPER_ADMIN') return true;
+    const role = (user?.role || '').toUpperCase();
+    if (role === 'SUPER_ADMIN') return true;
     if (route.pageKey) {
       return allowedPages.includes(route.pageKey);
     }

@@ -7,6 +7,30 @@ import api from '../services/api';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import { navigationRef } from '../utils/navigation';
 
+// ── Kirim notifikasi lokal native (muncul di system tray saat app foreground/background) ─
+export async function scheduleLocalNotification(
+  title: string,
+  body: string,
+  data?: Record<string, unknown>,
+  channelId = 'default',
+) {
+  if (!title || !body || title.trim() === '' || body.trim() === '') return;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: data ?? {},
+        sound: 'default',
+        ...(Platform.OS === 'android' ? { channelId } : {}),
+      },
+      trigger: null, // tampil langsung
+    });
+  } catch (e) {
+    console.warn('[PushNotif] Gagal jadwalkan notif lokal:', e);
+  }
+}
+
 // ── Handler: tampilkan notifikasi walau app sedang foreground ──────────────
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -53,7 +77,6 @@ const SCREEN_ROUTES: Record<
   string,
   | { type: 'tab'; tabName: string }
   | { type: 'stack'; stackName: string }
-  | { type: 'stack-with-params'; stackName: string }
 > = {
   // === STACK SCREENS (route langsung) ===
   Debt: { type: 'stack', stackName: 'Debt' },
@@ -77,7 +100,7 @@ const SCREEN_ROUTES: Record<
  * Navigasi cerdas berdasarkan nama screen yang dikirim di payload notifikasi.
  * Menangani perbedaan antara Tab screen dan Stack screen secara otomatis.
  */
-const navigateToScreen = (screen: string, params?: any): boolean => {
+export const navigateToScreen = (screen: string, params?: any): boolean => {
   if (!screen || !navigationRef.isReady()) return false;
 
   const route = SCREEN_ROUTES[screen];
@@ -91,16 +114,11 @@ const navigateToScreen = (screen: string, params?: any): boolean => {
 
     if (route.type === 'tab') {
       // Tab screen: harus navigate ke Main dulu, lalu ke tab
-      if (params) {
-        (navigationRef as any).navigate('Main', {
-          screen: route.tabName,
-          params,
-        });
-      } else {
-        (navigationRef as any).navigate('Main', {
-          screen: route.tabName,
-        });
-      }
+      // params diforward agar screen bisa langsung apply filter (misal: tab aktif)
+      (navigationRef as any).navigate('Main', {
+        screen: route.tabName,
+        ...(params ? { params } : {}),
+      });
       return true;
     }
 
@@ -215,12 +233,17 @@ export function usePushNotifications() {
             console.warn('[PushNotif] Navigation belum siap setelah beberapa percobaan.');
           }
         };
-        tryNavigate(10); // Max 10 percobaan × 300ms = 3 detik
+        tryNavigate(15); // Max 15 percobaan × 300ms = 4.5 detik (cukup untuk cold start)
       } else {
         // Tidak ada screen target → buka NotificationCenter
-        if (navigationRef.isReady()) {
-          (navigationRef as any).navigate('NotificationCenter');
-        }
+        const tryNav = (left: number) => {
+          if (navigationRef.isReady()) {
+            (navigationRef as any).navigate('NotificationCenter');
+          } else if (left > 0) {
+            setTimeout(() => tryNav(left - 1), 300);
+          }
+        };
+        tryNav(15);
       }
     });
 

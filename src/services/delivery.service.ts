@@ -24,6 +24,7 @@ export interface UpdateDeliveryStatusPayload {
   status: 'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
   receivedBy?: string;
   receivedDate?: string;
+  notes?: string;
 }
 
 export const deliveryService = {

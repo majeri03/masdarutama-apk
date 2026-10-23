@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import {
   View,
   Text,
@@ -18,92 +18,167 @@ import { GlassCard } from '../components/ui';
 import { printerService, PrinterType } from '../services/printer.service';
 import { AppToast } from '../utils/toast';
 
-export const DeviceSettingsScreen: React.FC = () => {
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  errorMessage: string;
+}
+
+class DeviceSettingsErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, errorMessage: '' };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, errorMessage: error?.message || 'Terjadi kesalahan tidak terduga' };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.warn('[DeviceSettingsErrorBoundary] Caught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background, padding: 20, justifyContent: 'center', alignItems: 'center' }}>
+          <Ionicons name="alert-circle-outline" size={48} color={Colors.error} />
+          <Text style={{ fontSize: FontSize.md, fontWeight: 'bold', color: Colors.textPrimary, marginTop: 12, textAlign: 'center' }}>
+            Gagal Memuat Pengaturan Perangkat
+          </Text>
+          <Text style={{ fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 8, textAlign: 'center', marginHorizontal: 20 }}>
+            {this.state.errorMessage}
+          </Text>
+          <TouchableOpacity
+            style={{ marginTop: 20, backgroundColor: Colors.primaryStart, paddingHorizontal: 20, paddingVertical: 10, borderRadius: BorderRadius.md }}
+            onPress={() => this.setState({ hasError: false, errorMessage: '' })}
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Coba Lagi</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const DeviceSettingsContent: React.FC = () => {
   const navigation = useNavigation<any>();
-  const [loading, setLoading] = useState(true);  // Default true saat pertama load
-  const [initDone, setInitDone] = useState(false);
-  const [initErrorMsg, setInitErrorMsg] = useState<string | null>(null);
+  const isMounted = useRef(true);
+  const [scanning, setScanning] = useState(false);
+  const [initializing, setInitializing] = useState(false);
   const [activePrinter, setActivePrinter] = useState<any>(null);
-  
   const [bleDevices, setBleDevices] = useState<any[]>([]);
   const [usbDevices, setUsbDevices] = useState<any[]>([]);
+  const [bleError, setBleError] = useState<string | null>(null);
+  const [permGranted, setPermGranted] = useState(true);
 
+  // Cleanup isMounted on unmount
   useEffect(() => {
-    const init = async () => {
-      let permissionsGranted = true;
-
-      if (Platform.OS === 'android') {
-        try {
-          if ((Platform.Version as number) >= 31) {
-            const granted = await PermissionsAndroid.requestMultiple([
-              PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-              PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-            ]);
-            
-            if (
-              granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] !== PermissionsAndroid.RESULTS.GRANTED ||
-              granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] !== PermissionsAndroid.RESULTS.GRANTED
-            ) {
-              permissionsGranted = false;
-              AppToast.error('Akses Ditolak', 'Izin Bluetooth diperlukan untuk mencari printer.');
-            }
-          } else {
-            const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
-            if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-              permissionsGranted = false;
-              AppToast.error('Akses Ditolak', 'Izin Lokasi diperlukan untuk mencari printer Bluetooth.');
-            }
-          }
-        } catch (err) {
-          console.warn(err);
-          permissionsGranted = false;
-        }
-      }
-
-      if (permissionsGranted) {
-        // Tampilkan loading saat init agar screen tidak blank hitam
-        setLoading(true);
-        setInitErrorMsg(null);
-        try {
-          await initService();
-        } catch (e: any) {
-          setInitErrorMsg(e?.message || 'Gagal inisialisasi printer');
-        } finally {
-          setLoading(false);
-          setInitDone(true);
-        }
-      } else {
-        setLoading(false);
-        setInitDone(true);
-      }
-    };
-    init();
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
   }, []);
 
-  const initService = async () => {
-    await printerService.init();
-    setActivePrinter(printerService.getActivePrinter());
+  // Request permissions and scan on mount - screen always renders, no blank
+  useEffect(() => {
+    requestPermissionsAndInit();
+  }, []);
+
+  const requestPermissionsAndInit = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        if ((Platform.Version as number) >= 31) {
+          const granted = await PermissionsAndroid.requestMultiple([
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          ]);
+          if (
+            granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] !== PermissionsAndroid.RESULTS.GRANTED ||
+            granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] !== PermissionsAndroid.RESULTS.GRANTED
+          ) {
+            if (isMounted.current) {
+              setPermGranted(false);
+              AppToast.error('Izin Ditolak', 'Izin Bluetooth diperlukan untuk mencari printer.');
+            }
+            // Tetap lanjut tampilkan screen, hanya BLE scan yang tidak tersedia
+          }
+        } else {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            if (isMounted.current) {
+              setPermGranted(false);
+              AppToast.error('Izin Ditolak', 'Izin Lokasi diperlukan untuk Bluetooth.');
+            }
+            // Tetap lanjut tampilkan screen
+          }
+        }
+      } catch (err) {
+        console.warn('[DeviceSettings] Permission error (non-blocking):', err);
+      }
+    }
+
+    // Selalu lanjutkan init meski izin ditolak — screen tidak boleh blank
+    await initAndScan();
+  };
+
+  const initAndScan = async () => {
+    if (!isMounted.current) return;
+    setInitializing(true);
+    setBleError(null);
+    try {
+      await printerService.init();
+      if (isMounted.current) setActivePrinter(printerService.getActivePrinter());
+    } catch (e: any) {
+      console.warn('[DeviceSettings] Init error (non-blocking):', e?.message);
+    } finally {
+      if (isMounted.current) setInitializing(false);
+    }
+    // Scan terpisah — tidak blokir render screen
     await scanDevices();
   };
 
   const scanDevices = async () => {
-    setLoading(true);
+    if (!isMounted.current) return;
+    setScanning(true);
+    setBleError(null);
     try {
-      const [bles, usbs] = await Promise.all([
+      const [bles, usbs] = await Promise.allSettled([
         printerService.getBlePrinters(),
         printerService.getUsbPrinters(),
       ]);
-      setBleDevices(bles || []);
-      setUsbDevices(usbs || []);
+
+      if (!isMounted.current) return;
+
+      if (bles.status === 'fulfilled') {
+        setBleDevices(bles.value || []);
+        if (!printerService.isBleSupported()) {
+          setBleError('Modul Bluetooth printer memerlukan build APK native (Standalone build). Anda dapat menggunakan opsi Printer Sistem (Wi-Fi / Simpan PDF) di bawah untuk mencetak struk.');
+        }
+      } else {
+        console.warn('[DeviceSettings] BLE scan error:', bles.reason);
+        setBleDevices([]);
+        setBleError('Bluetooth tidak tersedia atau gagal diakses di perangkat ini.');
+      }
+
+      if (usbs.status === 'fulfilled') {
+        setUsbDevices(usbs.value || []);
+      } else {
+        setUsbDevices([]);
+      }
     } catch (e) {
-      console.warn('Scan Error', e);
+      console.warn('[DeviceSettings] Scan error:', e);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setScanning(false);
     }
   };
 
   const handleConnect = async (type: PrinterType, device: any) => {
-    setLoading(true);
+    setScanning(true);
     try {
       const printerToConnect = {
         type,
@@ -112,7 +187,6 @@ export const DeviceSettingsScreen: React.FC = () => {
         vendor_id: device.vendor_id,
         product_id: device.product_id,
       };
-      
       const success = await printerService.connect(printerToConnect);
       if (success) {
         AppToast.success('Terhubung', `Berhasil terhubung ke ${device.device_name}`);
@@ -123,16 +197,14 @@ export const DeviceSettingsScreen: React.FC = () => {
     } catch (e) {
       AppToast.error('Gagal', 'Terjadi kesalahan saat menghubungkan');
     } finally {
-      setLoading(false);
+      setScanning(false);
     }
   };
 
   const handleDisconnect = async () => {
-    setLoading(true);
     await printerService.disconnect();
     setActivePrinter(null);
     AppToast.success('Terputus', 'Printer berhasil diputuskan');
-    setLoading(false);
   };
 
   const setSystemPrinter = async () => {
@@ -148,7 +220,6 @@ export const DeviceSettingsScreen: React.FC = () => {
     if (activePrinter.type === 'SYSTEM') {
       return AppToast.info('Info', 'Test print untuk Printer Sistem dilakukan saat transaksi.');
     }
-
     try {
       await printerService.printText('TES PRINT BERHASIL!\nTB MASDAR UTAMA\n-----------------\n\n\n');
       AppToast.success('Berhasil', 'Mencetak halaman tes...');
@@ -159,63 +230,66 @@ export const DeviceSettingsScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* Header - always visible, no blank */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>PENGATURAN PERANGKAT</Text>
-        <TouchableOpacity onPress={scanDevices} style={styles.scanBtn} disabled={loading}>
-          <Ionicons name="refresh" size={24} color={loading ? Colors.textTertiary : Colors.primaryStart} />
+        <TouchableOpacity
+          onPress={scanDevices}
+          style={styles.scanBtn}
+          disabled={scanning || initializing}
+        >
+          <Ionicons
+            name="refresh"
+            size={24}
+            color={scanning || initializing ? Colors.textTertiary : Colors.primaryStart}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* Loading State — mencegah blank hitam */}
-      {loading && !initDone && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primaryStart} />
-          <Text style={styles.loadingText}>Menginisialisasi printer...</Text>
-          <Text style={styles.loadingSubText}>Memuat modul Bluetooth dan USB</Text>
+      {/* Initializing banner - NOT blocking, just an info bar */}
+      {initializing && (
+        <View style={styles.initBanner}>
+          <ActivityIndicator size="small" color={Colors.primaryStart} />
+          <Text style={styles.initBannerText}>Menginisialisasi modul printer...</Text>
         </View>
       )}
 
-      {/* Error State */}
-      {initErrorMsg && (
-        <View style={styles.errorContainer}>
-          <Ionicons name="warning-outline" size={32} color={Colors.error} />
-          <Text style={styles.errorTitle}>Gagal Menginisialisasi</Text>
-          <Text style={styles.errorDesc}>{initErrorMsg}</Text>
-          <TouchableOpacity
-            style={styles.retryBtn}
-            onPress={async () => {
-              setLoading(true);
-              setInitErrorMsg(null);
-              try { await initService(); } catch (e: any) { setInitErrorMsg(e?.message); }
-              finally { setLoading(false); setInitDone(true); }
-            }}
-          >
-            <Text style={styles.retryBtnText}>Coba Lagi</Text>
-          </TouchableOpacity>
+      {/* Permission denied warning */}
+      {!permGranted && (
+        <View style={styles.permWarning}>
+          <Ionicons name="warning-outline" size={18} color={Colors.warning} />
+          <Text style={styles.permWarningText}>
+            Izin Bluetooth ditolak. Fitur pencarian printer tidak tersedia.
+          </Text>
         </View>
       )}
 
-      {/* Content — hanya tampil setelah init selesai */}
-      {(initDone || !loading) && !initErrorMsg && (
-      <ScrollView contentContainerStyle={styles.content}>
+      {/* Main Content - always visible after header */}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
+
         {/* Active Printer Status */}
         <GlassCard padding={16} style={styles.card}>
           <View style={styles.rowBetween}>
             <Text style={styles.sectionTitle}>Status Printer Aktif</Text>
-            {loading && <ActivityIndicator size="small" color={Colors.primaryStart} />}
+            {scanning && <ActivityIndicator size="small" color={Colors.primaryStart} />}
           </View>
-          
+
           {activePrinter ? (
             <View style={styles.activeBox}>
               <View style={styles.activeIcon}>
-                <Ionicons 
-                  name={activePrinter.type === 'BLE' ? 'bluetooth' : activePrinter.type === 'USB' ? 'hardware-chip-outline' : 'print'} 
-                  size={32} 
-                  color={Colors.success} 
+                <Ionicons
+                  name={
+                    activePrinter.type === 'BLE'
+                      ? 'bluetooth'
+                      : activePrinter.type === 'USB'
+                      ? 'hardware-chip-outline'
+                      : 'print'
+                  }
+                  size={32}
+                  color={Colors.success}
                 />
               </View>
               <View style={{ flex: 1 }}>
@@ -227,14 +301,18 @@ export const DeviceSettingsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           ) : (
-            <Text style={styles.emptyText}>Belum ada printer yang terhubung.</Text>
+            <View style={styles.noDeviceBox}>
+              <Ionicons name="print-outline" size={28} color={Colors.textTertiary} />
+              <Text style={styles.emptyText}>Belum ada printer yang terhubung.</Text>
+            </View>
           )}
 
-          <TouchableOpacity 
-            style={[styles.testBtn, !activePrinter && { opacity: 0.5 }]} 
+          <TouchableOpacity
+            style={[styles.testBtn, !activePrinter && { opacity: 0.5 }]}
             onPress={handleTestPrint}
             disabled={!activePrinter}
           >
+            <Ionicons name="print-outline" size={16} color={Colors.textPrimary} />
             <Text style={styles.testBtnTxt}>Test Print</Text>
           </TouchableOpacity>
         </GlassCard>
@@ -246,6 +324,7 @@ export const DeviceSettingsScreen: React.FC = () => {
             Gunakan opsi ini jika Anda menggunakan printer Wi-Fi (AirPrint / Cloud Print) atau ingin menyimpan invoice sebagai PDF bawaan sistem.
           </Text>
           <TouchableOpacity style={styles.connectBtn} onPress={setSystemPrinter}>
+            <Ionicons name="print-outline" size={16} color={Colors.primaryStart} />
             <Text style={styles.connectBtnTxt}>Pilih Printer Sistem</Text>
           </TouchableOpacity>
         </GlassCard>
@@ -259,19 +338,32 @@ export const DeviceSettingsScreen: React.FC = () => {
           <Text style={styles.descText}>
             Pastikan Anda sudah melakukan pairing dengan printer melalui pengaturan Bluetooth HP terlebih dahulu.
           </Text>
-          
-          {bleDevices.length === 0 ? (
+
+          {bleError ? (
+            <View style={styles.bleErrorBox}>
+              <Ionicons name="bluetooth-outline" size={20} color={Colors.warning} />
+              <Text style={styles.bleErrorText}>{bleError}</Text>
+            </View>
+          ) : scanning ? (
+            <View style={styles.scanningBox}>
+              <ActivityIndicator size="small" color={Colors.primaryStart} />
+              <Text style={styles.scanningText}>Sedang mencari perangkat Bluetooth...</Text>
+            </View>
+          ) : bleDevices.length === 0 ? (
             <Text style={styles.emptyText}>
-              {loading ? 'Sedang mencari perangkat...' : 'Tidak ada perangkat Bluetooth printer terdeteksi.'}
+              Tidak ada perangkat Bluetooth printer terdeteksi. Pastikan printer sudah di-pairing dan dinyalakan.
             </Text>
           ) : (
             bleDevices.map((dev, i) => (
-              <View key={i} style={styles.deviceRow}>
-                <View>
-                  <Text style={styles.deviceName}>{dev.device_name}</Text>
-                  <Text style={styles.deviceMac}>{dev.inner_mac_address}</Text>
+              <View key={dev?.inner_mac_address || i} style={styles.deviceRow}>
+                <View style={styles.deviceInfo}>
+                  <Ionicons name="bluetooth" size={16} color={Colors.info} />
+                  <View>
+                    <Text style={styles.deviceName}>{dev?.device_name || 'Printer Bluetooth'}</Text>
+                    <Text style={styles.deviceMac}>{dev?.inner_mac_address || '-'}</Text>
+                  </View>
                 </View>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.connectBtnSm}
                   onPress={() => handleConnect('BLE', dev)}
                 >
@@ -288,19 +380,27 @@ export const DeviceSettingsScreen: React.FC = () => {
             <Text style={styles.sectionTitle}>Printer USB (OTG)</Text>
             <Ionicons name="hardware-chip-outline" size={20} color={Colors.textSecondary} />
           </View>
-          
-          {usbDevices.length === 0 ? (
+
+          {scanning ? (
+            <View style={styles.scanningBox}>
+              <ActivityIndicator size="small" color={Colors.primaryStart} />
+              <Text style={styles.scanningText}>Sedang mencari perangkat USB...</Text>
+            </View>
+          ) : usbDevices.length === 0 ? (
             <Text style={styles.emptyText}>
-              {loading ? 'Sedang mencari perangkat...' : 'Tidak ada perangkat USB terdeteksi.'}
+              Tidak ada perangkat USB terdeteksi. Pastikan printer terhubung via OTG.
             </Text>
           ) : (
             usbDevices.map((dev, i) => (
-              <View key={i} style={styles.deviceRow}>
-                <View>
-                  <Text style={styles.deviceName}>{dev.device_name}</Text>
-                  <Text style={styles.deviceMac}>VID: {dev.vendor_id}</Text>
+              <View key={dev?.vendor_id || i} style={styles.deviceRow}>
+                <View style={styles.deviceInfo}>
+                  <Ionicons name="hardware-chip-outline" size={16} color={Colors.textSecondary} />
+                  <View>
+                    <Text style={styles.deviceName}>{dev?.device_name || 'Printer USB'}</Text>
+                    <Text style={styles.deviceMac}>VID: {dev?.vendor_id || '-'}</Text>
+                  </View>
                 </View>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.connectBtnSm}
                   onPress={() => handleConnect('USB', dev)}
                 >
@@ -323,8 +423,15 @@ export const DeviceSettingsScreen: React.FC = () => {
         </GlassCard>
 
       </ScrollView>
-      )}
     </SafeAreaView>
+  );
+};
+
+export const DeviceSettingsScreen: React.FC = () => {
+  return (
+    <DeviceSettingsErrorBoundary>
+      <DeviceSettingsContent />
+    </DeviceSettingsErrorBoundary>
   );
 };
 
@@ -348,59 +455,39 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     letterSpacing: 0.5,
   },
+  initBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primaryStart + '12',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: Colors.primaryStart + '20',
+  },
+  initBannerText: {
+    fontSize: FontSize.xs,
+    color: Colors.primaryStart,
+    fontWeight: FontWeight.medium,
+  },
+  permWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.warning + '12',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: Colors.warning + '20',
+  },
+  permWarningText: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.warning,
+    fontWeight: FontWeight.medium,
+  },
   content: { padding: Spacing.lg },
   card: { marginBottom: Spacing.lg },
-  // Loading state
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-    gap: 16,
-  },
-  loadingText: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-  },
-  loadingSubText: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  // Error state
-  errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-    gap: 12,
-  },
-  errorTitle: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-    color: Colors.error,
-    textAlign: 'center',
-  },
-  errorDesc: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  retryBtn: {
-    marginTop: 8,
-    backgroundColor: Colors.primaryStart,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: BorderRadius.md,
-  },
-  retryBtnText: {
-    color: '#fff',
-    fontWeight: FontWeight.bold,
-    fontSize: FontSize.sm,
-  },
   sectionTitle: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,
@@ -419,6 +506,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.sm,
   },
+  noDeviceBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: Spacing.md,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.md,
+  },
   activeBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -429,8 +525,9 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     marginTop: Spacing.xs,
     marginBottom: Spacing.md,
+    gap: Spacing.md,
   },
-  activeIcon: { marginRight: Spacing.md },
+  activeIcon: {},
   activeName: {
     fontSize: FontSize.md,
     fontWeight: 'bold',
@@ -454,12 +551,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   testBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: 12,
     borderRadius: BorderRadius.md,
-    alignItems: 'center',
   },
   testBtnTxt: {
     color: Colors.textPrimary,
@@ -472,6 +572,34 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginVertical: Spacing.md,
+    lineHeight: 18,
+  },
+  bleErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: Colors.warning + '12',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginVertical: Spacing.sm,
+  },
+  bleErrorText: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.warning,
+    lineHeight: 17,
+  },
+  scanningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: Spacing.xl,
+  },
+  scanningText: {
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+    fontStyle: 'italic',
   },
   deviceRow: {
     flexDirection: 'row',
@@ -480,6 +608,11 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderColor: Colors.border,
+  },
+  deviceInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   deviceName: {
     fontSize: FontSize.sm,
@@ -503,13 +636,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   connectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.primaryStart,
     padding: 12,
     borderRadius: BorderRadius.md,
-    alignItems: 'center',
-    marginTop: Spacing.xs,
+    alignSelf: 'stretch',
   },
   connectBtnTxt: {
     color: Colors.primaryStart,

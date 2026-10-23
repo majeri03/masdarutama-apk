@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
-import { GlassCard, GradientButton } from '../components/ui';
+import { GlassCard, GradientButton, ProofImageUploader } from '../components/ui';
 import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { deliveryService } from '../services/delivery.service';
 import { masterService } from '../services/master.service';
@@ -79,6 +80,11 @@ export const DeliveryScreen: React.FC = () => {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [newStatus, setNewStatus] = useState<'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED'>('PENDING');
   const [receivedBy, setReceivedBy] = useState('');
+  const [deliveryProofUrl, setDeliveryProofUrl] = useState<string | null>(null);
+
+  // Zoom Image Modal
+  const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
+  const [showZoomModal, setShowZoomModal] = useState(false);
 
   // Create DO Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -250,16 +256,27 @@ export const DeliveryScreen: React.FC = () => {
 
     setUpdatingStatusId(selectedDO.id);
     try {
+      let finalNotes = selectedDO.notes || undefined;
+      if (deliveryProofUrl) {
+        // Hapus tag bukti lama jika ada lalu tambahkan yang baru
+        const cleanOldNotes = (selectedDO.notes || '').replace(/\[BUKTI_KIRIM\]:\s*[^\s\]\n]+/g, '').trim();
+        finalNotes = cleanOldNotes
+          ? `${cleanOldNotes}\n[BUKTI_KIRIM]: ${deliveryProofUrl}`
+          : `[BUKTI_KIRIM]: ${deliveryProofUrl}`;
+      }
+
       const res = await deliveryService.updateDeliveryStatus({
         id: selectedDO.id,
         status: newStatus,
         receivedBy: newStatus === 'DELIVERED' ? receivedBy : undefined,
         receivedDate: newStatus === 'DELIVERED' ? new Date().toISOString() : undefined,
+        notes: finalNotes,
       });
 
       if (res.success) {
         AppToast.success('Sukses', 'Status Surat Jalan berhasil diperbarui!');
         setShowStatusModal(false);
+        setDeliveryProofUrl(null);
         loadData();
       } else {
         AppToast.error('Gagal', res.error || 'Gagal memperbarui status.');
@@ -795,6 +812,53 @@ export const DeliveryScreen: React.FC = () => {
                 ))}
               </GlassCard>
 
+              {/* Bukti Pengiriman Card if available */}
+              {(() => {
+                const proofMatch = selectedDO.notes?.match(/\[BUKTI_KIRIM\]:\s*([^\s\]\n]+)/);
+                const proofUrl = proofMatch ? proofMatch[1] : null;
+                if (!proofUrl) return null;
+                return (
+                  <>
+                    <Text style={styles.modalSectionTitle}>Foto Bukti Pengiriman</Text>
+                    <GlassCard padding={16} style={styles.detailsCard}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          setZoomImageUrl(proofUrl);
+                          setShowZoomModal(true);
+                        }}
+                        style={{
+                          borderRadius: BorderRadius.md,
+                          overflow: 'hidden',
+                          height: 180,
+                          backgroundColor: '#000',
+                          position: 'relative',
+                        }}
+                      >
+                        <Image source={{ uri: proofUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                        <View
+                          style={{
+                            position: 'absolute',
+                            bottom: 8,
+                            right: 8,
+                            backgroundColor: 'rgba(0,0,0,0.7)',
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderRadius: 12,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
+                          <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>Perbesar</Text>
+                        </View>
+                      </TouchableOpacity>
+                    </GlassCard>
+                  </>
+                );
+              })()}
+
               {/* Action Buttons */}
               <View style={{ gap: Spacing.md, marginTop: Spacing.xl, marginBottom: Spacing['3xl'] }}>
                 {selectedDO.status !== 'DELIVERED' && selectedDO.status !== 'CANCELLED' && (
@@ -852,16 +916,26 @@ export const DeliveryScreen: React.FC = () => {
             </View>
 
             {newStatus === 'DELIVERED' && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Nama Penerima *</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Masukkan nama penerima barang"
-                  placeholderTextColor={Colors.textTertiary}
-                  value={receivedBy}
-                  onChangeText={setReceivedBy}
+              <>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Nama Penerima *</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Masukkan nama penerima barang"
+                    placeholderTextColor={Colors.textTertiary}
+                    value={receivedBy}
+                    onChangeText={setReceivedBy}
+                  />
+                </View>
+
+                <ProofImageUploader
+                  label="Foto Bukti Kiriman / Barang Sampai"
+                  sublabel="Foto barang di lokasi atau tanda tangan nota (Kamera langsung)"
+                  imageUrl={deliveryProofUrl}
+                  onImageUploaded={setDeliveryProofUrl}
+                  folder="proofs_delivery"
                 />
-              </View>
+              </>
             )}
 
             <View style={{ gap: Spacing.sm, marginTop: Spacing.lg }}>
@@ -869,6 +943,30 @@ export const DeliveryScreen: React.FC = () => {
               <GradientButton title="Batal" onPress={() => setShowStatusModal(false)} variant="outline" fullWidth />
             </View>
           </GlassCard>
+        </View>
+      </Modal>
+
+      {/* ─── FULLSCREEN ZOOM MODAL ─── */}
+      <Modal
+        visible={showZoomModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowZoomModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 40, paddingBottom: 10 }}>
+            <Text style={{ fontSize: FontSize.md, fontWeight: FontWeight.bold, color: '#FFFFFF' }}>
+              Foto Bukti Kiriman
+            </Text>
+            <TouchableOpacity onPress={() => setShowZoomModal(false)} style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 }}>
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+          {zoomImageUrl ? (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 10 }}>
+              <Image source={{ uri: zoomImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+            </View>
+          ) : null}
         </View>
       </Modal>
 

@@ -306,6 +306,34 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
         </TouchableOpacity>
       </View>
 
+      <View style={[styles.gridContainer, { marginTop: Spacing.md }]}>
+        <TouchableOpacity
+          style={styles.gridCard}
+          onPress={() => navigation.navigate('FleetTracking')}
+        >
+          <GlassCard padding={16} style={styles.glassCardInner}>
+            <View style={[styles.iconBox, { backgroundColor: '#2563EB18' }]}>
+              <Ionicons name="car-outline" size={24} color={Colors.primaryStart} />
+            </View>
+            <Text style={styles.gridCardTitle}>Tracking Armada</Text>
+            <Text style={styles.gridCardDesc}>Live GPS & Peta Rute</Text>
+          </GlassCard>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.gridCard}
+          onPress={() => navigation.navigate('DeviceSettings')}
+        >
+          <GlassCard padding={16} style={styles.glassCardInner}>
+            <View style={[styles.iconBox, { backgroundColor: '#05966918' }]}>
+              <Ionicons name="print-outline" size={24} color={Colors.success} />
+            </View>
+            <Text style={styles.gridCardTitle}>Printer & Device</Text>
+            <Text style={styles.gridCardDesc}>Bluetooth & Scanner</Text>
+          </GlassCard>
+        </TouchableOpacity>
+      </View>
+
 
 
       {/* Low Stock Alerts */}
