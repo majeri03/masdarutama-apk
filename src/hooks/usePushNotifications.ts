@@ -332,6 +332,7 @@ export function usePushNotifications() {
 
       // Max 20 percobaan × 300ms = 6 detik (cukup untuk cold start)
       doNavigate(screen, 20);
+    });
 
     return () => {
       notificationListener.current?.remove();
