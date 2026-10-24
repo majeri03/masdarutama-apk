@@ -22,7 +22,8 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
-import { Platform, Alert } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import { Platform, Alert, PermissionsAndroid } from 'react-native';
 
 // ── Konfigurasi — GANTI SESUAI KEBUTUHAN ──────────────────────────────────
 export const CURRENT_VERSION = '1.0.0';       // Versi app saat ini
@@ -150,25 +151,86 @@ export async function downloadApk(
  * @param apkLocalPath - path lokal file APK yang sudah didownload
  */
 export async function installApk(apkLocalPath: string): Promise<void> {
-  if (Platform.OS !== 'android') return;
+  if (Platform.OS !== 'android') {
+    Alert.alert('Tidak Didukung', 'Instalasi APK hanya tersedia di Android.');
+    return;
+  }
 
+  // Cek apakah file ada
   try {
-    // Konversi file:// URI ke content:// URI yang dibutuhkan Android installer
+    const info = await FileSystem.getInfoAsync(apkLocalPath);
+    if (!info.exists) {
+      Alert.alert('File Tidak Ditemukan', 'File APK tidak ditemukan. Silakan download ulang.');
+      return;
+    }
+  } catch {
+    Alert.alert('Error', 'Gagal memeriksa file APK.');
+    return;
+  }
+
+  // Metode 1: Coba via IntentLauncher dengan content URI (cara yang benar untuk Android 7+)
+  try {
     const contentUri = await FileSystem.getContentUriAsync(apkLocalPath);
+    console.log('[UpdateService] Mencoba install via IntentLauncher, contentUri:', contentUri);
 
     await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
       data: contentUri,
       flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
       type: 'application/vnd.android.package-archive',
     });
-  } catch (e: any) {
-    console.error('[UpdateService] Install APK gagal:', e?.message);
-    Alert.alert(
-      'Gagal Membuka Installer',
-      'Pastikan Anda mengizinkan "Install dari sumber tidak dikenal" di Pengaturan > Keamanan, lalu coba lagi.',
-      [{ text: 'OK' }],
-    );
+    return;
+  } catch (e1: any) {
+    console.warn('[UpdateService] Metode 1 (IntentLauncher VIEW) gagal:', e1?.message);
   }
+
+  // Metode 2: Coba via INSTALL_PACKAGE action
+  try {
+    const contentUri = await FileSystem.getContentUriAsync(apkLocalPath);
+    await IntentLauncher.startActivityAsync('android.intent.action.INSTALL_PACKAGE', {
+      data: contentUri,
+      flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+    });
+    return;
+  } catch (e2: any) {
+    console.warn('[UpdateService] Metode 2 (INSTALL_PACKAGE) gagal:', e2?.message);
+  }
+
+  // Metode 3: Fallback - Share file APK (user bisa pilih installer dari share sheet)
+  try {
+    const canShare = await Sharing.isAvailableAsync();
+    if (canShare) {
+      Alert.alert(
+        'Buka File APK',
+        'Installer tidak bisa dibuka otomatis. Aplikasi akan membagikan file APK, silakan pilih installer/file manager untuk menginstall.',
+        [
+          { text: 'Batal', style: 'cancel' },
+          {
+            text: 'Buka / Bagikan',
+            onPress: async () => {
+              try {
+                await Sharing.shareAsync(apkLocalPath, {
+                  mimeType: 'application/vnd.android.package-archive',
+                  UTI: 'com.android.package-archive',
+                });
+              } catch (shareErr) {
+                Alert.alert('Gagal', 'Tidak dapat membuka file APK. Pastikan Anda mengizinkan "Install dari sumber tidak dikenal" di Pengaturan > Keamanan.');
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+  } catch (e3: any) {
+    console.warn('[UpdateService] Metode 3 (Sharing) gagal:', e3?.message);
+  }
+
+  // Semua metode gagal
+  Alert.alert(
+    'Gagal Membuka Installer',
+    'Pastikan Anda mengizinkan "Install dari sumber tidak dikenal" di Pengaturan > Keamanan Android, lalu coba lagi.',
+    [{ text: 'OK' }]
+  );
 }
 
 /**

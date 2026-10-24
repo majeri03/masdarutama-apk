@@ -25,6 +25,7 @@ import { deliveryService } from '../services/delivery.service';
 import { masterService } from '../services/master.service';
 import { productService } from '../services/product.service';
 import { salesService } from '../services/sales.service';
+import { uploadService } from '../services/upload.service';
 import { AppToast } from '../utils/toast';
 import { generateInvoiceHtml } from '../utils/invoicePdf';
 import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
@@ -97,6 +98,8 @@ export const DeliveryScreen: React.FC = () => {
   const [deliveryDate, setDeliveryDate] = useState<Date | null>(new Date());
   const [salesList, setSalesList] = useState<any[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState('');
+  // Upload foto DO saat pembuatan (foto lokasi / survei kiriman)
+  const [createDoPhotoUrl, setCreateDoPhotoUrl] = useState<string | null>(null);
 
   // Add Item to DO form
   const [products, setProducts] = useState<Product[]>([]);
@@ -212,13 +215,21 @@ export const DeliveryScreen: React.FC = () => {
     }
 
     try {
+      // Buat notes gabungan: catatan + foto lokasi jika ada
+      let finalNotes = notes || undefined;
+      if (createDoPhotoUrl) {
+        finalNotes = finalNotes
+          ? `${finalNotes}\n[FOTO_LOKASI]: ${createDoPhotoUrl}`
+          : `[FOTO_LOKASI]: ${createDoPhotoUrl}`;
+      }
+
       const payload = {
         customerId: selectedCustomerId,
         saleId: selectedSaleId || undefined,
         deliveryDate: deliveryDate ? deliveryDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         driver: driver || undefined,
         vehicle: vehicle || undefined,
-        notes: notes || undefined,
+        notes: finalNotes,
         items: doItems.map((item) => ({
           productId: item.productId,
           unitId: item.unitId,
@@ -238,6 +249,7 @@ export const DeliveryScreen: React.FC = () => {
         setVehicle('');
         setNotes('');
         setDoItems([]);
+        setCreateDoPhotoUrl(null);
         loadData();
       } else {
         AppToast.error('Gagal', res.error || 'Gagal membuat Surat Jalan.');
@@ -291,13 +303,37 @@ export const DeliveryScreen: React.FC = () => {
   const handleDeleteDO = (id: string) => {
     Alert.alert(
       'Hapus Surat Jalan',
-      'Apakah Anda yakin ingin menghapus Surat Jalan ini?',
+      'Apakah Anda yakin ingin menghapus Surat Jalan ini? Foto bukti yang terkait juga akan dihapus dari server.',
       [
         { text: 'Batal', style: 'cancel' },
         {
           text: 'Hapus',
           style: 'destructive',
           onPress: async () => {
+            // Hapus foto dari Cloudflare R2 jika ada (sinkronisasi)
+            const doItem = deliveryOrders.find((d) => d.id === id);
+            if (doItem?.notes) {
+              const proofMatch = doItem.notes.match(/\[BUKTI_KIRIM\]:\s*([^\s\]\n]+)/);
+              const fotoMatch = doItem.notes.match(/\[FOTO_LOKASI\]:\s*([^\s\]\n]+)/);
+              // Hapus semua foto terkait dari Cloudflare
+              const urlsToDelete: string[] = [];
+              if (proofMatch?.[1]) urlsToDelete.push(proofMatch[1]);
+              if (fotoMatch?.[1]) urlsToDelete.push(fotoMatch[1]);
+
+              for (const imgUrl of urlsToDelete) {
+                try {
+                  // Ekstrak filename dari URL
+                  const filename = imgUrl.split('/').pop();
+                  if (filename) {
+                    await uploadService.deleteImage(filename);
+                  }
+                } catch (e) {
+                  // Non-blocking: lanjut hapus DO meski foto gagal dihapus
+                  console.warn('[DELIVERY] Gagal hapus foto dari Cloudflare:', e);
+                }
+              }
+            }
+
             const res = await deliveryService.deleteDeliveryOrder(id);
             if (res.success) {
               AppToast.success('Sukses', 'Surat Jalan berhasil dihapus.');
@@ -816,45 +852,47 @@ export const DeliveryScreen: React.FC = () => {
               {(() => {
                 const proofMatch = selectedDO.notes?.match(/\[BUKTI_KIRIM\]:\s*([^\s\]\n]+)/);
                 const proofUrl = proofMatch ? proofMatch[1] : null;
-                if (!proofUrl) return null;
+                const fotoMatch = selectedDO.notes?.match(/\[FOTO_LOKASI\]:\s*([^\s\]\n]+)/);
+                const fotoUrl = fotoMatch ? fotoMatch[1] : null;
+
                 return (
                   <>
-                    <Text style={styles.modalSectionTitle}>Foto Bukti Pengiriman</Text>
-                    <GlassCard padding={16} style={styles.detailsCard}>
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        onPress={() => {
-                          setZoomImageUrl(proofUrl);
-                          setShowZoomModal(true);
-                        }}
-                        style={{
-                          borderRadius: BorderRadius.md,
-                          overflow: 'hidden',
-                          height: 180,
-                          backgroundColor: '#000',
-                          position: 'relative',
-                        }}
-                      >
-                        <Image source={{ uri: proofUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                        <View
-                          style={{
-                            position: 'absolute',
-                            bottom: 8,
-                            right: 8,
-                            backgroundColor: 'rgba(0,0,0,0.7)',
-                            paddingHorizontal: 8,
-                            paddingVertical: 4,
-                            borderRadius: 12,
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                        >
-                          <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
-                          <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>Perbesar</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </GlassCard>
+                    {fotoUrl && (
+                      <>
+                        <Text style={styles.modalSectionTitle}>Foto Lokasi Pengiriman</Text>
+                        <GlassCard padding={16} style={styles.detailsCard}>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => { setZoomImageUrl(fotoUrl); setShowZoomModal(true); }}
+                            style={{ borderRadius: BorderRadius.md, overflow: 'hidden', height: 160, backgroundColor: '#000', position: 'relative' }}
+                          >
+                            <Image source={{ uri: fotoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                            <View style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
+                              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>Perbesar</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </GlassCard>
+                      </>
+                    )}
+                    {proofUrl && (
+                      <>
+                        <Text style={styles.modalSectionTitle}>Foto Bukti Pengiriman</Text>
+                        <GlassCard padding={16} style={styles.detailsCard}>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => { setZoomImageUrl(proofUrl); setShowZoomModal(true); }}
+                            style={{ borderRadius: BorderRadius.md, overflow: 'hidden', height: 180, backgroundColor: '#000', position: 'relative' }}
+                          >
+                            <Image source={{ uri: proofUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                            <View style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
+                              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>Perbesar</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </GlassCard>
+                      </>
+                    )}
                   </>
                 );
               })()}
@@ -1101,6 +1139,15 @@ export const DeliveryScreen: React.FC = () => {
                   multiline
                 />
               </View>
+
+              {/* Foto Lokasi / Survei Pengiriman */}
+              <ProofImageUploader
+                label="Foto Lokasi / Survei Pengiriman"
+                sublabel="Foto titik lokasi, denah alamat, atau kondisi jalan (Opsional)"
+                imageUrl={createDoPhotoUrl}
+                onImageUploaded={setCreateDoPhotoUrl}
+                folder="proofs_delivery"
+              />
             </GlassCard>
 
             {/* DO ITEMS CONTAINER */}

@@ -1,11 +1,44 @@
 import { useState, useEffect, useRef } from 'react';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
+import * as TaskManager from 'expo-task-manager';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import api from '../services/api';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import { navigationRef } from '../utils/navigation';
+
+// ── Task Name untuk background notification handler ─────────────────────────
+const BACKGROUND_NOTIFICATION_TASK = 'background-notification-handler';
+
+// ── Daftarkan background notification task ──────────────────────────────────
+// Ini memastikan notifikasi TETAP diproses bahkan saat app di background/killed
+TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any) => {
+  if (error) {
+    console.warn('[BackgroundNotif] Error:', error);
+    return;
+  }
+  if (!data) return;
+
+  // Saat app background/killed, simpan notifikasi ke store lokal via AsyncStorage
+  try {
+    const notification = data.notification as Notifications.Notification;
+    if (!notification) return;
+
+    const { title, body, data: notifData } = notification.request.content;
+    if (!title || !body || title.trim() === '' || body.trim() === '') return;
+
+    // Tambahkan ke notification center store
+    const { addNotification } = useNotificationCenterStore.getState();
+    addNotification({
+      title: title || 'Notifikasi Baru',
+      body: body || '',
+      data: notifData || {},
+    });
+  } catch (e) {
+    console.warn('[BackgroundNotif] Gagal proses notif background:', e);
+  }
+});
 
 // ── Kirim notifikasi lokal native (muncul di system tray saat app foreground/background) ─
 export async function scheduleLocalNotification(
@@ -33,14 +66,38 @@ export async function scheduleLocalNotification(
 
 // ── Handler: tampilkan notifikasi walau app sedang foreground ──────────────
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const { title, body } = notification.request.content;
+    // Jangan tampilkan notifikasi kosong
+    if (!title || !body || title.trim() === '' || body.trim() === '') {
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      };
+    }
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
+
+// ── Daftarkan background notification handler (expo-notifications) ───────────
+// Ini penting agar notifikasi push dari FCM diproses saat app BACKGROUND/KILLED
+if (Platform.OS === 'android') {
+  Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK).catch((e) => {
+    // Jika sudah terdaftar, tidak apa-apa
+    if (!e?.message?.includes('already')) {
+      console.warn('[PushNotif] Gagal daftarkan background task:', e?.message);
+    }
+  });
+}
 
 // ── Buat Android channel di module-level (sebelum kirim notif apa pun) ─────
 if (Platform.OS === 'android') {
@@ -86,6 +143,11 @@ const SCREEN_ROUTES: Record<
   NotificationCenter: { type: 'stack', stackName: 'NotificationCenter' },
   StockOpname: { type: 'stack', stackName: 'StockOpname' },
   DeviceSettings: { type: 'stack', stackName: 'DeviceSettings' },
+  FleetTracking: { type: 'stack', stackName: 'FleetTracking' },
+  AppUpdate: { type: 'stack', stackName: 'AppUpdate' },
+  StorageManager: { type: 'stack', stackName: 'StorageManager' },
+  EditTransaction: { type: 'stack', stackName: 'EditTransaction' },
+  InvoiceLayout: { type: 'stack', stackName: 'InvoiceLayout' },
 
   // === TAB SCREENS (harus navigate ke 'Main' dulu) ===
   Dashboard: { type: 'tab', tabName: 'Dashboard' },
@@ -94,6 +156,14 @@ const SCREEN_ROUTES: Record<
   History: { type: 'tab', tabName: 'History' },
   Reports: { type: 'tab', tabName: 'Reports' },
   Settings: { type: 'tab', tabName: 'Settings' },
+
+  // === TIPE NOTIFIKASI → mapping ke screen ===
+  orders: { type: 'tab', tabName: 'History' },
+  deliveries: { type: 'stack', stackName: 'Delivery' },
+  finance: { type: 'stack', stackName: 'Debt' },
+  stock: { type: 'tab', tabName: 'Products' },
+  purchase: { type: 'stack', stackName: 'Purchase' },
+  customers: { type: 'stack', stackName: 'Customers' },
 };
 
 /**
@@ -174,19 +244,26 @@ export function usePushNotifications() {
       // Skip notifikasi dengan konten kosong (mencegah entri blank di notification center)
       if (!title || !body || title.trim() === '' || body.trim() === '') return;
 
-      // Cegah duplikat: cek kombinasi title+body dalam 5 menit terakhir
+      // Cegah duplikat: cek ID unik dari notifikasi (identifier dari push server)
+      const notifId = notification.request.identifier;
       const state = useNotificationCenterStore.getState();
-      const DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 menit
-      const alreadyExists = state.notifications.some(
+
+      // Cek berdasarkan ID terlebih dahulu (lebih reliable)
+      const idExists = state.notifications.some((n) => n.id === notifId);
+      if (idExists) return;
+
+      // Fallback: cegah duplikat konten dalam 2 menit (untuk notif lokal tanpa ID unik)
+      const DEDUP_WINDOW_MS = 2 * 60 * 1000; // 2 menit (diperkecil untuk lebih responsif)
+      const contentExists = state.notifications.some(
         (n) => n.title === (title || '') && n.body === (body || '') &&
           (Date.now() - new Date(n.date).getTime()) < DEDUP_WINDOW_MS
       );
 
-      if (!alreadyExists) {
+      if (!contentExists) {
         state.addNotification({
           title: title || 'Notifikasi Baru',
           body: body || '',
-          data: data || {},
+          data: (data as Record<string, unknown>) || {},
         });
       }
     });
@@ -196,56 +273,65 @@ export function usePushNotifications() {
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const notif = response.notification;
       const { title, body, data } = notif.request.content;
-      const screen = (data as any)?.screen;
-      const params = (data as any)?.params;
+      const typedData = data as Record<string, any>;
 
-      // Hanya simpan jika ada konten yang valid
+      // screen bisa dari 'screen' field atau 'type' field (mapping ke screen)
+      let screen = typedData?.screen;
+      const notifType = typedData?.type;
+      const params = typedData?.params;
+
+      // Jika tidak ada 'screen' field, coba resolve dari 'type'
+      if (!screen && notifType && SCREEN_ROUTES[notifType]) {
+        const route = SCREEN_ROUTES[notifType];
+        screen = route.type === 'tab' ? route.tabName : route.stackName;
+      }
+
+      // Simpan ke notification center jika ada konten valid
       if (title && body && title.trim() !== '' && body.trim() !== '') {
         const state = useNotificationCenterStore.getState();
-        const DEDUP_WINDOW_MS = 5 * 60 * 1000;
-        const exists = state.notifications.some(
-          (n) => n.title === title && n.body === body &&
-            (Date.now() - new Date(n.date).getTime()) < DEDUP_WINDOW_MS
-        );
-        if (!exists) {
-          state.addNotification({
-            title: title || 'Notifikasi Baru',
-            body: body || '',
-            data: data || {},
-          });
+        const notifId = notif.request.identifier;
+        const idExists = state.notifications.some((n) => n.id === notifId);
+
+        if (!idExists) {
+          // Cek duplikat konten dalam 2 menit
+          const DEDUP_WINDOW_MS = 2 * 60 * 1000;
+          const contentExists = state.notifications.some(
+            (n) => n.title === title && n.body === body &&
+              (Date.now() - new Date(n.date).getTime()) < DEDUP_WINDOW_MS
+          );
+          if (!contentExists) {
+            state.addNotification({
+              title: title || 'Notifikasi Baru',
+              body: body || '',
+              data: typedData || {},
+            });
+          }
         }
       }
 
-      // Navigasi ke layar yang relevan
-      if (screen) {
-        // Jika navigationRef belum siap (app baru dibuka dari killed state),
-        // tunda hingga siap dengan polling pendek.
-        const tryNavigate = (attemptsLeft: number) => {
-          if (navigationRef.isReady()) {
-            const ok = navigateToScreen(screen, params);
-            if (!ok) {
-              // Fallback ke NotificationCenter jika screen tidak dikenali
-              (navigationRef as any).navigate('NotificationCenter');
-            }
-          } else if (attemptsLeft > 0) {
-            setTimeout(() => tryNavigate(attemptsLeft - 1), 300);
-          } else {
-            console.warn('[PushNotif] Navigation belum siap setelah beberapa percobaan.');
+      // Fungsi navigasi dengan retry saat cold start
+      const doNavigate = (targetScreen: string | undefined, attemptsLeft: number) => {
+        if (!navigationRef.isReady()) {
+          if (attemptsLeft > 0) {
+            setTimeout(() => doNavigate(targetScreen, attemptsLeft - 1), 300);
           }
-        };
-        tryNavigate(15); // Max 15 percobaan × 300ms = 4.5 detik (cukup untuk cold start)
-      } else {
-        // Tidak ada screen target → buka NotificationCenter
-        const tryNav = (left: number) => {
-          if (navigationRef.isReady()) {
-            (navigationRef as any).navigate('NotificationCenter');
-          } else if (left > 0) {
-            setTimeout(() => tryNav(left - 1), 300);
+          return;
+        }
+
+        if (targetScreen) {
+          const ok = navigateToScreen(targetScreen, params);
+          if (!ok) {
+            // Fallback ke NotificationCenter
+            try { (navigationRef as any).navigate('NotificationCenter'); } catch {}
           }
-        };
-        tryNav(15);
-      }
-    });
+        } else {
+          // Tidak ada target → buka Pusat Notifikasi
+          try { (navigationRef as any).navigate('NotificationCenter'); } catch {}
+        }
+      };
+
+      // Max 20 percobaan × 300ms = 6 detik (cukup untuk cold start)
+      doNavigate(screen, 20);
 
     return () => {
       notificationListener.current?.remove();

@@ -9,6 +9,7 @@ import {
   Alert,
   PermissionsAndroid,
   Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +18,7 @@ import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constant
 import { GlassCard } from '../components/ui';
 import { printerService, PrinterType } from '../services/printer.service';
 import { AppToast } from '../utils/toast';
+import * as IntentLauncher from 'expo-intent-launcher';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -75,6 +77,7 @@ const DeviceSettingsContent: React.FC = () => {
   const [usbDevices, setUsbDevices] = useState<any[]>([]);
   const [bleError, setBleError] = useState<string | null>(null);
   const [permGranted, setPermGranted] = useState(true);
+  const [bluetoothEnabled, setBluetoothEnabled] = useState<boolean | null>(null); // null = unknown
 
   // Cleanup isMounted on unmount
   useEffect(() => {
@@ -95,15 +98,16 @@ const DeviceSettingsContent: React.FC = () => {
             PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
             PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
           ]);
-          if (
-            granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] !== PermissionsAndroid.RESULTS.GRANTED ||
-            granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] !== PermissionsAndroid.RESULTS.GRANTED
-          ) {
+          const allGranted =
+            granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] === PermissionsAndroid.RESULTS.GRANTED &&
+            granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] === PermissionsAndroid.RESULTS.GRANTED;
+
+          if (!allGranted) {
             if (isMounted.current) {
               setPermGranted(false);
-              AppToast.error('Izin Ditolak', 'Izin Bluetooth diperlukan untuk mencari printer.');
             }
-            // Tetap lanjut tampilkan screen, hanya BLE scan yang tidak tersedia
+          } else {
+            if (isMounted.current) setPermGranted(true);
           }
         } else {
           const granted = await PermissionsAndroid.request(
@@ -112,9 +116,9 @@ const DeviceSettingsContent: React.FC = () => {
           if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
             if (isMounted.current) {
               setPermGranted(false);
-              AppToast.error('Izin Ditolak', 'Izin Lokasi diperlukan untuk Bluetooth.');
             }
-            // Tetap lanjut tampilkan screen
+          } else {
+            if (isMounted.current) setPermGranted(true);
           }
         }
       } catch (err) {
@@ -124,6 +128,28 @@ const DeviceSettingsContent: React.FC = () => {
 
     // Selalu lanjutkan init meski izin ditolak — screen tidak boleh blank
     await initAndScan();
+  };
+
+  // Buka pengaturan Bluetooth Android
+  const openBluetoothSettings = async () => {
+    try {
+      if (Platform.OS === 'android') {
+        await IntentLauncher.startActivityAsync(
+          IntentLauncher.ActivityAction.BLUETOOTH_SETTINGS
+        );
+      } else {
+        await Linking.openURL('App-Prefs:Bluetooth');
+      }
+    } catch (e) {
+      // Fallback ke Settings umum
+      try {
+        if (Platform.OS === 'android') {
+          await IntentLauncher.startActivityAsync(
+            'android.settings.SETTINGS'
+          );
+        }
+      } catch {}
+    }
   };
 
   const initAndScan = async () => {
@@ -146,6 +172,7 @@ const DeviceSettingsContent: React.FC = () => {
     if (!isMounted.current) return;
     setScanning(true);
     setBleError(null);
+    setBluetoothEnabled(null); // reset saat scan ulang
     try {
       const [bles, usbs] = await Promise.allSettled([
         printerService.getBlePrinters(),
@@ -156,13 +183,26 @@ const DeviceSettingsContent: React.FC = () => {
 
       if (bles.status === 'fulfilled') {
         setBleDevices(bles.value || []);
+        setBluetoothEnabled(true);
         if (!printerService.isBleSupported()) {
           setBleError('Modul Bluetooth printer memerlukan build APK native (Standalone build). Anda dapat menggunakan opsi Printer Sistem (Wi-Fi / Simpan PDF) di bawah untuk mencetak struk.');
         }
       } else {
-        console.warn('[DeviceSettings] BLE scan error:', bles.reason);
+        const errMsg = String(bles.reason?.message || '');
+        // Deteksi Bluetooth mati
+        const isBtOff = errMsg.toLowerCase().includes('disabled') ||
+          errMsg.toLowerCase().includes('off') ||
+          errMsg.toLowerCase().includes('not enabled') ||
+          errMsg.toLowerCase().includes('bluetooth is off');
+
         setBleDevices([]);
-        setBleError('Bluetooth tidak tersedia atau gagal diakses di perangkat ini.');
+        setBluetoothEnabled(false);
+
+        if (isBtOff || !permGranted) {
+          setBleError('BLUETOOTH_OFF');
+        } else {
+          setBleError('Bluetooth tidak tersedia atau gagal diakses di perangkat ini.');
+        }
       }
 
       if (usbs.status === 'fulfilled') {
@@ -339,7 +379,30 @@ const DeviceSettingsContent: React.FC = () => {
             Pastikan Anda sudah melakukan pairing dengan printer melalui pengaturan Bluetooth HP terlebih dahulu.
           </Text>
 
-          {bleError ? (
+          {bleError === 'BLUETOOTH_OFF' ? (
+            // Bluetooth mati / izin ditolak — tampilkan tombol aktifkan
+            <View style={styles.bleOffBox}>
+              <Ionicons name="bluetooth-outline" size={32} color={Colors.warning} />
+              <Text style={styles.bleOffTitle}>Bluetooth Tidak Aktif</Text>
+              <Text style={styles.bleOffDesc}>
+                Hidupkan Bluetooth di HP Anda agar printer dapat terdeteksi. Pastikan juga printer sudah di-pairing melalui Pengaturan Bluetooth HP.
+              </Text>
+              <TouchableOpacity style={styles.openSettingsBtn} onPress={openBluetoothSettings}>
+                <Ionicons name="settings-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.openSettingsBtnText}>Buka Pengaturan Bluetooth</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.openSettingsBtn, { backgroundColor: Colors.primaryStart, marginTop: 8 }]}
+                onPress={() => {
+                  setPermGranted(true);
+                  scanDevices();
+                }}
+              >
+                <Ionicons name="refresh-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.openSettingsBtnText}>Coba Scan Ulang</Text>
+              </TouchableOpacity>
+            </View>
+          ) : bleError ? (
             <View style={styles.bleErrorBox}>
               <Ionicons name="bluetooth-outline" size={20} color={Colors.warning} />
               <Text style={styles.bleErrorText}>{bleError}</Text>
@@ -588,6 +651,44 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.warning,
     lineHeight: 17,
+  },
+  // Bluetooth OFF state
+  bleOffBox: {
+    alignItems: 'center',
+    backgroundColor: Colors.warning + '08',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.xl,
+    marginVertical: Spacing.sm,
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+  },
+  bleOffTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+    marginTop: 4,
+  },
+  bleOffDesc: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+  openSettingsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.warning,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.sm,
+  },
+  openSettingsBtnText: {
+    color: '#FFFFFF',
+    fontWeight: FontWeight.bold,
+    fontSize: FontSize.sm,
   },
   scanningBox: {
     flexDirection: 'row',
