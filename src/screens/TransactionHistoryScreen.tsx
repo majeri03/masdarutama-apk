@@ -29,6 +29,7 @@ import type { Sale, PaymentMethod, SaleStatus } from '../types';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
 import { useRoute, useFocusEffect, useNavigation } from '@react-navigation/native';
 import { AppToast } from '../utils/toast';
+import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import * as Clipboard from 'expo-clipboard';
 import * as LocalAuthentication from 'expo-local-authentication';
 
@@ -190,6 +191,15 @@ export const TransactionHistoryScreen: React.FC = () => {
     setPage(1);
     fetchSales(1, true);
   }, [filters, activeCustomerId]);
+
+  const lastNotificationTimestamp = useNotificationCenterStore((s) => s.lastNotificationTimestamp);
+
+  useEffect(() => {
+    if (lastNotificationTimestamp > 0) {
+      // Auto-refresh silent saat notifikasi pesanan/transaksi masuk di background/foreground
+      fetchSales(1, false, true);
+    }
+  }, [lastNotificationTimestamp, fetchSales]);
 
   useFocusEffect(
     useCallback(() => {

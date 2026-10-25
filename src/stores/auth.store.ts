@@ -59,6 +59,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       // Fetch allowed pages immediately after login
       await get().fetchAllowedPages();
+      // Sync push token ke server setelah autentikasi sukses
+      import('../hooks/usePushNotifications')
+        .then(({ syncPushTokenToServer }) => syncPushTokenToServer())
+        .catch(() => {});
       return { success: true };
     }
 
@@ -84,6 +88,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const normalized = normalizeUser(serverUser);
       set({ user: normalized, isAuthenticated: true, isLoading: false });
       await get().fetchAllowedPages();
+      // Sync push token ke server setelah session diverifikasi
+      import('../hooks/usePushNotifications')
+        .then(({ syncPushTokenToServer }) => syncPushTokenToServer())
+        .catch(() => {});
       return true;
     }
 

@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import api from '../services/api';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
+import { useAuthStore } from '../stores/auth.store';
 import { navigationRef } from '../utils/navigation';
 
 // ── Task Name untuk background notification handler ─────────────────────────
@@ -22,11 +23,12 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any
 
   // Saat app background/killed, simpan notifikasi ke store lokal via AsyncStorage
   try {
-    const notification = data.notification as Notifications.Notification;
-    if (!notification) return;
+    const rawContent = data.notification?.request?.content || data.data || data;
+    const title = rawContent.title || rawContent.name || 'Notifikasi Baru';
+    const body = rawContent.body || rawContent.message || '';
+    const notifData = rawContent.data || data.data || {};
 
-    const { title, body, data: notifData } = notification.request.content;
-    if (!title || !body || title.trim() === '' || body.trim() === '') return;
+    if ((!title || title.trim() === '') && (!body || body.trim() === '')) return;
 
     // Tambahkan ke notification center store
     const { addNotification } = useNotificationCenterStore.getState();
@@ -208,52 +210,122 @@ export const navigateToScreen = (screen: string, params?: any): boolean => {
   return false;
 };
 
+// ── Registrasi perangkat dan ambil push token ──────────────────────────────
+export async function registerForPushNotificationsAsync(): Promise<string | undefined> {
+  if (!Device.isDevice) {
+    console.log('[PushNotif] Harus menggunakan perangkat fisik.');
+    return undefined;
+  }
+
+  // Pastikan channel dibuat sebelum meminta izin (Android)
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Notifikasi Utama',
+      description: 'Notifikasi pesanan WA, hutang, dan stok',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#2563EB',
+      enableVibrate: true,
+      showBadge: true,
+      sound: 'default',
+    });
+  }
+
+  // Minta izin notifikasi
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+
+  if (finalStatus !== 'granted') {
+    console.warn('[PushNotif] Izin notifikasi DITOLAK oleh pengguna.');
+    return undefined;
+  }
+
+  // Ambil EAS Project ID dari app.json
+  const projectId =
+    Constants?.expoConfig?.extra?.eas?.projectId ??
+    Constants?.easConfig?.projectId ??
+    '6e4aad91-e3dc-44f4-97f3-0f332f02dd6e'; // fallback hardcode dari app.json
+
+  try {
+    // Expo Push Token (didukung FCM via google-services.json saat build native)
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    return tokenData.data;
+  } catch (e: any) {
+    console.warn('[PushNotif] Gagal ambil Expo Push Token:', e?.message);
+    try {
+      const tokenData = await Notifications.getExpoPushTokenAsync();
+      return tokenData.data;
+    } catch (e2: any) {
+      console.error('[PushNotif] Semua metode token gagal:', e2?.message);
+      return undefined;
+    }
+  }
+}
+
+// ── Sinkronisasi push token ke server backend ──────────────────────────────
+export async function syncPushTokenToServer(customToken?: string): Promise<string | undefined> {
+  try {
+    const token = customToken || (await registerForPushNotificationsAsync());
+    if (!token) return undefined;
+
+    // Kirim token ke backend multi-device registration
+    await api.post('/api/notifications/register-token', {
+      token,
+      platform: Platform.OS,
+      deviceName: Device.modelName ?? undefined,
+    }).catch(async () => {
+      // Fallback ke endpoint legacy
+      await api.post('/api/users/push-token', { token }).catch(() => {});
+    });
+
+    console.log('[PushNotif] Token terdaftar dan disinkronkan:', token.slice(0, 40) + '...');
+    return token;
+  } catch (err) {
+    console.warn('[PushNotif] Gagal sinkronisasi token:', err);
+    return undefined;
+  }
+}
+
 // ── Hook utama ─────────────────────────────────────────────────────────────
 export function usePushNotifications() {
   const [expoPushToken, setExpoPushToken] = useState('');
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const userId = useAuthStore((s) => s.user?.id);
+
+  // Daftarkan dan sinkronkan token saat mount dan saat status login berubah
+  useEffect(() => {
+    syncPushTokenToServer().then((token) => {
+      if (token) setExpoPushToken(token);
+    });
+  }, [isAuthenticated, userId]);
 
   useEffect(() => {
-    // 1. Daftarkan perangkat dan dapatkan token
-    registerForPushNotificationsAsync()
-      .then((token) => {
-        if (token) {
-          setExpoPushToken(token);
-          // Kirim token ke backend multi-device registration
-          api.post('/api/notifications/register-token', {
-            token,
-            platform: Platform.OS,
-            deviceName: Device.modelName ?? undefined,
-          }).catch(() => {
-            // Fallback ke endpoint legacy
-            api.post('/api/users/push-token', { token }).catch(() => {});
-          });
-          console.log('[PushNotif] Token terdaftar:', token.slice(0, 40) + '...');
-        }
-      })
-      .catch((err) => {
-        console.warn('[PushNotif] Registrasi gagal:', err);
-      });
-
     // 2. Listener: notifikasi diterima saat app FOREGROUND
-    //    → Simpan ke in-app center. Navigasi TIDAK dilakukan (user sedang aktif pakai app).
+    //    → Simpan ke in-app center & trigger real-time refresh ke screen aktif
     notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
       const { title, body, data } = notification.request.content;
 
       // Skip notifikasi dengan konten kosong (mencegah entri blank di notification center)
       if (!title || !body || title.trim() === '' || body.trim() === '') return;
 
-      // Cegah duplikat: cek ID unik dari notifikasi (identifier dari push server)
       const notifId = notification.request.identifier;
       const state = useNotificationCenterStore.getState();
+
+      // Trigger automatic UI refresh across screens
+      state.triggerRefresh();
 
       // Cek berdasarkan ID terlebih dahulu (lebih reliable)
       const idExists = state.notifications.some((n) => n.id === notifId);
       if (idExists) return;
 
       // Fallback: cegah duplikat konten dalam 2 menit (untuk notif lokal tanpa ID unik)
-      const DEDUP_WINDOW_MS = 2 * 60 * 1000; // 2 menit (diperkecil untuk lebih responsif)
+      const DEDUP_WINDOW_MS = 2 * 60 * 1000;
       const contentExists = state.notifications.some(
         (n) => n.title === (title || '') && n.body === (body || '') &&
           (Date.now() - new Date(n.date).getTime()) < DEDUP_WINDOW_MS
@@ -341,61 +413,4 @@ export function usePushNotifications() {
   }, []);
 
   return { expoPushToken };
-}
-
-// ── Registrasi perangkat dan ambil push token ──────────────────────────────
-async function registerForPushNotificationsAsync(): Promise<string | undefined> {
-  if (!Device.isDevice) {
-    console.log('[PushNotif] Harus menggunakan perangkat fisik.');
-    return undefined;
-  }
-
-  // Pastikan channel dibuat sebelum meminta izin (Android)
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'Notifikasi Utama',
-      description: 'Notifikasi pesanan WA, hutang, dan stok',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#2563EB',
-      enableVibrate: true,
-      showBadge: true,
-      sound: 'default',
-    });
-  }
-
-  // Minta izin notifikasi
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== 'granted') {
-    console.warn('[PushNotif] Izin notifikasi DITOLAK oleh pengguna.');
-    return undefined;
-  }
-
-  // Ambil EAS Project ID dari app.json
-  const projectId =
-    Constants?.expoConfig?.extra?.eas?.projectId ??
-    Constants?.easConfig?.projectId ??
-    '6e4aad91-e3dc-44f4-97f3-0f332f02dd6e'; // fallback hardcode dari app.json
-
-  try {
-    // Expo Push Token (didukung FCM via google-services.json saat build native)
-    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
-    return tokenData.data;
-  } catch (e: any) {
-    console.warn('[PushNotif] Gagal ambil Expo Push Token:', e?.message);
-    // Coba tanpa projectId sebagai fallback
-    try {
-      const tokenData = await Notifications.getExpoPushTokenAsync();
-      return tokenData.data;
-    } catch (e2: any) {
-      console.error('[PushNotif] Semua metode token gagal:', e2?.message);
-      return undefined;
-    }
-  }
 }

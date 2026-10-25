@@ -97,6 +97,63 @@ export async function checkForUpdate(): Promise<UpdateManifest | null> {
  * @param apkUrl - URL direct download APK dari Google Drive
  * @param onProgress - callback progress download (0.0 - 1.0)
  */
+/**
+ * Google Drive large file direct download resolver.
+ * Files > 25MB trigger a virus scan confirmation page with a form.
+ * This resolver parses the confirmation form/UUID and returns the true direct binary URL.
+ */
+export async function resolveDirectDownloadUrl(url: string): Promise<string> {
+  if (!url) return url;
+
+  if (url.includes('drive.google.com') || url.includes('drive.usercontent.google.com')) {
+    try {
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      });
+      const contentType = resp.headers.get('content-type') || '';
+
+      // Jika langsung mengembalikan binary APK stream
+      if (!contentType.includes('text/html')) {
+        return resp.url || url;
+      }
+
+      // Jika Google Drive menampilkan halaman peringatan virus scan
+      const htmlText = await resp.text();
+      if (
+        htmlText.includes('Google Drive - Download warning') ||
+        htmlText.includes('drive.usercontent.google.com') ||
+        htmlText.includes('uc-download-link')
+      ) {
+        const actionMatch = htmlText.match(/<form[^>]+action="([^"]+)"/i);
+        const action = actionMatch ? actionMatch[1] : 'https://drive.usercontent.google.com/download';
+
+        const params = new URLSearchParams();
+        const inputRegex = /<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi;
+        let match;
+        while ((match = inputRegex.exec(htmlText)) !== null) {
+          params.set(match[1], match[2]);
+        }
+
+        if (!params.has('confirm')) {
+          params.set('confirm', 't');
+        }
+
+        const directResolved = `${action}?${params.toString()}`;
+        console.log('[UpdateService] Resolved Google Drive direct link:', directResolved);
+        return directResolved;
+      }
+    } catch (e: any) {
+      console.warn('[UpdateService] Error resolving direct link, fallback to original:', e?.message);
+    }
+  }
+
+  return url;
+}
+
+/**
+ * Download APK dari URL ke storage lokal.
+ * Otomatis menangani bypass virus scan Google Drive untuk file besar.
+ */
 export async function downloadApk(
   apkUrl: string,
   onProgress?: (progress: DownloadProgress) => void,
@@ -115,11 +172,16 @@ export async function downloadApk(
   } catch {}
 
   try {
+    const finalUrl = await resolveDirectDownloadUrl(apkUrl);
+    console.log('[UpdateService] Memulai download APK dari:', finalUrl);
+
     const downloadResumable = FileSystem.createDownloadResumable(
-      apkUrl,
+      finalUrl,
       apkPath,
       {
-        headers: { 'User-Agent': 'MasdarUtamaApp/1.0' },
+        headers: {
+          Accept: 'application/vnd.android.package-archive,application/octet-stream,*/*',
+        },
       },
       (downloadProgress) => {
         if (onProgress && downloadProgress.totalBytesExpectedToWrite > 0) {
@@ -134,6 +196,16 @@ export async function downloadApk(
 
     const result = await downloadResumable.downloadAsync();
     if (result?.uri) {
+      // Validasi integritas: pastikan file terunduh bukan halaman HTML
+      const info = await FileSystem.getInfoAsync(result.uri);
+      if (!info.exists || (info.exists && info.size < 500000)) {
+        console.error('[UpdateService] File APK tidak valid atau ukuran terlalu kecil:', info.exists ? info.size : 0);
+        Alert.alert(
+          'Download Tidak Lengkap',
+          'File APK yang diunduh tidak valid. Pastikan link Google Drive diset publik dan coba lagi.',
+        );
+        return null;
+      }
       return result.uri;
     }
     return null;
@@ -145,10 +217,6 @@ export async function downloadApk(
 
 /**
  * Buka installer APK Android untuk menginstall file yang sudah didownload.
- * Memerlukan permission INSTALL_PACKAGES atau user harus mengizinkan
- * "Install from unknown sources" di Settings.
- *
- * @param apkLocalPath - path lokal file APK yang sudah didownload
  */
 export async function installApk(apkLocalPath: string): Promise<void> {
   if (Platform.OS !== 'android') {
@@ -156,11 +224,11 @@ export async function installApk(apkLocalPath: string): Promise<void> {
     return;
   }
 
-  // Cek apakah file ada
+  // Cek apakah file ada dan ukurannya valid
   try {
     const info = await FileSystem.getInfoAsync(apkLocalPath);
-    if (!info.exists) {
-      Alert.alert('File Tidak Ditemukan', 'File APK tidak ditemukan. Silakan download ulang.');
+    if (!info.exists || (info.exists && info.size < 500000)) {
+      Alert.alert('File Tidak Valid', 'File APK tidak ditemukan atau rusak. Silakan download ulang.');
       return;
     }
   } catch {
@@ -168,14 +236,17 @@ export async function installApk(apkLocalPath: string): Promise<void> {
     return;
   }
 
-  // Metode 1: Coba via IntentLauncher dengan content URI (cara yang benar untuk Android 7+)
+  // Flags gabungan: FLAG_ACTIVITY_NEW_TASK (0x10000000) | FLAG_GRANT_READ_URI_PERMISSION (0x00000001) = 268435457
+  const INTENT_FLAGS = 268435457;
+
+  // Metode 1: IntentLauncher dengan content URI
   try {
     const contentUri = await FileSystem.getContentUriAsync(apkLocalPath);
-    console.log('[UpdateService] Mencoba install via IntentLauncher, contentUri:', contentUri);
+    console.log('[UpdateService] Install via IntentLauncher contentUri:', contentUri);
 
     await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
       data: contentUri,
-      flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+      flags: INTENT_FLAGS,
       type: 'application/vnd.android.package-archive',
     });
     return;
@@ -188,20 +259,20 @@ export async function installApk(apkLocalPath: string): Promise<void> {
     const contentUri = await FileSystem.getContentUriAsync(apkLocalPath);
     await IntentLauncher.startActivityAsync('android.intent.action.INSTALL_PACKAGE', {
       data: contentUri,
-      flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+      flags: INTENT_FLAGS,
     });
     return;
   } catch (e2: any) {
     console.warn('[UpdateService] Metode 2 (INSTALL_PACKAGE) gagal:', e2?.message);
   }
 
-  // Metode 3: Fallback - Share file APK (user bisa pilih installer dari share sheet)
+  // Metode 3: Fallback - Share file APK
   try {
     const canShare = await Sharing.isAvailableAsync();
     if (canShare) {
       Alert.alert(
         'Buka File APK',
-        'Installer tidak bisa dibuka otomatis. Aplikasi akan membagikan file APK, silakan pilih installer/file manager untuk menginstall.',
+        'Installer tidak terbuka otomatis. Silakan pilih package installer/file manager dari menu berikut untuk menginstall.',
         [
           { text: 'Batal', style: 'cancel' },
           {
@@ -210,14 +281,17 @@ export async function installApk(apkLocalPath: string): Promise<void> {
               try {
                 await Sharing.shareAsync(apkLocalPath, {
                   mimeType: 'application/vnd.android.package-archive',
-                  UTI: 'com.android.package-archive',
+                  dialogTitle: 'Install Pembaruan TB Masdar Utama',
                 });
               } catch (shareErr) {
-                Alert.alert('Gagal', 'Tidak dapat membuka file APK. Pastikan Anda mengizinkan "Install dari sumber tidak dikenal" di Pengaturan > Keamanan.');
+                Alert.alert(
+                  'Gagal',
+                  'Pastikan Anda mengizinkan "Install dari sumber tidak dikenal" di Pengaturan > Keamanan Android.',
+                );
               }
             },
           },
-        ]
+        ],
       );
       return;
     }
@@ -228,8 +302,8 @@ export async function installApk(apkLocalPath: string): Promise<void> {
   // Semua metode gagal
   Alert.alert(
     'Gagal Membuka Installer',
-    'Pastikan Anda mengizinkan "Install dari sumber tidak dikenal" di Pengaturan > Keamanan Android, lalu coba lagi.',
-    [{ text: 'OK' }]
+    'Pastikan Anda telah mengizinkan "Install dari sumber tidak dikenal" di Pengaturan > Keamanan Android, lalu coba lagi.',
+    [{ text: 'OK' }],
   );
 }
 

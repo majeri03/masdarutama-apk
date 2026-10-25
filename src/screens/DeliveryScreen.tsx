@@ -29,6 +29,8 @@ import { uploadService } from '../services/upload.service';
 import { AppToast } from '../utils/toast';
 import { generateInvoiceHtml } from '../utils/invoicePdf';
 import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
+import { useAuthStore } from '../stores/auth.store';
+import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import type { Customer, Product, Sale } from '../types';
 
 interface DeliveryOrder {
@@ -41,6 +43,9 @@ interface DeliveryOrder {
   vehicle: string | null;
   notes: string | null;
   status: 'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
+  receivedBy?: string | null;
+  receivedDate?: string | null;
+  proofImage?: string | null;
   createdAt: string;
   customer: {
     id: string;
@@ -64,6 +69,7 @@ interface DeliveryOrder {
 
 export const DeliveryScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const { isAdmin } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
@@ -83,6 +89,17 @@ export const DeliveryScreen: React.FC = () => {
   const [receivedBy, setReceivedBy] = useState('');
   const [deliveryProofUrl, setDeliveryProofUrl] = useState<string | null>(null);
 
+  // Edit DO Modal (Superadmin / Admin Only)
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editDriver, setEditDriver] = useState('');
+  const [editVehicle, setEditVehicle] = useState('');
+  const [editDeliveryDate, setEditDeliveryDate] = useState<Date | null>(new Date());
+  const [editNotes, setEditNotes] = useState('');
+  const [editStatus, setEditStatus] = useState<'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED'>('PENDING');
+  const [editReceivedBy, setEditReceivedBy] = useState('');
+  const [editProofImage, setEditProofImage] = useState<string | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
   // Zoom Image Modal
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   const [showZoomModal, setShowZoomModal] = useState(false);
@@ -98,7 +115,7 @@ export const DeliveryScreen: React.FC = () => {
   const [deliveryDate, setDeliveryDate] = useState<Date | null>(new Date());
   const [salesList, setSalesList] = useState<any[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState('');
-  // Upload foto DO saat pembuatan (foto lokasi / survei kiriman)
+  // Upload foto bukti pengiriman saat pembuatan
   const [createDoPhotoUrl, setCreateDoPhotoUrl] = useState<string | null>(null);
 
   // Add Item to DO form
@@ -158,6 +175,14 @@ export const DeliveryScreen: React.FC = () => {
     }
   }, [search, statusFilter, startDate, endDate]);
 
+  const lastNotificationTimestamp = useNotificationCenterStore((s) => s.lastNotificationTimestamp);
+
+  useEffect(() => {
+    if (lastNotificationTimestamp > 0) {
+      loadData();
+    }
+  }, [lastNotificationTimestamp, loadData]);
+
   useFocusEffect(
     useCallback(() => {
       loadData();
@@ -215,21 +240,14 @@ export const DeliveryScreen: React.FC = () => {
     }
 
     try {
-      // Buat notes gabungan: catatan + foto lokasi jika ada
-      let finalNotes = notes || undefined;
-      if (createDoPhotoUrl) {
-        finalNotes = finalNotes
-          ? `${finalNotes}\n[FOTO_LOKASI]: ${createDoPhotoUrl}`
-          : `[FOTO_LOKASI]: ${createDoPhotoUrl}`;
-      }
-
       const payload = {
         customerId: selectedCustomerId,
         saleId: selectedSaleId || undefined,
         deliveryDate: deliveryDate ? deliveryDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         driver: driver || undefined,
         vehicle: vehicle || undefined,
-        notes: finalNotes,
+        notes: notes || undefined,
+        proofImage: createDoPhotoUrl || undefined,
         items: doItems.map((item) => ({
           productId: item.productId,
           unitId: item.unitId,
@@ -268,27 +286,27 @@ export const DeliveryScreen: React.FC = () => {
 
     setUpdatingStatusId(selectedDO.id);
     try {
-      let finalNotes = selectedDO.notes || undefined;
-      if (deliveryProofUrl) {
-        // Hapus tag bukti lama jika ada lalu tambahkan yang baru
-        const cleanOldNotes = (selectedDO.notes || '').replace(/\[BUKTI_KIRIM\]:\s*[^\s\]\n]+/g, '').trim();
-        finalNotes = cleanOldNotes
-          ? `${cleanOldNotes}\n[BUKTI_KIRIM]: ${deliveryProofUrl}`
-          : `[BUKTI_KIRIM]: ${deliveryProofUrl}`;
-      }
-
       const res = await deliveryService.updateDeliveryStatus({
         id: selectedDO.id,
         status: newStatus,
         receivedBy: newStatus === 'DELIVERED' ? receivedBy : undefined,
         receivedDate: newStatus === 'DELIVERED' ? new Date().toISOString() : undefined,
-        notes: finalNotes,
+        notes: selectedDO.notes || undefined,
+        proofImage: deliveryProofUrl || undefined,
       });
 
       if (res.success) {
         AppToast.success('Sukses', 'Status Surat Jalan berhasil diperbarui!');
         setShowStatusModal(false);
         setDeliveryProofUrl(null);
+        if (selectedDO) {
+          setSelectedDO({
+            ...selectedDO,
+            status: newStatus,
+            receivedBy: newStatus === 'DELIVERED' ? receivedBy : selectedDO.receivedBy,
+            proofImage: deliveryProofUrl || selectedDO.proofImage,
+          });
+        }
         loadData();
       } else {
         AppToast.error('Gagal', res.error || 'Gagal memperbarui status.');
@@ -297,6 +315,72 @@ export const DeliveryScreen: React.FC = () => {
       AppToast.error('Error', 'Terjadi kesalahan sistem.');
     } finally {
       setUpdatingStatusId(null);
+    }
+  };
+
+  const openEditModal = (item: DeliveryOrder) => {
+    const rawNotes = item.notes || '';
+    const cleanNotes = rawNotes
+      .replace(/\[BUKTI_KIRIM\]:\s*[^\s\]\n]+/g, '')
+      .replace(/\[FOTO_LOKASI\]:\s*[^\s\]\n]+/g, '')
+      .trim();
+
+    const proofMatch = rawNotes.match(/\[BUKTI_KIRIM\]:\s*([^\s\]\n]+)/) || rawNotes.match(/\[FOTO_LOKASI\]:\s*([^\s\]\n]+)/);
+    const resolvedProof = item.proofImage || (proofMatch ? proofMatch[1] : null);
+
+    setEditDriver(item.driver || '');
+    setEditVehicle(item.vehicle || '');
+    setEditDeliveryDate(item.deliveryDate ? new Date(item.deliveryDate) : new Date());
+    setEditNotes(cleanNotes);
+    setEditStatus(item.status);
+    setEditReceivedBy(item.receivedBy || '');
+    setEditProofImage(resolvedProof);
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedDO || isSavingEdit) return;
+    if (editStatus === 'DELIVERED' && !editReceivedBy) {
+      AppToast.error('Peringatan', 'Nama penerima wajib diisi saat status Diterima.');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const res = await deliveryService.updateDeliveryOrder({
+        id: selectedDO.id,
+        driver: editDriver || undefined,
+        vehicle: editVehicle || undefined,
+        deliveryDate: editDeliveryDate ? editDeliveryDate.toISOString().split('T')[0] : undefined,
+        notes: editNotes || undefined,
+        status: editStatus,
+        receivedBy: editStatus === 'DELIVERED' ? editReceivedBy : undefined,
+        receivedDate: editStatus === 'DELIVERED' ? new Date().toISOString() : undefined,
+        proofImage: editProofImage || undefined,
+      });
+
+      if (res.success) {
+        AppToast.success('Sukses', 'Surat Jalan berhasil diperbarui!');
+        setShowEditModal(false);
+        const updatedDO: DeliveryOrder = {
+          ...selectedDO,
+          driver: editDriver || null,
+          vehicle: editVehicle || null,
+          deliveryDate: editDeliveryDate ? editDeliveryDate.toISOString().split('T')[0] : selectedDO.deliveryDate,
+          notes: editNotes || null,
+          status: editStatus,
+          receivedBy: editStatus === 'DELIVERED' ? editReceivedBy : null,
+          proofImage: editProofImage || null,
+        };
+        setSelectedDO(updatedDO);
+        loadData();
+      } else {
+        AppToast.error('Gagal', res.error || 'Gagal mengubah Surat Jalan.');
+      }
+    } catch (e) {
+      AppToast.error('Error', 'Terjadi kesalahan sistem.');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -773,9 +857,18 @@ export const DeliveryScreen: React.FC = () => {
                 <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
               </TouchableOpacity>
               <Text style={styles.modalHeaderTitle}>Detail Surat Jalan</Text>
-              <TouchableOpacity onPress={() => handleDeleteDO(selectedDO.id)} style={styles.deleteBtn}>
-                <Ionicons name="trash-outline" size={20} color={Colors.error} />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {isAdmin() && (
+                  <TouchableOpacity onPress={() => openEditModal(selectedDO)} style={[styles.deleteBtn, { backgroundColor: Colors.primary + '15' }]}>
+                    <Ionicons name="create-outline" size={20} color={Colors.primary} />
+                  </TouchableOpacity>
+                )}
+                {isAdmin() && (
+                  <TouchableOpacity onPress={() => handleDeleteDO(selectedDO.id)} style={styles.deleteBtn}>
+                    <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
 
             <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent}>
@@ -822,13 +915,40 @@ export const DeliveryScreen: React.FC = () => {
                   </View>
                 </View>
 
-                {selectedDO.notes && (
+                {selectedDO.receivedBy && (
                   <>
                     <View style={styles.divider} />
-                    <Text style={styles.detailsLabel}>CATATAN</Text>
-                    <Text style={[styles.detailsVal, { fontStyle: 'italic' }]}>"{selectedDO.notes}"</Text>
+                    <View style={styles.rowBetween}>
+                      <View>
+                        <Text style={styles.detailsLabel}>PENERIMA</Text>
+                        <Text style={styles.detailsVal}>{selectedDO.receivedBy}</Text>
+                      </View>
+                      {selectedDO.receivedDate && (
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={styles.detailsLabel}>TGL DITERIMA</Text>
+                          <Text style={styles.detailsVal}>
+                            {new Date(selectedDO.receivedDate).toLocaleDateString('id-ID', { timeZone: 'Asia/Makassar', day: '2-digit', month: 'short', year: 'numeric' })}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </>
                 )}
+
+                {(() => {
+                  const cleanNotes = (selectedDO.notes || '')
+                    .replace(/\[BUKTI_KIRIM\]:\s*[^\s\]\n]+/g, '')
+                    .replace(/\[FOTO_LOKASI\]:\s*[^\s\]\n]+/g, '')
+                    .trim();
+                  if (!cleanNotes) return null;
+                  return (
+                    <>
+                      <View style={styles.divider} />
+                      <Text style={styles.detailsLabel}>CATATAN</Text>
+                      <Text style={[styles.detailsVal, { fontStyle: 'italic' }]}>"{cleanNotes}"</Text>
+                    </>
+                  );
+                })()}
               </GlassCard>
 
               {/* Items Card */}
@@ -848,51 +968,36 @@ export const DeliveryScreen: React.FC = () => {
                 ))}
               </GlassCard>
 
-              {/* Bukti Pengiriman Card if available */}
+              {/* Foto Bukti Pengiriman Card */}
               {(() => {
                 const proofMatch = selectedDO.notes?.match(/\[BUKTI_KIRIM\]:\s*([^\s\]\n]+)/);
-                const proofUrl = proofMatch ? proofMatch[1] : null;
                 const fotoMatch = selectedDO.notes?.match(/\[FOTO_LOKASI\]:\s*([^\s\]\n]+)/);
-                const fotoUrl = fotoMatch ? fotoMatch[1] : null;
+                const resolvedProof = selectedDO.proofImage || (proofMatch ? proofMatch[1] : null) || (fotoMatch ? fotoMatch[1] : null);
+
+                if (!resolvedProof) return null;
 
                 return (
                   <>
-                    {fotoUrl && (
-                      <>
-                        <Text style={styles.modalSectionTitle}>Foto Lokasi Pengiriman</Text>
-                        <GlassCard padding={16} style={styles.detailsCard}>
-                          <TouchableOpacity
-                            activeOpacity={0.85}
-                            onPress={() => { setZoomImageUrl(fotoUrl); setShowZoomModal(true); }}
-                            style={{ borderRadius: BorderRadius.md, overflow: 'hidden', height: 160, backgroundColor: '#000', position: 'relative' }}
-                          >
-                            <Image source={{ uri: fotoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                            <View style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                              <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
-                              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>Perbesar</Text>
-                            </View>
-                          </TouchableOpacity>
-                        </GlassCard>
-                      </>
-                    )}
-                    {proofUrl && (
-                      <>
-                        <Text style={styles.modalSectionTitle}>Foto Bukti Pengiriman</Text>
-                        <GlassCard padding={16} style={styles.detailsCard}>
-                          <TouchableOpacity
-                            activeOpacity={0.85}
-                            onPress={() => { setZoomImageUrl(proofUrl); setShowZoomModal(true); }}
-                            style={{ borderRadius: BorderRadius.md, overflow: 'hidden', height: 180, backgroundColor: '#000', position: 'relative' }}
-                          >
-                            <Image source={{ uri: proofUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                            <View style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                              <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
-                              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>Perbesar</Text>
-                            </View>
-                          </TouchableOpacity>
-                        </GlassCard>
-                      </>
-                    )}
+                    <View style={[styles.rowBetween, { marginTop: Spacing.md, marginBottom: Spacing.xs }]}>
+                      <Text style={styles.modalSectionTitle}>Foto Bukti Pengiriman</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.success + '15', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                        <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
+                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: Colors.success }}>Terverifikasi</Text>
+                      </View>
+                    </View>
+                    <GlassCard padding={12} style={styles.detailsCard}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => { setZoomImageUrl(resolvedProof); setShowZoomModal(true); }}
+                        style={{ borderRadius: BorderRadius.md, overflow: 'hidden', height: 190, backgroundColor: '#000', position: 'relative' }}
+                      >
+                        <Image source={{ uri: resolvedProof }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                        <View style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
+                          <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>Ketuk untuk Perbesar</Text>
+                        </View>
+                      </TouchableOpacity>
+                    </GlassCard>
                   </>
                 );
               })()}
@@ -909,6 +1014,15 @@ export const DeliveryScreen: React.FC = () => {
                     variant="primary"
                     fullWidth
                     icon={<Ionicons name="git-branch-outline" size={20} color="#FFFFFF" />}
+                  />
+                )}
+                {isAdmin() && (
+                  <GradientButton
+                    title="Edit Surat Jalan (Admin)"
+                    onPress={() => openEditModal(selectedDO)}
+                    variant="secondary"
+                    fullWidth
+                    icon={<Ionicons name="create-outline" size={18} color="#FFFFFF" />}
                   />
                 )}
                 <View style={styles.rowBetween}>
@@ -1140,10 +1254,10 @@ export const DeliveryScreen: React.FC = () => {
                 />
               </View>
 
-              {/* Foto Lokasi / Survei Pengiriman */}
+              {/* Foto Bukti Pengiriman */}
               <ProofImageUploader
-                label="Foto Lokasi / Survei Pengiriman"
-                sublabel="Foto titik lokasi, denah alamat, atau kondisi jalan (Opsional)"
+                label="Foto Bukti Pengiriman"
+                sublabel="Foto barang di kendaraan / bukti awal muat barang (Opsional)"
                 imageUrl={createDoPhotoUrl}
                 onImageUploaded={setCreateDoPhotoUrl}
                 folder="proofs_delivery"
@@ -1311,7 +1425,138 @@ export const DeliveryScreen: React.FC = () => {
               <GradientButton title="Simpan Surat Jalan (DO)" onPress={handleCreateDO} variant="success" fullWidth />
               <GradientButton title="Batal" onPress={() => setShowCreateModal(false)} variant="outline" fullWidth />
             </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
+      {/* ─── EDIT DO MODAL (ADMIN / SUPERADMIN) ─── */}
+      <Modal visible={showEditModal} animationType="slide" onRequestClose={() => setShowEditModal(false)}>
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>Edit Surat Jalan</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent}>
+            {selectedDO && (
+              <GlassCard padding={16} style={styles.createCard}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.detailsDoNum}>{selectedDO.doNumber}</Text>
+                  <Text style={{ fontSize: 12, color: Colors.textSecondary }}>Pelanggan: {selectedDO.customer.name}</Text>
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Status Pengiriman */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Status Pengiriman *</Text>
+                  <View style={styles.statusOptions}>
+                    {(['PENDING', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'] as const).map((st) => (
+                      <TouchableOpacity
+                        key={st}
+                        style={[styles.statusOptionBtn, editStatus === st && styles.statusOptionBtnActive]}
+                        onPress={() => setEditStatus(st)}
+                      >
+                        <Text style={[styles.statusOptionText, editStatus === st && styles.statusOptionTextActive]}>
+                          {getStatusLabel(st)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Tanggal Kirim */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Tanggal Pengiriman *</Text>
+                  <DatePickerInput
+                    value={editDeliveryDate}
+                    onChange={setEditDeliveryDate}
+                    placeholder="Pilih tanggal pengiriman"
+                  />
+                </View>
+
+                {/* Sopir */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Nama Sopir</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editDriver}
+                    onChangeText={setEditDriver}
+                    placeholder="Nama sopir pengantar"
+                    placeholderTextColor={Colors.textTertiary}
+                  />
+                </View>
+
+                {/* Kendaraan */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Plat Nomor / Armada</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editVehicle}
+                    onChangeText={setEditVehicle}
+                    placeholder="Contoh: DD 1234 AB"
+                    placeholderTextColor={Colors.textTertiary}
+                  />
+                </View>
+
+                {/* Nama Penerima (jika DELIVERED) */}
+                {editStatus === 'DELIVERED' && (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Nama Penerima *</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editReceivedBy}
+                      onChangeText={setEditReceivedBy}
+                      placeholder="Nama orang yang menerima kiriman"
+                      placeholderTextColor={Colors.textTertiary}
+                    />
+                  </View>
+                )}
+
+                {/* Catatan */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Catatan Pengiriman</Text>
+                  <TextInput
+                    style={[styles.textInput, { height: 70, textAlignVertical: 'top', paddingTop: 8 }]}
+                    value={editNotes}
+                    onChangeText={setEditNotes}
+                    placeholder="Catatan alamat, kondisi pengiriman, dll."
+                    placeholderTextColor={Colors.textTertiary}
+                    multiline
+                  />
+                </View>
+
+                {/* Foto Bukti Pengiriman */}
+                <ProofImageUploader
+                  label="Foto Bukti Pengiriman"
+                  sublabel="Unggah atau ganti foto bukti muat barang / pengiriman"
+                  imageUrl={editProofImage}
+                  onImageUploaded={setEditProofImage}
+                  folder="proofs_delivery"
+                />
+              </GlassCard>
+            )}
+
+            {/* Actions */}
+            <View style={{ gap: Spacing.md, marginTop: Spacing.xl, marginBottom: Spacing['3xl'] }}>
+              <GradientButton
+                title="Simpan Perubahan Surat Jalan"
+                onPress={handleSaveEdit}
+                loading={isSavingEdit}
+                variant="primary"
+                fullWidth
+                icon={<Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" />}
+              />
+              <GradientButton
+                title="Batal"
+                onPress={() => setShowEditModal(false)}
+                variant="outline"
+                fullWidth
+              />
+            </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>

@@ -16,6 +16,7 @@ export interface CreateDeliveryPayload {
   driver?: string;
   vehicle?: string;
   notes?: string;
+  proofImage?: string;
   items: DeliveryItemPayload[];
 }
 
@@ -25,6 +26,19 @@ export interface UpdateDeliveryStatusPayload {
   receivedBy?: string;
   receivedDate?: string;
   notes?: string;
+  proofImage?: string;
+}
+
+export interface UpdateDeliveryOrderPayload {
+  id: string;
+  driver?: string;
+  vehicle?: string;
+  deliveryDate?: string;
+  notes?: string;
+  status?: 'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
+  receivedBy?: string;
+  receivedDate?: string;
+  proofImage?: string;
 }
 
 export const deliveryService = {
@@ -76,6 +90,16 @@ export const deliveryService = {
       return response.data;
     } catch (error: any) {
       return { success: false, error: error.response?.data?.error || 'Gagal memperbarui status pengiriman' };
+    }
+  },
+
+  async updateDeliveryOrder(payload: UpdateDeliveryOrderPayload): Promise<ApiResponse<any>> {
+    try {
+      const { id, ...body } = payload;
+      const response = await api.patch<ApiResponse<any>>(API_ENDPOINTS.DELIVERY_ORDER_DETAIL(id), body);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal mengubah data surat jalan' };
     }
   },
 

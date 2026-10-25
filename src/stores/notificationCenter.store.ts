@@ -15,6 +15,8 @@ export interface AppNotification {
 interface NotificationCenterState {
   notifications: AppNotification[];
   isLoading: boolean;
+  lastNotificationTimestamp: number;
+  triggerRefresh: () => void;
   addNotification: (notification: Omit<AppNotification, 'id' | 'date' | 'isRead'>) => void;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
@@ -28,6 +30,11 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
     (set, get) => ({
       notifications: [],
       isLoading: false,
+      lastNotificationTimestamp: 0,
+
+      triggerRefresh: () => {
+        set({ lastNotificationTimestamp: Date.now() });
+      },
       
       addNotification: (notif) => {
         const newNotif: AppNotification = {
@@ -39,6 +46,7 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
         
         set((state) => ({
           notifications: [newNotif, ...state.notifications],
+          lastNotificationTimestamp: Date.now(),
         }));
       },
       

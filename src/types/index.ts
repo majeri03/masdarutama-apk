@@ -340,6 +340,7 @@ export interface DeliveryOrder {
   status: DeliveryStatus;
   receivedBy: string | null;
   receivedDate: string | null;
+  proofImage?: string | null;
   createdAt: string;
   customer: {
     id: string;
