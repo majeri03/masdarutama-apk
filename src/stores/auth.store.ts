@@ -101,6 +101,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
+    try {
+      const { unregisterPushTokenFromServer } = await import('../hooks/usePushNotifications');
+      await unregisterPushTokenFromServer();
+    } catch {}
     await authService.logout();
     set({ user: null, isAuthenticated: false, isLoading: false, allowedPages: [] });
   },

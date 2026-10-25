@@ -290,6 +290,21 @@ export async function syncPushTokenToServer(customToken?: string): Promise<strin
   }
 }
 
+// ── Hapus push token dari server saat logout ────────────────────────────────
+export async function unregisterPushTokenFromServer(): Promise<void> {
+  try {
+    const token = await registerForPushNotificationsAsync();
+    if (!token) return;
+
+    await api.delete('/api/notifications/register-token', {
+      data: { token },
+    }).catch(() => {});
+    console.log('[PushNotif] Token berhasil dihapus dari server');
+  } catch (err) {
+    console.warn('[PushNotif] Gagal menghapus token:', err);
+  }
+}
+
 // ── Hook utama ─────────────────────────────────────────────────────────────
 export function usePushNotifications() {
   const [expoPushToken, setExpoPushToken] = useState('');
