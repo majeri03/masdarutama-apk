@@ -173,4 +173,23 @@ export const masterService = {
       return { success: false, error: error.response?.data?.error || 'Gagal memuat info logo toko' };
     }
   },
+
+  // ==================== FLEET / ARMADA ====================
+  async getFleetVehicles(): Promise<ApiResponse<Array<{
+    id: string;
+    plateNumber: string;
+    vehicleType: string;
+    brand: string | null;
+    driverName: string;
+    driverPhone: string | null;
+    status: string;
+    isActive: boolean;
+  }>>> {
+    try {
+      const response = await api.get<ApiResponse<any>>('/api/fleet/vehicles');
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal memuat data armada' };
+    }
+  },
 };

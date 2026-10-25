@@ -115,8 +115,53 @@ export const DeliveryScreen: React.FC = () => {
   const [deliveryDate, setDeliveryDate] = useState<Date | null>(new Date());
   const [salesList, setSalesList] = useState<any[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState('');
+  const [fleetList, setFleetList] = useState<any[]>([]);
   // Upload foto bukti pengiriman saat pembuatan
   const [createDoPhotoUrl, setCreateDoPhotoUrl] = useState<string | null>(null);
+
+  const handleSelectDriver = (driverName: string, isEdit = false) => {
+    if (isEdit) {
+      setEditDriver(driverName);
+    } else {
+      setDriver(driverName);
+    }
+    if (driverName) {
+      const match = fleetList.find(
+        (f) => f.driverName?.toLowerCase().trim() === driverName.toLowerCase().trim()
+      );
+      if (match && match.plateNumber) {
+        const vehicleDesc = match.brand
+          ? `${match.plateNumber} (${match.brand})`
+          : match.plateNumber;
+        if (isEdit) {
+          setEditVehicle(vehicleDesc);
+        } else {
+          setVehicle(vehicleDesc);
+        }
+      }
+    }
+  };
+
+  const handleSelectVehicle = (plateVal: string, isEdit = false) => {
+    if (isEdit) {
+      setEditVehicle(plateVal);
+    } else {
+      setVehicle(plateVal);
+    }
+    if (plateVal) {
+      const match = fleetList.find((f) => {
+        const desc = f.brand ? `${f.plateNumber} (${f.brand})` : f.plateNumber;
+        return f.plateNumber === plateVal || desc === plateVal;
+      });
+      if (match && match.driverName) {
+        if (isEdit && !editDriver) {
+          setEditDriver(match.driverName);
+        } else if (!isEdit && !driver) {
+          setDriver(match.driverName);
+        }
+      }
+    }
+  };
 
   // Add Item to DO form
   const [products, setProducts] = useState<Product[]>([]);
@@ -196,10 +241,11 @@ export const DeliveryScreen: React.FC = () => {
 
   const loadMasterData = async () => {
     try {
-      const [custRes, prodRes, salesRes] = await Promise.all([
+      const [custRes, prodRes, salesRes, fleetRes] = await Promise.all([
         masterService.getCustomers(),
         productService.getProducts({ limit: 100, isActive: true }),
         salesService.getSales({ limit: 50, status: 'PENDING' }),
+        masterService.getFleetVehicles(),
       ]);
       if (custRes.success && custRes.data?.customers) {
         setCustomers(custRes.data.customers);
@@ -215,6 +261,9 @@ export const DeliveryScreen: React.FC = () => {
       if (salesRes.success && salesRes.data?.sales) {
         // filter sales that are PENDING and don't have DO yet
         setSalesList(salesRes.data.sales);
+      }
+      if (fleetRes.success && fleetRes.data) {
+        setFleetList(fleetRes.data);
       }
     } catch (e) {
       console.warn('[DELIVERY] Error loading master data:', e);
