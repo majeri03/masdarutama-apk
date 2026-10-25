@@ -26,8 +26,8 @@ import * as Sharing from 'expo-sharing';
 import { Platform, Alert, PermissionsAndroid } from 'react-native';
 
 // ── Konfigurasi — GANTI SESUAI KEBUTUHAN ──────────────────────────────────
-export const CURRENT_VERSION = '1.0.0';       // Versi app saat ini
-export const CURRENT_VERSION_CODE = 1;        // Build number saat ini
+export const CURRENT_VERSION = '1.1.0';       // Versi app saat ini
+export const CURRENT_VERSION_CODE = 2;        // Build number saat ini
 
 /**
  * URL ke file JSON manifest yang ada di Google Drive.

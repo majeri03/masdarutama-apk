@@ -2,7 +2,7 @@
   "expo": {
     "name": "TB Masdar Utama Mobile",
     "slug": "tb-masdarutama-mobile",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -23,6 +23,7 @@
       "supportsTablet": true
     },
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/logomasdarutama.png",
         "backgroundColor": "#0F0F23"
