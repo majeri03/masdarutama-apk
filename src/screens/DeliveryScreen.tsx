@@ -345,6 +345,14 @@ export const DeliveryScreen: React.FC = () => {
       });
 
       if (res.success) {
+        // Jika ada foto bukti baru, daftarkan juga ke endpoint photos agar tersinkron ke tabel DeliveryPhoto
+        if (deliveryProofUrl) {
+          deliveryService.addDeliveryPhoto(selectedDO.id, {
+            url: deliveryProofUrl,
+            filename: deliveryProofUrl.split('/files/')[1] || deliveryProofUrl,
+          }).catch((err) => console.warn('[DO_PHOTO_SYNC_WARN]', err));
+        }
+
         AppToast.success('Sukses', 'Status Surat Jalan berhasil diperbarui!');
         setShowStatusModal(false);
         setDeliveryProofUrl(null);

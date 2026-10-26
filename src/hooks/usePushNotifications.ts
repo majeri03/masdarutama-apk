@@ -104,7 +104,8 @@ if (Platform.OS === 'android') {
 // ── Buat Android channel di module-level (sebelum kirim notif apa pun) ─────
 if (Platform.OS === 'android') {
   const channels = [
-    { id: 'default', name: 'Notifikasi Utama', desc: 'Notifikasi umum sistem' },
+    { id: 'masdar_channel_v2', name: 'TB Masdar Utama (Suara Khas)', desc: 'Notifikasi utama sistem dengan suara khas Masdar Utama' },
+    { id: 'default', name: 'Notifikasi Umum', desc: 'Notifikasi umum sistem' },
     { id: 'orders', name: 'Pesanan & Penjualan', desc: 'Pesanan POS baru dan orderan WA' },
     { id: 'deliveries', name: 'Surat Jalan & Pengiriman', desc: 'Status pengiriman dan armada' },
     { id: 'finance', name: 'Keuangan & Piutang', desc: 'Pembayaran cicilan dan jatuh tempo' },
@@ -118,7 +119,7 @@ if (Platform.OS === 'android') {
       lightColor: '#2563EB',
       enableVibrate: true,
       showBadge: true,
-      sound: 'default',
+      sound: ch.id === 'masdar_channel_v2' ? 'masdar_utama.mp3' : 'default',
     }).catch(() => {});
   }
 }
@@ -162,6 +163,7 @@ const SCREEN_ROUTES: Record<
   // === TIPE NOTIFIKASI → mapping ke screen ===
   orders: { type: 'tab', tabName: 'History' },
   deliveries: { type: 'stack', stackName: 'Delivery' },
+  delivery: { type: 'stack', stackName: 'Delivery' },
   finance: { type: 'stack', stackName: 'Debt' },
   stock: { type: 'tab', tabName: 'Products' },
   purchase: { type: 'stack', stackName: 'Purchase' },
@@ -219,19 +221,19 @@ export async function registerForPushNotificationsAsync(): Promise<string | unde
 
   // Pastikan channel dibuat sebelum meminta izin (Android)
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'Notifikasi Utama',
-      description: 'Notifikasi pesanan WA, hutang, dan stok',
+    await Notifications.setNotificationChannelAsync('masdar_channel_v2', {
+      name: 'TB Masdar Utama (Suara Khas)',
+      description: 'Notifikasi utama sistem dengan suara khas Masdar Utama',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#2563EB',
       enableVibrate: true,
       showBadge: true,
-      sound: 'default',
+      sound: 'masdar_utama.mp3',
     });
   }
 
-  // Minta izin notifikasi
+  // Minta izin notifikasi (Android 13+ POST_NOTIFICATIONS)
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
   if (existingStatus !== 'granted') {
@@ -244,14 +246,24 @@ export async function registerForPushNotificationsAsync(): Promise<string | unde
     return undefined;
   }
 
-  // Ambil EAS Project ID dari app.json
+  // 1. Prioritaskan Native FCM Push Token (langsung didukung Firebase Admin HTTP v1)
+  try {
+    const deviceTokenData = await Notifications.getDevicePushTokenAsync();
+    if (deviceTokenData?.data) {
+      console.log('[PushNotif] Berhasil memperoleh Native Device Push Token (FCM)');
+      return deviceTokenData.data;
+    }
+  } catch (fcmErr: any) {
+    console.warn('[PushNotif] Tidak dapat mengambil Native Device Push Token, fallback ke Expo Push Token:', fcmErr?.message);
+  }
+
+  // 2. Fallback: Expo Push Token (misal saat Expo Go / tanpa bundle native)
   const projectId =
     Constants?.expoConfig?.extra?.eas?.projectId ??
     Constants?.easConfig?.projectId ??
-    '6e4aad91-e3dc-44f4-97f3-0f332f02dd6e'; // fallback hardcode dari app.json
+    '6e4aad91-e3dc-44f4-97f3-0f332f02dd6e';
 
   try {
-    // Expo Push Token (didukung FCM via google-services.json saat build native)
     const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
     return tokenData.data;
   } catch (e: any) {

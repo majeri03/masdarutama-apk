@@ -50,7 +50,7 @@ export const ProofImageUploader: React.FC<ProofImageUploaderProps> = ({
 
       setFileSizeKB(result.fileSizeKB);
 
-      // Upload langsung ke backend R2
+      // Upload langsung ke backend R2 dengan tracking progres & kompresi
       const uploadRes = await uploadService.uploadImage(result.uri, folder);
       if (uploadRes.success && uploadRes.data?.url) {
         onImageUploaded(uploadRes.data.url);
@@ -66,12 +66,18 @@ export const ProofImageUploader: React.FC<ProofImageUploaderProps> = ({
   };
 
   const handleRemove = () => {
-    Alert.alert('Hapus Foto', 'Apakah Anda yakin ingin menghapus foto bukti ini?', [
+    Alert.alert('Hapus Foto', 'Apakah Anda yakin ingin menghapus foto bukti ini dari database & storage?', [
       { text: 'Batal', style: 'cancel' },
       {
         text: 'Hapus',
         style: 'destructive',
-        onPress: () => {
+        onPress: async () => {
+          if (imageUrl) {
+            // Hapus file fisik dari Cloudflare R2 secara asinkron
+            uploadService.deleteImage(imageUrl).catch((err) => {
+              console.warn('[PROOF_REMOVE_WARN] Gagal hapus dari R2:', err);
+            });
+          }
           onImageUploaded(null);
           setFileSizeKB(null);
         },

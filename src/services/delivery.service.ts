@@ -111,4 +111,36 @@ export const deliveryService = {
       return { success: false, error: error.response?.data?.error || 'Gagal menghapus surat jalan' };
     }
   },
+
+  async getDeliveryPhotos(deliveryOrderId: string): Promise<ApiResponse<{ photos: any[]; totalCount: number; totalSizeBytes: number }>> {
+    try {
+      const response = await api.get<ApiResponse<any>>(`/api/delivery-orders/${deliveryOrderId}/photos`);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal memuat foto surat jalan' };
+    }
+  },
+
+  async addDeliveryPhoto(
+    deliveryOrderId: string,
+    photoData: { url: string; filename: string; sizeBytes?: number; mimeType?: string }
+  ): Promise<ApiResponse<any>> {
+    try {
+      const response = await api.post<ApiResponse<any>>(`/api/delivery-orders/${deliveryOrderId}/photos`, photoData);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal menyimpan foto' };
+    }
+  },
+
+  async deleteDeliveryPhoto(deliveryOrderId: string, photoId: string): Promise<ApiResponse<void>> {
+    try {
+      const response = await api.delete<ApiResponse<void>>(
+        `/api/delivery-orders/${deliveryOrderId}/photos?photoId=${encodeURIComponent(photoId)}`
+      );
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal menghapus foto' };
+    }
+  },
 };
