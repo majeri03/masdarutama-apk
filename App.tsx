@@ -282,7 +282,7 @@ export default function App() {
     try {
       Vibration.vibrate([100, 80, 100, 150]);
       const { createAudioPlayer } = require('expo-audio');
-      const player = createAudioPlayer(require('./assets/Masdar_Utama.mp3'));
+      const player = createAudioPlayer(require('./assets/masdar_utama.mp3'));
       player.play();
 
       // Release resource after 5 seconds to prevent memory leaks

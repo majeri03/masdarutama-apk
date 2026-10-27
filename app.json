@@ -66,10 +66,9 @@
           "androidMode": "default",
           "androidCollapsedTitle": "TB Masdar Utama",
           "iosDisplayInForeground": true,
-          "sounds": ["./assets/Masdar_Utama.mp3"]
+          "sounds": ["./assets/masdar_utama.mp3"]
         }
       ],
-      "./plugins/withNotificationSound",
       "@react-native-community/datetimepicker",
       [
         "expo-location",

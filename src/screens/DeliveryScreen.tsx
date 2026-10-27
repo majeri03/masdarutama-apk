@@ -1276,9 +1276,30 @@ export const DeliveryScreen: React.FC = () => {
                 />
               </View>
 
-              {/* Driver & Vehicle */}
+              {/* Driver & Vehicle with Armada database quick pills */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Nama Sopir</Text>
+                <Text style={styles.inputLabel}>Nama Sopir (Armada)</Text>
+                {fleetList.length > 0 && (
+                  <View style={{ marginBottom: 6 }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
+                      {Array.from(new Set(fleetList.map((f) => f.driverName).filter(Boolean))).map((dName) => (
+                        <TouchableOpacity
+                          key={dName}
+                          style={[
+                            styles.pickerOption,
+                            driver === dName && styles.pickerOptionActive,
+                            { paddingHorizontal: 10, paddingVertical: 6 }
+                          ]}
+                          onPress={() => handleSelectDriver(dName, false)}
+                        >
+                          <Text style={[styles.pickerOptionText, driver === dName && styles.pickerOptionTextActive, { fontSize: 11 }]}>
+                            {dName}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
                 <TextInput
                   style={styles.textInput}
                   value={driver}
@@ -1289,7 +1310,32 @@ export const DeliveryScreen: React.FC = () => {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Plat Nomor / Nomor Mobil</Text>
+                <Text style={styles.inputLabel}>Plat Nomor / Kendaraan Armada</Text>
+                {fleetList.length > 0 && (
+                  <View style={{ marginBottom: 6 }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
+                      {fleetList.filter((f) => f.plateNumber).map((f) => {
+                        const label = f.brand ? `${f.plateNumber} (${f.brand})` : f.plateNumber;
+                        const isSelected = vehicle === f.plateNumber || vehicle === label;
+                        return (
+                          <TouchableOpacity
+                            key={f.id || f.plateNumber}
+                            style={[
+                              styles.pickerOption,
+                              isSelected && styles.pickerOptionActive,
+                              { paddingHorizontal: 10, paddingVertical: 6 }
+                            ]}
+                            onPress={() => handleSelectVehicle(label, false)}
+                          >
+                            <Text style={[styles.pickerOptionText, isSelected && styles.pickerOptionTextActive, { fontSize: 11 }]}>
+                              {label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
                 <TextInput
                   style={styles.textInput}
                   value={vehicle}
