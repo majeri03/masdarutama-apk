@@ -1075,7 +1075,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     letterSpacing: 0.5,
   },
-  // ─── Filter Section ───
   filterSection: {
     padding: Spacing.lg,
     backgroundColor: Colors.surface,
@@ -1124,7 +1123,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: FontWeight.bold,
   },
-  // ── List & Table ──
   tableContainer: { flex: 1 },
   listContent: { paddingBottom: Spacing.xl },
   tableHeader: {
@@ -1166,7 +1164,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statusTextSm: { fontSize: 9, fontWeight: 'bold' },
-  // ─── List Content ───
   poCard: {
     backgroundColor: Colors.backgroundSecondary,
   },
@@ -1236,7 +1233,6 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: FontSize.sm,
   },
-  // ─── Modals Details & Create DO ───
   modalContainer: {
     flex: 1,
     backgroundColor: Colors.background,

@@ -3,7 +3,6 @@
  * All Decimal fields are serialized as `number` from the API.
  */
 
-// ==================== ENUMS ====================
 export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'KASIR';
 export type CustomerType = 'REGULER' | 'GROSIR' | 'PROYEK' | 'UMUM';
 export type PaymentMethod = 'CASH' | 'TRANSFER' | 'CREDIT' | 'DEBIT_CARD' | 'QRIS';
@@ -14,7 +13,6 @@ export type DeliveryStatus = 'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED
 export type MovementType = 'IN' | 'OUT' | 'ADJUSTMENT' | 'RETURN';
 export type CashType = 'IN' | 'OUT';
 
-// ==================== API RESPONSE ====================
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
@@ -28,7 +26,6 @@ export interface ApiResponse<T = unknown> {
   };
 }
 
-// ==================== AUTH ====================
 export interface AuthUser {
   id: string;
   email: string;
@@ -45,7 +42,6 @@ export interface SessionResponse {
   isAuthenticated: boolean;
 }
 
-// ==================== UNIT ====================
 export interface Unit {
   id: string;
   name: string;
@@ -55,7 +51,6 @@ export interface Unit {
   updatedAt: string;
 }
 
-// ==================== CATEGORY ====================
 export interface Category {
   id: string;
   name: string;
@@ -73,7 +68,6 @@ export interface SubCategory {
   categoryId: string;
 }
 
-// ==================== SUPPLIER ====================
 export interface Supplier {
   id: string;
   code: string;
@@ -89,7 +83,6 @@ export interface Supplier {
   updatedAt: string;
 }
 
-// ==================== PRODUCT ====================
 export interface ProductUnit {
   id: string;
   productId: string;
@@ -128,7 +121,6 @@ export interface Product {
   productImages: ProductImage[];
 }
 
-// ==================== CUSTOMER ====================
 export interface Customer {
   id: string;
   code: string;
@@ -144,7 +136,6 @@ export interface Customer {
   updatedAt: string;
 }
 
-// ==================== POS / CART ====================
 export interface CartItem {
   id: string;
   productId: string;
@@ -177,7 +168,6 @@ export interface CartCalculation {
   grandTotal: number;
 }
 
-// ==================== SALE ====================
 export interface SaleItem {
   id: string;
   quantity: number;
@@ -217,7 +207,6 @@ export interface Sale {
   saleItems: SaleItem[];
 }
 
-// ==================== PURCHASE ====================
 export interface PurchaseItem {
   id?: string;
   productId: string;
@@ -254,7 +243,6 @@ export interface Purchase {
   purchaseItems: PurchaseItem[];
 }
 
-// ==================== DEBT ====================
 export interface DebtPayment {
   id: string;
   paymentDate: string;
@@ -317,7 +305,6 @@ export interface SupplierDebt {
   payments: DebtPayment[];
 }
 
-// ==================== DELIVERY ORDER ====================
 export interface DeliveryItem {
   id: string;
   productId: string;
@@ -354,7 +341,6 @@ export interface DeliveryOrder {
   sale?: { id: string; invoiceNumber: string } | null;
 }
 
-// ==================== REPORTS ====================
 export interface FinancialReport {
   totalRevenue: number;
   totalProfit: number;
@@ -372,7 +358,6 @@ export interface InventoryReport {
   outOfStockProducts: Product[];
 }
 
-// ==================== STORE SETTINGS ====================
 export interface StoreSetting {
   id: string;
   name: string;

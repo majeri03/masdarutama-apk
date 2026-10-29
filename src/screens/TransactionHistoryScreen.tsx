@@ -91,7 +91,12 @@ export const TransactionHistoryScreen: React.FC = () => {
     if (route.params?.customerId) {
       setActiveCustomerId(route.params.customerId);
     }
-  }, [route.params?.customerId]);
+    const searchParam = route.params?.search || route.params?.invoiceNumber;
+    if (searchParam) {
+      setFilters((prev) => ({ ...prev, search: searchParam }));
+      setPendingFilters((prev) => ({ ...prev, search: searchParam }));
+    }
+  }, [route.params?.customerId, route.params?.search, route.params?.invoiceNumber]);
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -838,7 +843,6 @@ export const TransactionHistoryScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  // ── Search ──
   searchBar: {
     flexDirection: 'row',
     padding: Spacing.lg,
@@ -877,7 +881,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryStart,
     borderColor: Colors.primaryStart,
   },
-  // ── Active Filters ──
   activeFilters: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -900,7 +903,6 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 11, color: Colors.primaryStart, fontWeight: FontWeight.semibold },
   clearFilter: { fontSize: FontSize.xs, color: Colors.error, fontWeight: FontWeight.semibold },
-  // ── List & Table ──
   tableContainer: { flex: 1 },
   listContent: { paddingBottom: Spacing.xl },
   tableHeader: {
@@ -952,13 +954,11 @@ const styles = StyleSheet.create({
   },
   statusText: { fontSize: 10, fontWeight: FontWeight.bold },
   paymentMethod: { fontSize: 11, color: Colors.textTertiary },
-  // ── Empty ──
   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 },
   loadingText: { color: Colors.textSecondary, fontSize: FontSize.sm },
   emptyBox: { alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 },
   emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
   emptyDesc: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
-  // ── Filter Sheet ──
   filterOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -1003,7 +1003,6 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: FontSize.xs, color: Colors.textSecondary, fontWeight: FontWeight.medium },
   filterChipTextActive: { color: '#fff', fontWeight: FontWeight.bold },
   filterFooter: { padding: Spacing.lg, borderTopWidth: 1, borderColor: Colors.border },
-  // ── Detail ──
   detailContainer: { flex: 1, backgroundColor: Colors.background },
   detailHeader: {
     flexDirection: 'row',

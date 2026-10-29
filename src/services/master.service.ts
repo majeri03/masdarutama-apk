@@ -6,7 +6,6 @@ import { API_ENDPOINTS } from '../constants/api';
 import type { ApiResponse, Customer, Supplier, Unit, Category, SubCategory } from '../types';
 
 export const masterService = {
-  // ==================== CUSTOMERS ====================
   async getCustomers(search?: string): Promise<ApiResponse<{ customers: Customer[] }>> {
     try {
       const params = search ? `?search=${encodeURIComponent(search)}` : '';
@@ -54,7 +53,6 @@ export const masterService = {
     }
   },
 
-  // ==================== SUPPLIERS ====================
   async getSuppliers(search?: string): Promise<ApiResponse<{ suppliers: Supplier[] }>> {
     try {
       const params = search ? `?search=${encodeURIComponent(search)}` : '';
@@ -102,7 +100,6 @@ export const masterService = {
     }
   },
 
-  // ==================== UNITS ====================
   async getUnits(): Promise<ApiResponse<{ units: Unit[] }>> {
     try {
       const response = await api.get<ApiResponse<any>>(`${API_ENDPOINTS.UNITS}?limit=100`);
@@ -129,7 +126,6 @@ export const masterService = {
     }
   },
 
-  // ==================== CATEGORIES ====================
   async getCategories(): Promise<ApiResponse<{ categories: Category[] }>> {
     try {
       const response = await api.get<ApiResponse<any>>(API_ENDPOINTS.CATEGORIES);
@@ -174,7 +170,6 @@ export const masterService = {
     }
   },
 
-  // ==================== FLEET / ARMADA ====================
   async getFleetVehicles(): Promise<ApiResponse<Array<{
     id: string;
     plateNumber: string;

@@ -12,7 +12,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight } from '../../constants/theme';
 
-// ==================== SEARCH BAR ====================
 interface SearchBarProps {
   value: string;
   onChangeText: (text: string) => void;
@@ -68,7 +67,6 @@ const searchStyles = StyleSheet.create({
   },
 });
 
-// ==================== STATUS BADGE ====================
 interface StatusBadgeProps {
   status: string;
   size?: 'sm' | 'md';
@@ -151,7 +149,6 @@ const badgeStyles = StyleSheet.create({
   },
 });
 
-// ==================== EMPTY STATE ====================
 interface EmptyStateProps {
   icon?: string;
   title: string;
@@ -190,7 +187,6 @@ const emptyStyles = StyleSheet.create({
   },
 });
 
-// ==================== STAT CARD ====================
 interface StatCardProps {
   title: string;
   value: string | number;

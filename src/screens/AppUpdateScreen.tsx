@@ -376,7 +376,6 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     marginTop: 2,
   },
-  // ── States ──
   idleContainer: {
     alignItems: 'center',
     paddingVertical: Spacing.xl,
@@ -435,7 +434,6 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     fontSize: FontSize.md,
   },
-  // ── Manifest Card ──
   manifestCard: {
     width: '100%',
     marginVertical: Spacing.sm,
@@ -493,7 +491,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 18,
   },
-  // ── Progress ──
   progressBarContainer: {
     width: '80%',
     height: 10,
@@ -511,7 +508,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     fontWeight: FontWeight.semibold,
   },
-  // ── Info Card ──
   infoCard: { marginTop: 0 },
   infoRow: {
     flexDirection: 'row',

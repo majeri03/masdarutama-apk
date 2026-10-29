@@ -25,7 +25,6 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
 import { Platform, Alert, PermissionsAndroid } from 'react-native';
 
-// ── Konfigurasi — GANTI SESUAI KEBUTUHAN ──────────────────────────────────
 export const CURRENT_VERSION = '1.1.0';       // Versi app saat ini
 export const CURRENT_VERSION_CODE = 2;        // Build number saat ini
 
@@ -38,7 +37,6 @@ export const CURRENT_VERSION_CODE = 2;        // Build number saat ini
  */
 export const UPDATE_MANIFEST_URL =
   'https://drive.google.com/uc?export=download&id=15dZHNf5cy6ZOeicCZEFsQgm1UaLZTcrq';
-// ──────────────────────────────────────────────────────────────────────────
 
 export interface UpdateManifest {
   version: string;

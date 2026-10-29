@@ -18,7 +18,6 @@ const api = axios.create({
   withCredentials: true,
 });
 
-// ==================== REQUEST INTERCEPTOR ====================
 // Inject stored session cookie into every request
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
@@ -48,7 +47,6 @@ api.interceptors.request.use(
   }
 );
 
-// ==================== RESPONSE INTERCEPTOR ====================
 // Capture Set-Cookie header from responses and store them
 api.interceptors.response.use(
   async (response) => {

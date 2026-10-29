@@ -20,6 +20,7 @@ interface NotificationCenterState {
   addNotification: (notification: Omit<AppNotification, 'id' | 'date' | 'isRead'>) => void;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
+  clearReadNotifications: () => Promise<void>;
   clearAll: () => void;
   cleanupOldNotifications: () => void;
   fetchRemoteNotifications: () => Promise<void>;
@@ -66,8 +67,18 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
         api.patch('/api/notifications', { readAll: true }).catch(() => {});
       },
       
+      clearReadNotifications: async () => {
+        // Hapus notifikasi yang sudah dibaca (lokal)
+        set((state) => ({
+          notifications: state.notifications.filter((n) => !n.isRead),
+        }));
+        // Sync hapus permanen notifikasi terbaca di backend
+        api.delete('/api/notifications?clearRead=true').catch(() => {});
+      },
+
       clearAll: () => {
         set({ notifications: [] });
+        api.delete('/api/notifications?clearRead=true').catch(() => {});
       },
 
       fetchRemoteNotifications: async () => {
@@ -75,21 +86,26 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
           set({ isLoading: true });
           const res = await api.get('/api/notifications?limit=50');
           if (res.data?.success && Array.isArray(res.data?.data?.items)) {
-            const remoteItems: AppNotification[] = res.data.data.items.map((item: any) => ({
-              id: item.id,
-              title: item.title,
-              body: item.body,
-              date: item.createdAt,
-              isRead: item.isRead,
-              data: {
-                screen: item.screen,
-                params: item.params,
-                type: item.type,
-              },
-            }));
+            const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+            const now = Date.now();
+
+            const remoteItems: AppNotification[] = res.data.data.items
+              .filter((item: any) => (now - new Date(item.createdAt).getTime()) < THREE_DAYS_MS)
+              .map((item: any) => ({
+                id: item.id,
+                title: item.title,
+                body: item.body,
+                date: item.createdAt,
+                isRead: item.isRead,
+                data: {
+                  screen: item.screen,
+                  params: item.params,
+                  type: item.type,
+                },
+              }));
 
             // Merge with local notifications (dedup by ID)
-            const local = get().notifications;
+            const local = get().notifications.filter((n) => (now - new Date(n.date).getTime()) < THREE_DAYS_MS);
             const existingIds = new Set(remoteItems.map((n) => n.id));
             const merged = [...remoteItems, ...local.filter((n) => !existingIds.has(n.id))];
 
@@ -104,15 +120,18 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
       },
       
       cleanupOldNotifications: () => {
-        const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
+        const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000; // 3 hari otomatis hapus
         const now = Date.now();
         
         set((state) => ({
           notifications: state.notifications.filter((n) => {
             const notifDate = new Date(n.date).getTime();
-            return (now - notifDate) < FIVE_DAYS_MS;
+            return (now - notifDate) < THREE_DAYS_MS;
           }),
         }));
+
+        // Hapus juga di server yang sudah lewat 3 hari
+        api.delete('/api/notifications?olderThanDays=3').catch(() => {});
       },
     }),
     {

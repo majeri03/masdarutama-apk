@@ -5,25 +5,21 @@
  */
 
 export const Colors = {
-  // ─── Base Light Palette ─────────────────────────────────
   background: '#F0F4F8',           // very light blue-grey (not pure white)
   backgroundSecondary: '#FFFFFF',  // white for cards / bars
   surface: '#FFFFFF',
   surfaceLight: '#F8FAFC',
 
-  // ─── Glass Effects (iOS-style) ───────────────────────────
   glass: 'rgba(255, 255, 255, 0.72)',
   glassBorder: 'rgba(0, 0, 0, 0.08)',
   glassHighlight: 'rgba(255, 255, 255, 0.90)',
 
-  // ─── Text (dark on light backgrounds) ───────────────────
   textPrimary: '#111827',          // almost black — great readability
   textSecondary: '#374151',        // dark grey
   textTertiary: '#6B7280',         // medium grey
   textInverse: '#FFFFFF',          // white (for coloured badges)
   textMuted: '#9CA3AF',            // light grey placeholder text
 
-  // ─── Primary Brand Accents ───────────────────────────────
   primaryStart: '#2563EB',         // blue-600
   primaryEnd: '#7C3AED',           // violet-700
   primary: '#2563EB',              // main blue
@@ -34,7 +30,6 @@ export const Colors = {
   accentStart: '#0891B2',          // cyan-600
   accentEnd: '#1D4ED8',            // blue-700
 
-  // ─── Status Colors ───────────────────────────────────────
   success: '#059669',
   successLight: 'rgba(5, 150, 105, 0.10)',
   warning: '#D97706',
@@ -44,18 +39,15 @@ export const Colors = {
   info: '#2563EB',
   infoLight: 'rgba(37, 99, 235, 0.10)',
 
-  // ─── Payment method colors ───────────────────────────────
   cash: '#059669',
   transfer: '#2563EB',
   credit: '#D97706',
   debitCard: '#7C3AED',
   qris: '#DB2777',
 
-  // ─── Border ──────────────────────────────────────────────
   border: 'rgba(0, 0, 0, 0.08)',
   borderLight: 'rgba(0, 0, 0, 0.04)',
 
-  // ─── Overlay ─────────────────────────────────────────────
   overlay: 'rgba(0, 0, 0, 0.40)',
   overlayLight: 'rgba(0, 0, 0, 0.15)',
 } as const;

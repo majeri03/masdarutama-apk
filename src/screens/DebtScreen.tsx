@@ -12,7 +12,7 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
@@ -54,6 +54,7 @@ const PAYMENT_LABEL: Record<string, string> = {
 
 export const DebtScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { openSidebar } = useSidebarStore();
 
   const [activeTab, setActiveTab] = useState<'customer' | 'supplier'>('customer');
@@ -61,6 +62,14 @@ export const DebtScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+
+  // Auto-filter berdasarkan ref nama / customer dari notifikasi
+  useEffect(() => {
+    const searchParam = route.params?.search || route.params?.customerName;
+    if (searchParam) {
+      setSearch(searchParam);
+    }
+  }, [route.params?.search, route.params?.customerName]);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);

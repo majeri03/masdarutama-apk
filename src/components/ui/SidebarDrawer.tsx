@@ -9,6 +9,7 @@ import {
   Dimensions,
   Animated,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +20,7 @@ import { Colors, BorderRadius, Spacing, FontSize, FontWeight, Shadow } from '../
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { navigationRef } from '../../utils/navigation';
+import { CURRENT_VERSION } from '../../services/update.service';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.78;
@@ -147,8 +149,12 @@ export const SidebarDrawer: React.FC = () => {
                 {/* Store & User Profile Header */}
                 <View style={styles.header}>
                   <View style={styles.logoRow}>
-                    <View style={styles.logoBg}>
-                      <Ionicons name="storefront-outline" size={24} color={Colors.primaryStart} />
+                    <View style={[styles.logoBg, { backgroundColor: 'transparent', padding: 2 }]}>
+                      <Image
+                        source={require('../../assets/logomasdarutama.png')}
+                        style={{ width: 40, height: 40, borderRadius: 8 }}
+                        resizeMode="contain"
+                      />
                     </View>
                     <View>
                       <Text style={styles.storeName}>TB Masdar Utama</Text>
@@ -207,7 +213,7 @@ export const SidebarDrawer: React.FC = () => {
                     <Ionicons name="log-out-outline" size={20} color={Colors.error} />
                     <Text style={styles.logoutText}>Keluar Sesi Kasir</Text>
                   </TouchableOpacity>
-                  <Text style={styles.versionText}>Versi 1.1.0 • Antigravity UI</Text>
+                  <Text style={styles.versionText}>Versi {CURRENT_VERSION} • TB Masdar Utama</Text>
                 </View>
               </SafeAreaView>
             </LinearGradient>

@@ -37,7 +37,6 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export const BACKGROUND_FLEET_LOCATION_TASK = 'BACKGROUND_FLEET_LOCATION_TASK';
 
-// ── Background Task Definition ─────────────────────────────────────────────
 try {
   if (TaskManager && typeof TaskManager.defineTask === 'function') {
     TaskManager.defineTask(BACKGROUND_FLEET_LOCATION_TASK, async ({ data, error }: any) => {
@@ -73,7 +72,6 @@ try {
   console.warn('[BACKGROUND_LOCATION] TaskManager.defineTask skipped (native binary needs rebuild):', err);
 }
 
-// ─── Types ─────────────────────────────────────────────────────────────────
 interface FleetVehicle {
   id: string;
   plateNumber: string;
@@ -115,7 +113,6 @@ const VEHICLE_TYPE_ICONS: Record<string, string> = {
   OTHER: 'car-outline',
 };
 
-// ─── Map HTML (Leaflet OSM tanpa API key) ──────────────────────────────────
 const buildMapHtml = (vehicles: FleetVehicle[], centerLat = -5.134, centerLng = 119.412) => `
 <!DOCTYPE html>
 <html>
@@ -235,7 +232,6 @@ const buildMapHtml = (vehicles: FleetVehicle[], centerLat = -5.134, centerLng = 
 </html>
 `;
 
-// ─── Add/Edit Vehicle Modal ─────────────────────────────────────────────────
 const VehicleFormModal: React.FC<{
   visible: boolean;
   vehicle?: FleetVehicle | null;
@@ -422,7 +418,6 @@ const VehicleFormModal: React.FC<{
   );
 };
 
-// ─── Main Screen ────────────────────────────────────────────────────────────
 export const FleetTrackingScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { user } = useAuthStore();
@@ -446,7 +441,6 @@ export const FleetTrackingScreen: React.FC = () => {
   const webViewRef = useRef<any>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // ── Pulse animation for live tracking indicator ──
   useEffect(() => {
     if (trackingVehicleId) {
       Animated.loop(
@@ -460,7 +454,6 @@ export const FleetTrackingScreen: React.FC = () => {
     }
   }, [trackingVehicleId]);
 
-  // ── Request Location Permissions & Resume Background Tracking ──
   useEffect(() => {
     checkAndResumeTracking();
     requestLocationPermission();
@@ -531,7 +524,6 @@ export const FleetTrackingScreen: React.FC = () => {
     }
   };
 
-  // ── Load vehicles from API ──
   const loadVehicles = useCallback(async () => {
     try {
       const res = await api.get('/api/fleet/vehicles');
@@ -559,7 +551,6 @@ export const FleetTrackingScreen: React.FC = () => {
     loadVehicles();
   };
 
-  // ── Start/Stop GPS tracking for a vehicle ──
   const startTracking = async (vehicleId: string) => {
     if (locationPermission !== 'granted') {
       await requestLocationPermission();
@@ -657,7 +648,6 @@ export const FleetTrackingScreen: React.FC = () => {
     }
   };
 
-  // ── CRUD Vehicles ──
   const handleSaveVehicle = async (data: any) => {
     setSaving(true);
     try {
@@ -716,7 +706,6 @@ export const FleetTrackingScreen: React.FC = () => {
     );
   };
 
-  // ── Stats ──
   const stats = {
     total: vehicles.length,
     active: vehicles.filter((v) => v.status === 'ACTIVE').length,
@@ -1079,7 +1068,6 @@ export const FleetTrackingScreen: React.FC = () => {
   );
 };
 
-// ─── Mock Data (used when API /api/fleet/vehicles not yet implemented) ──────
 function getMockVehicles(): FleetVehicle[] {
   return [
     {
@@ -1131,7 +1119,6 @@ function getMockVehicles(): FleetVehicle[] {
   ];
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
@@ -1430,7 +1417,6 @@ const styles = StyleSheet.create({
   },
 });
 
-// ─── VehicleFormModal Styles ─────────────────────────────────────────────────
 const fmStyles = StyleSheet.create({
   overlay: {
     flex: 1,

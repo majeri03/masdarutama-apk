@@ -13,7 +13,7 @@ import {
   RefreshControl,
   Image,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
@@ -69,11 +69,20 @@ interface DeliveryOrder {
 
 export const DeliveryScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { isAdmin } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
   const [search, setSearch] = useState('');
+
+  // Tangkap parameter pencarian dari notifikasi (misal: Surat Jalan #DO-xxx)
+  useEffect(() => {
+    const searchParam = route.params?.search || route.params?.doNumber;
+    if (searchParam) {
+      setSearch(searchParam);
+    }
+  }, [route.params?.search, route.params?.doNumber]);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
@@ -118,6 +127,15 @@ export const DeliveryScreen: React.FC = () => {
   const [fleetList, setFleetList] = useState<any[]>([]);
   // Upload foto bukti pengiriman saat pembuatan
   const [createDoPhotoUrl, setCreateDoPhotoUrl] = useState<string | null>(null);
+
+  // Pencarian Transaksi POS & Filter Tanggal
+  const [saleSearch, setSaleSearch] = useState('');
+  const [saleSearchDate, setSaleSearchDate] = useState<Date | null>(null);
+  const [isLoadingSales, setIsLoadingSales] = useState(false);
+
+  // Sopir Search / Autocomplete
+  const [driverSearchQuery, setDriverSearchQuery] = useState('');
+  const [editDriverSearchQuery, setEditDriverSearchQuery] = useState('');
 
   const handleSelectDriver = (driverName: string, isEdit = false) => {
     if (isEdit) {
@@ -241,10 +259,9 @@ export const DeliveryScreen: React.FC = () => {
 
   const loadMasterData = async () => {
     try {
-      const [custRes, prodRes, salesRes, fleetRes] = await Promise.all([
+      const [custRes, prodRes, fleetRes] = await Promise.all([
         masterService.getCustomers(),
         productService.getProducts({ limit: 100, isActive: true }),
-        salesService.getSales({ limit: 50, status: 'PENDING' }),
         masterService.getFleetVehicles(),
       ]);
       if (custRes.success && custRes.data?.customers) {
@@ -258,15 +275,41 @@ export const DeliveryScreen: React.FC = () => {
       if (prodRes.success && prodRes.data?.products) {
         setProducts(prodRes.data.products);
       }
-      if (salesRes.success && salesRes.data?.sales) {
-        // filter sales that are PENDING and don't have DO yet
-        setSalesList(salesRes.data.sales);
-      }
+      setSalesList([]); // Jangan load semua otomatis, user cari manual
       if (fleetRes.success && fleetRes.data) {
         setFleetList(fleetRes.data);
       }
     } catch (e) {
       console.warn('[DELIVERY] Error loading master data:', e);
+    }
+  };
+
+  const searchSales = async () => {
+    if (!saleSearch && !saleSearchDate) {
+      AppToast.info('Info', 'Masukkan nomor ref/nama pelanggan atau pilih tanggal untuk mencari transaksi.');
+      return;
+    }
+    setIsLoadingSales(true);
+    try {
+      const filters: any = { status: 'PENDING', limit: 30 };
+      if (saleSearch.trim()) filters.search = saleSearch.trim();
+      if (saleSearchDate) {
+        filters.dateFrom = saleSearchDate.toISOString().split('T')[0];
+        filters.dateTo = saleSearchDate.toISOString().split('T')[0];
+      }
+      const res = await salesService.getSales(filters);
+      if (res.success && res.data?.sales) {
+        setSalesList(res.data.sales);
+        if (res.data.sales.length === 0) {
+          AppToast.info('Tidak Ditemukan', 'Tidak ada transaksi PENDING yang cocok.');
+        }
+      } else {
+        AppToast.error('Gagal', res.error || 'Gagal mencari transaksi.');
+      }
+    } catch (e) {
+      AppToast.error('Error', 'Gagal mencari transaksi.');
+    } finally {
+      setIsLoadingSales(false);
     }
   };
 
@@ -347,9 +390,15 @@ export const DeliveryScreen: React.FC = () => {
       if (res.success) {
         // Jika ada foto bukti baru, daftarkan juga ke endpoint photos agar tersinkron ke tabel DeliveryPhoto
         if (deliveryProofUrl) {
+          const estimatedSize = 200 * 1024; // 200 KB fallback
+          const filename = deliveryProofUrl.split('/files/')[1]
+            || deliveryProofUrl.split('/').pop()
+            || deliveryProofUrl;
           deliveryService.addDeliveryPhoto(selectedDO.id, {
             url: deliveryProofUrl,
-            filename: deliveryProofUrl.split('/files/')[1] || deliveryProofUrl,
+            filename,
+            sizeBytes: estimatedSize,
+            mimeType: 'image/jpeg',
           }).catch((err) => console.warn('[DO_PHOTO_SYNC_WARN]', err));
         }
 
@@ -417,6 +466,20 @@ export const DeliveryScreen: React.FC = () => {
       });
 
       if (res.success) {
+        // Sinkron foto baru ke tabel DeliveryPhoto
+        if (editProofImage && editProofImage !== selectedDO.proofImage) {
+          const estimatedSize = 200 * 1024;
+          const filename = editProofImage.split('/files/')[1]
+            || editProofImage.split('/').pop()
+            || editProofImage;
+          deliveryService.addDeliveryPhoto(selectedDO.id, {
+            url: editProofImage,
+            filename,
+            sizeBytes: estimatedSize,
+            mimeType: 'image/jpeg',
+          }).catch((err) => console.warn('[DO_PHOTO_SYNC_EDIT]', err));
+        }
+
         AppToast.success('Sukses', 'Surat Jalan berhasil diperbarui!');
         setShowEditModal(false);
         const updatedDO: DeliveryOrder = {
@@ -1224,44 +1287,83 @@ export const DeliveryScreen: React.FC = () => {
               {/* Link to POS Sale (Optional) */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Hubungkan ke Transaksi Kredit POS (Opsional)</Text>
-                <View style={styles.pickerContainer}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerScroll}>
-                    <TouchableOpacity
-                      style={[styles.pickerOption, selectedSaleId === '' && styles.pickerOptionActive]}
-                      onPress={() => setSelectedSaleId('')}
-                    >
-                      <Text style={[styles.pickerOptionText, selectedSaleId === '' && styles.pickerOptionTextActive]}>
-                        Tanpa POS
-                      </Text>
-                    </TouchableOpacity>
-                    {salesList.map((sale) => (
+
+                {/* Search bar */}
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1, height: 40 }]}
+                    placeholder="Cari No. Inv / Nama Pelanggan..."
+                    placeholderTextColor={Colors.textTertiary}
+                    value={saleSearch}
+                    onChangeText={setSaleSearch}
+                    onSubmitEditing={searchSales}
+                  />
+                  <TouchableOpacity
+                    style={{ backgroundColor: Colors.primaryStart, paddingHorizontal: 14, borderRadius: 8, justifyContent: 'center' }}
+                    onPress={searchSales}
+                  >
+                    {isLoadingSales
+                      ? <ActivityIndicator size="small" color="#FFF" />
+                      : <Ionicons name="search" size={18} color="#FFF" />}
+                  </TouchableOpacity>
+                </View>
+
+                {/* Filter tanggal */}
+                <View style={{ marginBottom: 8 }}>
+                  <DatePickerInput
+                    value={saleSearchDate}
+                    onChange={setSaleSearchDate}
+                    placeholder="Filter Tanggal Transaksi (Opsional)"
+                    compact={true}
+                  />
+                </View>
+
+                {/* Hasil pencarian */}
+                {salesList.length > 0 ? (
+                  <View style={styles.pickerContainer}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerScroll}>
                       <TouchableOpacity
-                        key={sale.id}
-                        style={[styles.pickerOption, selectedSaleId === sale.id && styles.pickerOptionActive]}
-                        onPress={() => {
-                          setSelectedSaleId(sale.id);
-                          if (sale.customerId) {
-                            setSelectedCustomerId(sale.customerId);
-                          }
-                          // Auto populate items from POS sale
-                          const autoItems = sale.saleItems?.map((sitem: any) => ({
-                            productId: sitem.productId,
-                            productName: sitem.product.name,
-                            productCode: sitem.product.code,
-                            unitId: sitem.unitId,
-                            unitName: sitem.unit.name,
-                            quantity: sitem.quantity,
-                          })) || [];
-                          setDoItems(autoItems);
-                        }}
+                        style={[styles.pickerOption, selectedSaleId === '' && styles.pickerOptionActive]}
+                        onPress={() => setSelectedSaleId('')}
                       >
-                        <Text style={[styles.pickerOptionText, selectedSaleId === sale.id && styles.pickerOptionTextActive]}>
-                          Ref: #{sale.invoiceNumber}
+                        <Text style={[styles.pickerOptionText, selectedSaleId === '' && styles.pickerOptionTextActive]}>
+                          Tanpa POS
                         </Text>
                       </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+                      {salesList.map((sale) => (
+                        <TouchableOpacity
+                          key={sale.id}
+                          style={[styles.pickerOption, selectedSaleId === sale.id && styles.pickerOptionActive]}
+                          onPress={() => {
+                            setSelectedSaleId(sale.id);
+                            if (sale.customerId) {
+                              setSelectedCustomerId(sale.customerId);
+                            }
+                            // Auto populate items from POS sale
+                            const autoItems = sale.saleItems?.map((sitem: any) => ({
+                              productId: sitem.productId,
+                              productName: sitem.product.name,
+                              productCode: sitem.product.code,
+                              unitId: sitem.unitId,
+                              unitName: sitem.unit.name,
+                              quantity: sitem.quantity,
+                            })) || [];
+                            setDoItems(autoItems);
+                          }}
+                        >
+                          <Text style={[styles.pickerOptionText, selectedSaleId === sale.id && styles.pickerOptionTextActive]}>
+                            #{sale.invoiceNumber}{'\n'}
+                            <Text style={{ fontSize: 10 }}>{(sale as any).customer?.name || ''}</Text>
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 11, color: Colors.textTertiary, marginTop: 4 }}>
+                    Ketik nomor ref/nama lalu tekan tombol cari untuk mencari transaksi PENDING.
+                  </Text>
+                )}
               </View>
 
               {/* Delivery Date */}
@@ -1276,37 +1378,41 @@ export const DeliveryScreen: React.FC = () => {
                 />
               </View>
 
-              {/* Driver & Vehicle with Armada database quick pills */}
+              {/* Driver with Autocomplete */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Nama Sopir (Armada)</Text>
-                {fleetList.length > 0 && (
-                  <View style={{ marginBottom: 6 }}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
-                      {Array.from(new Set(fleetList.map((f) => f.driverName).filter(Boolean))).map((dName) => (
-                        <TouchableOpacity
-                          key={dName}
-                          style={[
-                            styles.pickerOption,
-                            driver === dName && styles.pickerOptionActive,
-                            { paddingHorizontal: 10, paddingVertical: 6 }
-                          ]}
-                          onPress={() => handleSelectDriver(dName, false)}
-                        >
-                          <Text style={[styles.pickerOptionText, driver === dName && styles.pickerOptionTextActive, { fontSize: 11 }]}>
-                            {dName}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
                 <TextInput
                   style={styles.textInput}
                   value={driver}
-                  onChangeText={setDriver}
-                  placeholder="Nama sopir pengantar"
+                  onChangeText={(text) => {
+                    setDriver(text);
+                    setDriverSearchQuery(text);
+                  }}
+                  placeholder="Ketik nama sopir..."
                   placeholderTextColor={Colors.textTertiary}
                 />
+                {fleetList.length > 0 && driverSearchQuery.length > 0 && (() => {
+                  const uniqueDrivers = Array.from(new Set(fleetList.map((f: any) => f.driverName).filter(Boolean)));
+                  const suggestions = uniqueDrivers.filter(
+                    (n: any) => n.toLowerCase().includes(driverSearchQuery.toLowerCase()) && n !== driver
+                  );
+                  if (suggestions.length === 0) return null;
+                  return (
+                    <View style={{ backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, maxHeight: 130, overflow: 'hidden', marginTop: 2 }}>
+                      <ScrollView nestedScrollEnabled>
+                        {suggestions.map((dName: any) => (
+                          <TouchableOpacity
+                            key={dName}
+                            style={{ padding: 10, borderBottomWidth: 1, borderColor: Colors.borderLight }}
+                            onPress={() => { handleSelectDriver(dName, false); setDriverSearchQuery(''); }}
+                          >
+                            <Text style={{ fontSize: 13, color: Colors.textPrimary }}>{dName}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  );
+                })()}
               </View>
 
               <View style={styles.inputGroup}>
@@ -1587,10 +1693,35 @@ export const DeliveryScreen: React.FC = () => {
                   <TextInput
                     style={styles.textInput}
                     value={editDriver}
-                    onChangeText={setEditDriver}
+                    onChangeText={(text) => {
+                      setEditDriver(text);
+                      setEditDriverSearchQuery(text);
+                    }}
                     placeholder="Nama sopir pengantar"
                     placeholderTextColor={Colors.textTertiary}
                   />
+                  {fleetList.length > 0 && editDriverSearchQuery.length > 0 && (() => {
+                    const uniqueDrivers = Array.from(new Set(fleetList.map((f: any) => f.driverName).filter(Boolean)));
+                    const suggestions = uniqueDrivers.filter(
+                      (n: any) => n.toLowerCase().includes(editDriverSearchQuery.toLowerCase()) && n !== editDriver
+                    );
+                    if (suggestions.length === 0) return null;
+                    return (
+                      <View style={{ backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, maxHeight: 130, overflow: 'hidden', marginTop: 2 }}>
+                        <ScrollView nestedScrollEnabled>
+                          {suggestions.map((dName: any) => (
+                            <TouchableOpacity
+                              key={dName}
+                              style={{ padding: 10, borderBottomWidth: 1, borderColor: Colors.borderLight }}
+                              onPress={() => { handleSelectDriver(dName, true); setEditDriverSearchQuery(''); }}
+                            >
+                              <Text style={{ fontSize: 13, color: Colors.textPrimary }}>{dName}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    );
+                  })()}
                 </View>
 
                 {/* Kendaraan */}
@@ -1697,7 +1828,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     letterSpacing: 0.5,
   },
-  // ─── Filter Section ───
   filterSection: {
     padding: Spacing.lg,
     backgroundColor: Colors.surface,
@@ -1746,7 +1876,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: FontWeight.bold,
   },
-  // ─── List Content ───
   listContent: {
     padding: Spacing.lg,
     gap: Spacing.lg,
@@ -1815,7 +1944,6 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: FontSize.sm,
   },
-  // ─── Modals Details & Create DO ───
   modalContainer: {
     flex: 1,
     backgroundColor: Colors.background,

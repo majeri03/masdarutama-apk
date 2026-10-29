@@ -614,7 +614,6 @@ const styles = StyleSheet.create({
   listContainer: {
     paddingBottom: 100, // padding for FAB space
   },
-  // ── Table Styles ──
   tableContainer: { flex: 1 },
   tableHeader: {
     flexDirection: 'row',
@@ -647,7 +646,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textPrimary,
   },
-  // ── Types ──
   typeBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -700,7 +698,6 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
   
-  // ── Form Modal Styles ──
   formContainer: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -829,7 +826,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   
-  // ── Scanner Styles ──
   scannerWrapper: {
     flex: 1,
     backgroundColor: '#000',

@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Modal,
   TextInput,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
@@ -151,8 +152,12 @@ export const SettingsScreen: React.FC = () => {
         {storeSettings && (
           <GlassCard padding={20} style={styles.storeBanner} tinted>
             <View style={styles.storeInfoRow}>
-              <View style={styles.storeIconBg}>
-                <Ionicons name="storefront-outline" size={28} color={Colors.primaryStart} />
+              <View style={[styles.storeIconBg, { backgroundColor: 'transparent', padding: 0, width: 52, height: 52 }]}>
+                <Image
+                  source={require('../assets/logomasdarutama.png')}
+                  style={{ width: 52, height: 52, borderRadius: 10 }}
+                  resizeMode="contain"
+                />
               </View>
               <View style={styles.storeInfoText}>
                 <Text style={styles.storeName}>{storeSettings.name}</Text>
@@ -582,7 +587,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: FontSize.sm,
   },
-  // ── Store Banner ──
   storeBanner: {
     marginBottom: Spacing.lg,
   },
@@ -618,7 +622,6 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     marginTop: 2,
   },
-  // ── Sections ──
   section: {
     marginBottom: Spacing.xl,
   },
@@ -631,7 +634,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     marginLeft: 4,
   },
-  // ── Profile ──
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -678,7 +680,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: FontWeight.bold,
   },
-  // ── Setting Row ──
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -713,7 +714,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border,
     marginLeft: 72,
   },
-  // ── Password Modal ──
   modalOverlay: {
     flex: 1,
     backgroundColor: Colors.overlay,

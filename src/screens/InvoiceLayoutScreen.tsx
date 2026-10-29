@@ -28,7 +28,6 @@ export const InvoiceLayoutScreen: React.FC = () => {
   const layout = useInvoiceLayoutStore();
   const [storeSettings, setStoreSettings] = React.useState<any>(null);
 
-  // ── Paper size mode state ──
   const [thermalMode, setThermalMode] = React.useState<'preset' | 'custom'>(
     THERMAL_PRESETS.includes(layout.paperSize) ? 'preset' : 'custom'
   );
@@ -817,7 +816,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     marginLeft: 4,
   },
-  // ─── Control Group ───
   controlGroup: {
     marginBottom: Spacing.lg,
   },
@@ -853,7 +851,6 @@ const styles = StyleSheet.create({
     color: Colors.primaryStart,
     fontWeight: FontWeight.bold,
   },
-  // ─── Switch Row ───
   switchRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -875,7 +872,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border,
     marginLeft: Spacing.lg,
   },
-  // ─── Form Group ───
   formGroupTitle: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,
@@ -901,7 +897,6 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.textPrimary,
   },
-  // ── Paper size preset/custom styles ──
   modeToggleRow: {
     flexDirection: 'row',
     borderRadius: BorderRadius.md,
@@ -994,7 +989,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  // ─── Real-Time Preview Styles ───
   previewWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1009,7 +1003,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.1)',
     overflow: 'hidden',
   },
-  // ─── Thermal Receipt Mockup ───
   thermalPreview: {
     padding: Spacing.lg,
     backgroundColor: '#FFFFFF',
@@ -1090,7 +1083,6 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontWeight: '500',
   },
-  // ─── A4 / Invoice / Surat Jalan Mockups ───
   a4Preview: {
     padding: Spacing.md,
     backgroundColor: '#FFFFFF',

@@ -9,10 +9,8 @@ import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import { useAuthStore } from '../stores/auth.store';
 import { navigationRef } from '../utils/navigation';
 
-// ── Task Name untuk background notification handler ─────────────────────────
 const BACKGROUND_NOTIFICATION_TASK = 'background-notification-handler';
 
-// ── Daftarkan background notification task ──────────────────────────────────
 // Ini memastikan notifikasi TETAP diproses bahkan saat app di background/killed
 TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any) => {
   if (error) {
@@ -66,7 +64,6 @@ export async function scheduleLocalNotification(
   }
 }
 
-// ── Handler: tampilkan notifikasi walau app sedang foreground ──────────────
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const { title, body } = notification.request.content;
@@ -90,7 +87,6 @@ Notifications.setNotificationHandler({
   },
 });
 
-// ── Daftarkan background notification handler (expo-notifications) ───────────
 // Ini penting agar notifikasi push dari FCM diproses saat app BACKGROUND/KILLED
 if (Platform.OS === 'android') {
   Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK).catch((e) => {
@@ -101,7 +97,6 @@ if (Platform.OS === 'android') {
   });
 }
 
-// ── Buat Android channel di module-level (sebelum kirim notif apa pun) ─────
 if (Platform.OS === 'android') {
   const channels = [
     { id: 'masdar_channel_v2', name: 'TB Masdar Utama (Suara Khas)', desc: 'Notifikasi utama sistem dengan suara khas Masdar Utama' },
@@ -138,7 +133,6 @@ const SCREEN_ROUTES: Record<
   | { type: 'tab'; tabName: string }
   | { type: 'stack'; stackName: string }
 > = {
-  // === STACK SCREENS (route langsung) ===
   Debt: { type: 'stack', stackName: 'Debt' },
   Purchase: { type: 'stack', stackName: 'Purchase' },
   Delivery: { type: 'stack', stackName: 'Delivery' },
@@ -152,7 +146,6 @@ const SCREEN_ROUTES: Record<
   EditTransaction: { type: 'stack', stackName: 'EditTransaction' },
   InvoiceLayout: { type: 'stack', stackName: 'InvoiceLayout' },
 
-  // === TAB SCREENS (harus navigate ke 'Main' dulu) ===
   Dashboard: { type: 'tab', tabName: 'Dashboard' },
   POS: { type: 'tab', tabName: 'POS' },
   Products: { type: 'tab', tabName: 'Products' },
@@ -160,7 +153,6 @@ const SCREEN_ROUTES: Record<
   Reports: { type: 'tab', tabName: 'Reports' },
   Settings: { type: 'tab', tabName: 'Settings' },
 
-  // === TIPE NOTIFIKASI → mapping ke screen ===
   orders: { type: 'tab', tabName: 'History' },
   deliveries: { type: 'stack', stackName: 'Delivery' },
   delivery: { type: 'stack', stackName: 'Delivery' },
@@ -212,7 +204,6 @@ export const navigateToScreen = (screen: string, params?: any): boolean => {
   return false;
 };
 
-// ── Registrasi perangkat dan ambil push token ──────────────────────────────
 export async function registerForPushNotificationsAsync(): Promise<string | undefined> {
   if (!Device.isDevice) {
     console.log('[PushNotif] Harus menggunakan perangkat fisik.');
@@ -278,7 +269,6 @@ export async function registerForPushNotificationsAsync(): Promise<string | unde
   }
 }
 
-// ── Sinkronisasi push token ke server backend ──────────────────────────────
 export async function syncPushTokenToServer(customToken?: string): Promise<string | undefined> {
   try {
     const token = customToken || (await registerForPushNotificationsAsync());
@@ -302,7 +292,6 @@ export async function syncPushTokenToServer(customToken?: string): Promise<strin
   }
 }
 
-// ── Hapus push token dari server saat logout ────────────────────────────────
 export async function unregisterPushTokenFromServer(): Promise<void> {
   try {
     const token = await registerForPushNotificationsAsync();
@@ -317,7 +306,6 @@ export async function unregisterPushTokenFromServer(): Promise<void> {
   }
 }
 
-// ── Hook utama ─────────────────────────────────────────────────────────────
 export function usePushNotifications() {
   const [expoPushToken, setExpoPushToken] = useState('');
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
@@ -377,7 +365,13 @@ export function usePushNotifications() {
       // screen bisa dari 'screen' field atau 'type' field (mapping ke screen)
       let screen = typedData?.screen;
       const notifType = typedData?.type;
-      const params = typedData?.params;
+      let params = typedData?.params;
+
+      if (typeof params === 'string') {
+        try {
+          params = JSON.parse(params);
+        } catch {}
+      }
 
       // Jika tidak ada 'screen' field, coba resolve dari 'type'
       if (!screen && notifType && SCREEN_ROUTES[notifType]) {

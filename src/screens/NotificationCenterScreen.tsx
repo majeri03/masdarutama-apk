@@ -57,6 +57,7 @@ export const NotificationCenterScreen: React.FC = () => {
     notifications,
     markAsRead,
     markAllAsRead,
+    clearReadNotifications,
     clearAll,
     cleanupOldNotifications,
     fetchRemoteNotifications,
@@ -195,9 +196,9 @@ export const NotificationCenterScreen: React.FC = () => {
           <Ionicons name="checkmark-done" size={16} color={Colors.primaryStart} />
           <Text style={styles.actionBtnText}>Baca Semua</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={clearAll} style={[styles.actionBtn, { borderColor: Colors.error }]}>
+        <TouchableOpacity onPress={clearReadNotifications} style={[styles.actionBtn, { borderColor: Colors.error }]}>
           <Ionicons name="trash-outline" size={16} color={Colors.error} />
-          <Text style={[styles.actionBtnText, { color: Colors.error }]}>Bersihkan</Text>
+          <Text style={[styles.actionBtnText, { color: Colors.error }]}>Bersihkan Terbaca</Text>
         </TouchableOpacity>
       </View>
 
@@ -212,7 +213,7 @@ export const NotificationCenterScreen: React.FC = () => {
             <Text style={styles.emptyText}>
               {activeFilter ? `Tidak ada notifikasi kategori ini.` : 'Tidak ada notifikasi baru.'}
             </Text>
-            <Text style={styles.emptySubText}>Notifikasi yang lebih lama dari 5 hari akan dihapus otomatis.</Text>
+            <Text style={styles.emptySubText}>Notifikasi yang lebih lama dari 3 hari akan dihapus otomatis.</Text>
           </View>
         }
       />

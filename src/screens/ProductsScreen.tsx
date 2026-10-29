@@ -1682,7 +1682,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // ── Form Container Styles ──
   formContainer: {
     flex: 1,
     backgroundColor: Colors.background,
