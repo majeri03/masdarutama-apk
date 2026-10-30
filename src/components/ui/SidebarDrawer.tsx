@@ -151,7 +151,7 @@ export const SidebarDrawer: React.FC = () => {
                   <View style={styles.logoRow}>
                     <View style={[styles.logoBg, { backgroundColor: 'transparent', padding: 2 }]}>
                       <Image
-                        source={require('../../assets/logomasdarutama.png')}
+                        source={require('../../../assets/logomasdarutama.png')}
                         style={{ width: 40, height: 40, borderRadius: 8 }}
                         resizeMode="contain"
                       />

@@ -154,7 +154,7 @@ export const SettingsScreen: React.FC = () => {
             <View style={styles.storeInfoRow}>
               <View style={[styles.storeIconBg, { backgroundColor: 'transparent', padding: 0, width: 52, height: 52 }]}>
                 <Image
-                  source={require('../assets/logomasdarutama.png')}
+                  source={require('../../assets/logomasdarutama.png')}
                   style={{ width: 52, height: 52, borderRadius: 10 }}
                   resizeMode="contain"
                 />
