@@ -27,27 +27,75 @@ const CATEGORIES = [
 
 // Mendapatkan ikon dan warna berdasarkan konten notifikasi
 const getNotifMeta = (item: any): { icon: any; color: string; category: string } => {
-  const titleLower = (item.title || '').toLowerCase();
-  const bodyLower = (item.body || '').toLowerCase();
-  const type = item.data?.type || '';
+  const titleLower = (item.title || item.request?.content?.title || '').toLowerCase();
+  const bodyLower = (item.body || item.request?.content?.body || item.subtitle || '').toLowerCase();
+  const notifData = item.data || item.request?.content?.data || {};
+  const type = String(notifData?.type || item.type || '').toLowerCase();
+  const screen = String(notifData?.screen || '').toLowerCase();
 
-  // Deteksi dari type field dulu
-  if (type === 'finance' || titleLower.includes('hutang') || titleLower.includes('piutang') || titleLower.includes('cicilan')) {
-    return { icon: 'cash-outline', color: Colors.error, category: 'finance' };
-  }
-  if (type === 'deliveries' || titleLower.includes('surat jalan') || titleLower.includes('pengiriman') || bodyLower.includes('transit')) {
+  // 1. Deteksi Pengiriman / Deliveries
+  if (
+    type.includes('deliver') ||
+    screen.includes('deliver') ||
+    titleLower.includes('surat jalan') ||
+    titleLower.includes('pengiriman') ||
+    bodyLower.includes('transit') ||
+    bodyLower.includes('sopir') ||
+    titleLower.includes('diantar')
+  ) {
     return { icon: 'car-outline', color: Colors.info, category: 'deliveries' };
   }
-  if (type === 'orders' || titleLower.includes('pesanan') || titleLower.includes('penjualan') || titleLower.includes('kasir')) {
-    return { icon: 'receipt-outline', color: Colors.warning, category: 'orders' };
+
+  // 2. Deteksi Keuangan / Finance / Debt
+  if (
+    type.includes('finance') ||
+    type.includes('debt') ||
+    type.includes('payment') ||
+    screen.includes('debt') ||
+    titleLower.includes('hutang') ||
+    titleLower.includes('piutang') ||
+    titleLower.includes('cicilan') ||
+    titleLower.includes('pembayaran')
+  ) {
+    return { icon: 'cash-outline', color: Colors.error, category: 'finance' };
   }
-  if (type === 'stock' || titleLower.includes('stok') || bodyLower.includes('stok')) {
-    return { icon: 'cube-outline', color: Colors.success, category: 'stock' };
-  }
-  if (type === 'purchase' || titleLower.includes('purchase') || titleLower.includes('pembelian') || titleLower.includes('po')) {
+
+  // 3. Deteksi Pembelian / Purchase / PO
+  if (
+    type.includes('purchase') ||
+    screen.includes('purchase') ||
+    titleLower.includes('purchase order') ||
+    titleLower.includes('pembelian') ||
+    titleLower.includes('po #')
+  ) {
     return { icon: 'cart-outline', color: Colors.primaryStart, category: 'purchase' };
   }
-  return { icon: 'notifications-outline', color: Colors.textSecondary, category: '' };
+
+  // 4. Deteksi Pesanan / Penjualan / Orders
+  if (
+    type.includes('order') ||
+    type.includes('sale') ||
+    screen.includes('pos') ||
+    screen.includes('history') ||
+    titleLower.includes('pesanan') ||
+    titleLower.includes('penjualan') ||
+    titleLower.includes('kasir') ||
+    bodyLower.includes('inv ')
+  ) {
+    return { icon: 'receipt-outline', color: Colors.warning, category: 'orders' };
+  }
+
+  // 5. Deteksi Stok / Stock Opname
+  if (
+    type.includes('stock') ||
+    screen.includes('stock') ||
+    titleLower.includes('stok') ||
+    bodyLower.includes('stok')
+  ) {
+    return { icon: 'cube-outline', color: Colors.success, category: 'stock' };
+  }
+
+  return { icon: 'notifications-outline', color: Colors.primaryStart, category: '' };
 };
 
 export const NotificationCenterScreen: React.FC = () => {
@@ -99,10 +147,15 @@ export const NotificationCenterScreen: React.FC = () => {
     const notifData = item.data || item.request?.content?.data || {};
     const meta = getNotifMeta(item);
 
-    // Tentukan screen target: dari field 'screen', atau dari 'type' mapping
-    const targetScreen = notifData?.screen || (
-      notifData?.type && CATEGORIES.find(c => c.key === notifData.type) ? notifData.type : null
-    );
+    // Tentukan screen target: dari field 'screen', atau fallback ke mapping kategori
+    let targetScreen = notifData?.screen;
+    if (!targetScreen) {
+      if (meta.category === 'deliveries') targetScreen = 'Delivery';
+      else if (meta.category === 'finance') targetScreen = 'Debt';
+      else if (meta.category === 'orders') targetScreen = 'History';
+      else if (meta.category === 'purchase') targetScreen = 'Purchase';
+      else if (meta.category === 'stock') targetScreen = 'Products';
+    }
 
     return (
       <TouchableOpacity
@@ -161,35 +214,47 @@ export const NotificationCenterScreen: React.FC = () => {
         <View style={{ width: 32 }} />
       </View>
 
-      {/* Category Filter */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categoryScroll}
-      >
-        {CATEGORIES.map((cat) => (
-          <TouchableOpacity
-            key={cat.key}
-            style={[
-              styles.categoryBtn,
-              activeFilter === cat.key && { backgroundColor: cat.color, borderColor: cat.color },
-            ]}
-            onPress={() => setActiveFilter(cat.key)}
-          >
-            <Ionicons
-              name={cat.icon}
-              size={13}
-              color={activeFilter === cat.key ? '#fff' : cat.color}
-            />
-            <Text style={[
-              styles.categoryBtnText,
-              activeFilter === cat.key && { color: '#fff' },
-            ]}>
-              {cat.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {/* Category Filter Pills Container */}
+      <View style={styles.categoryWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryScroll}
+        >
+          {CATEGORIES.map((cat) => {
+            const isActive = activeFilter === cat.key;
+            return (
+              <TouchableOpacity
+                key={cat.key}
+                activeOpacity={0.8}
+                style={[
+                  styles.categoryBtn,
+                  isActive
+                    ? { backgroundColor: cat.color, borderColor: cat.color }
+                    : { backgroundColor: Colors.surface, borderColor: Colors.border },
+                ]}
+                onPress={() => setActiveFilter(cat.key)}
+              >
+                <Ionicons
+                  name={cat.icon}
+                  size={15}
+                  color={isActive ? '#FFFFFF' : cat.color}
+                />
+                <Text
+                  style={[
+                    styles.categoryBtnText,
+                    isActive
+                      ? { color: '#FFFFFF', fontWeight: 'bold' }
+                      : { color: Colors.textSecondary },
+                  ]}
+                >
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       <View style={styles.actionsRow}>
         <TouchableOpacity onPress={markAllAsRead} style={styles.actionBtn}>
@@ -246,27 +311,31 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
   },
   // Category Filter
-  categoryScroll: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
+  categoryWrapper: {
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderColor: Colors.border,
   },
+  categoryScroll: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 10,
+    gap: 8,
+    alignItems: 'center',
+  },
   categoryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
+    gap: 6,
+    paddingHorizontal: 14,
+    height: 36,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: BorderRadius.full,
+    borderRadius: 18,
     backgroundColor: Colors.surface,
+    flexShrink: 0,
   },
   categoryBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: FontWeight.semibold,
     color: Colors.textSecondary,
   },

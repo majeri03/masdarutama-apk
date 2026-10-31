@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import * as TaskManager from 'expo-task-manager';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import api from '../services/api';
@@ -9,36 +8,6 @@ import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import { useAuthStore } from '../stores/auth.store';
 import { navigationRef } from '../utils/navigation';
 
-const BACKGROUND_NOTIFICATION_TASK = 'background-notification-handler';
-
-// Ini memastikan notifikasi TETAP diproses bahkan saat app di background/killed
-TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any) => {
-  if (error) {
-    console.warn('[BackgroundNotif] Error:', error);
-    return;
-  }
-  if (!data) return;
-
-  // Saat app background/killed, simpan notifikasi ke store lokal via AsyncStorage
-  try {
-    const rawContent = data.notification?.request?.content || data.data || data;
-    const title = rawContent.title || rawContent.name || 'Notifikasi Baru';
-    const body = rawContent.body || rawContent.message || '';
-    const notifData = rawContent.data || data.data || {};
-
-    if ((!title || title.trim() === '') && (!body || body.trim() === '')) return;
-
-    // Tambahkan ke notification center store
-    const { addNotification } = useNotificationCenterStore.getState();
-    addNotification({
-      title: title || 'Notifikasi Baru',
-      body: body || '',
-      data: notifData || {},
-    });
-  } catch (e) {
-    console.warn('[BackgroundNotif] Gagal proses notif background:', e);
-  }
-});
 
 // ── Kirim notifikasi lokal native (muncul di system tray saat app foreground/background) ─
 export async function scheduleLocalNotification(
@@ -87,15 +56,7 @@ Notifications.setNotificationHandler({
   },
 });
 
-// Ini penting agar notifikasi push dari FCM diproses saat app BACKGROUND/KILLED
-if (Platform.OS === 'android') {
-  Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK).catch((e) => {
-    // Jika sudah terdaftar, tidak apa-apa
-    if (!e?.message?.includes('already')) {
-      console.warn('[PushNotif] Gagal daftarkan background task:', e?.message);
-    }
-  });
-}
+
 
 if (Platform.OS === 'android') {
   const channels = [
@@ -237,18 +198,9 @@ export async function registerForPushNotificationsAsync(): Promise<string | unde
     return undefined;
   }
 
-  // 1. Prioritaskan Native FCM Push Token (langsung didukung Firebase Admin HTTP v1)
-  try {
-    const deviceTokenData = await Notifications.getDevicePushTokenAsync();
-    if (deviceTokenData?.data) {
-      console.log('[PushNotif] Berhasil memperoleh Native Device Push Token (FCM)');
-      return deviceTokenData.data;
-    }
-  } catch (fcmErr: any) {
-    console.warn('[PushNotif] Tidak dapat mengambil Native Device Push Token, fallback ke Expo Push Token:', fcmErr?.message);
-  }
-
-  // 2. Fallback: Expo Push Token (misal saat Expo Go / tanpa bundle native)
+  // SELALU gunakan Expo Push Token — kompatibel dengan expo-server-sdk di backend.
+  // expo-server-sdk hanya menerima token format ExponentPushToken[...],
+  // bukan raw FCM token dari getDevicePushTokenAsync().
   const projectId =
     Constants?.expoConfig?.extra?.eas?.projectId ??
     Constants?.easConfig?.projectId ??
@@ -256,17 +208,24 @@ export async function registerForPushNotificationsAsync(): Promise<string | unde
 
   try {
     const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
-    return tokenData.data;
+    if (tokenData?.data) {
+      console.log('[PushNotif] Expo Push Token berhasil didapat:', tokenData.data.slice(0, 40) + '...');
+      return tokenData.data;
+    }
   } catch (e: any) {
-    console.warn('[PushNotif] Gagal ambil Expo Push Token:', e?.message);
+    console.warn('[PushNotif] Gagal ambil Expo Push Token (dengan projectId):', e?.message);
     try {
       const tokenData = await Notifications.getExpoPushTokenAsync();
-      return tokenData.data;
+      if (tokenData?.data) {
+        console.log('[PushNotif] Expo Push Token (fallback) berhasil:', tokenData.data.slice(0, 40) + '...');
+        return tokenData.data;
+      }
     } catch (e2: any) {
       console.error('[PushNotif] Semua metode token gagal:', e2?.message);
-      return undefined;
     }
   }
+
+  return undefined;
 }
 
 export async function syncPushTokenToServer(customToken?: string): Promise<string | undefined> {

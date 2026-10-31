@@ -78,9 +78,17 @@ export const DeliveryScreen: React.FC = () => {
 
   // Tangkap parameter pencarian dari notifikasi (misal: Surat Jalan #DO-xxx)
   useEffect(() => {
-    const searchParam = route.params?.search || route.params?.doNumber;
-    if (searchParam) {
-      setSearch(searchParam);
+    const rawSearch = route.params?.search || route.params?.doNumber;
+    if (rawSearch) {
+      // Bersihkan karakter awalan seperti '#' jika ada
+      const cleaned = String(rawSearch).replace(/^#/, '').trim();
+      setSearch(cleaned);
+      // Langsung fetch data dengan query pencarian spesifik
+      deliveryService.getDeliveryOrders({ search: cleaned }).then((res) => {
+        if (res.success && res.data) {
+          setDeliveryOrders(res.data as DeliveryOrder[]);
+        }
+      }).catch(() => {});
     }
   }, [route.params?.search, route.params?.doNumber]);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -825,6 +833,23 @@ export const DeliveryScreen: React.FC = () => {
               }}
               onSubmitEditing={loadData}
             />
+            {!!search && (
+              <TouchableOpacity
+                onPress={() => {
+                  setSearch('');
+                  deliveryService.getDeliveryOrders({
+                    status: statusFilter || undefined,
+                    startDate: startDate ? startDate.toISOString().split('T')[0] : undefined,
+                    endDate: endDate ? endDate.toISOString().split('T')[0] : undefined,
+                  }).then((res) => {
+                    if (res.success && res.data) setDeliveryOrders(res.data as DeliveryOrder[]);
+                  }).catch(() => {});
+                }}
+                style={{ padding: 4 }}
+              >
+                <Ionicons name="close-circle" size={18} color={Colors.textTertiary} />
+              </TouchableOpacity>
+            )}
           </View>
           <View style={[styles.searchWrapper, { flex: 1, paddingHorizontal: 4 }]}>
             <DatePickerInput 

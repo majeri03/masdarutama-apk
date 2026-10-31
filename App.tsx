@@ -49,6 +49,9 @@ import { useNotificationCenterStore } from './src/stores/notificationCenter.stor
 import { usePushNotifications } from './src/hooks/usePushNotifications';
 
 import { navigationRef } from './src/utils/navigation';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const PENDING_NOTIF_KEY = 'masdar_pending_notifications';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -299,6 +302,29 @@ export default function App() {
   useEffect(() => {
     checkSession();
     playChime();
+
+    // ─── Drain notifikasi yang masuk saat app mati (background task) ───────
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(PENDING_NOTIF_KEY);
+        if (raw) {
+          const pending: Array<{ id: string; title: string; body: string; data: Record<string, unknown>; date: string }> =
+            JSON.parse(raw);
+          if (Array.isArray(pending) && pending.length > 0) {
+            const { addNotification } = useNotificationCenterStore.getState();
+            // Masukkan dari yang terlama ke terbaru agar urutan benar di center
+            [...pending].reverse().forEach((n) => {
+              addNotification({ title: n.title, body: n.body, data: n.data || {} });
+            });
+            await AsyncStorage.removeItem(PENDING_NOTIF_KEY);
+            console.log(`[App] Drain ${pending.length} notifikasi pending dari background.`);
+          }
+        }
+      } catch (e) {
+        console.warn('[App] Gagal drain pending notifications:', e);
+      }
+    })();
+    // ────────────────────────────────────────────────────────────────────────
 
     Animated.parallel([
       Animated.timing(fadeAnim, {
