@@ -21,6 +21,8 @@ import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { debtService, DebtPaymentPayload } from '../services/debt.service';
 import { masterService } from '../services/master.service';
 import { useSidebarStore } from '../stores/sidebar.store';
+import { useAuthStore } from '../stores/auth.store';
+import { useDebouncedValue } from '../utils/debounce';
 import { AppToast } from '../utils/toast';
 
 // Helper WITA Timezone formatting
@@ -56,12 +58,16 @@ export const DebtScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { openSidebar } = useSidebarStore();
+  const { isAdmin } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'customer' | 'supplier'>('customer');
   const [debts, setDebts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
+  // di setiap ketikan.
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   // Auto-filter berdasarkan ref nama / customer dari notifikasi
   useEffect(() => {
@@ -93,12 +99,12 @@ export const DebtScreen: React.FC = () => {
       let res;
       if (activeTab === 'customer') {
         res = await debtService.getCustomerDebts({
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           status: statusFilter || undefined,
         });
       } else {
         res = await debtService.getSupplierDebts({
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           status: statusFilter || undefined,
         });
       }
@@ -144,17 +150,17 @@ export const DebtScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeTab, search, statusFilter, startDate, endDate]);
+  }, [activeTab, debouncedSearch, statusFilter, startDate, endDate]);
 
+  // QA fix m-23: sebelumnya ada useEffect kedua yang juga memanggil
+  // fetchDebts() dengan dependensi hampir sama, sehingga layar ini
+  // memanggil API 2x setiap kali dibuka / filter berubah. useFocusEffect
+  // di bawah ini sudah mencakup mount + kembali fokus, jadi cukup satu.
   useFocusEffect(
     useCallback(() => {
       fetchDebts();
     }, [fetchDebts])
   );
-
-  useEffect(() => {
-    fetchDebts();
-  }, [activeTab, statusFilter, startDate, endDate]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -278,7 +284,10 @@ export const DebtScreen: React.FC = () => {
           </View>
         </View>
 
-        {item.remainingDebt > 0 && (
+        {/* QA fix M-39: tombol Bayar Cicilan hanya untuk ADMIN/SUPER_ADMIN.
+            Backend selalu menolak (403) kalau kasir yang membayar, jadi
+            tombolnya disembunyikan dari kasir supaya tidak menyesatkan. */}
+        {isAdmin() && item.remainingDebt > 0 && (
           <View style={{ marginTop: 12 }}>
             <GradientButton
               title="Bayar Cicilan / Pelunasan"
@@ -368,7 +377,7 @@ export const DebtScreen: React.FC = () => {
               onSubmitEditing={() => fetchDebts()}
             />
             {search ? (
-              <TouchableOpacity onPress={() => { setSearch(''); setTimeout(() => fetchDebts(), 50); }}>
+              <TouchableOpacity onPress={() => setSearch('')}>
                 <Ionicons name="close-circle" size={18} color={Colors.textTertiary} />
               </TouchableOpacity>
             ) : null}
@@ -397,6 +406,9 @@ export const DebtScreen: React.FC = () => {
             { value: 'UNPAID', label: 'Belum Lunas' },
             { value: 'PARTIAL', label: 'Dicicil' },
             { value: 'PAID', label: 'Lunas' },
+            // QA fix m-22: chip filter OVERDUE (Jatuh Tempo) — status ini
+            // ada di backend (DebtStatus.OVERDUE) tapi tidak bisa dipilih.
+            { value: 'OVERDUE', label: 'Jatuh Tempo' },
           ].map((item) => (
             <TouchableOpacity
               key={item.value}

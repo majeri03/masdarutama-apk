@@ -90,6 +90,10 @@ export const POSScreen: React.FC = () => {
   // Checkout Success Modal States
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdSale, setCreatedSale] = useState<any | null>(null);
+  // QA fix M-38: detail penjualan (termasuk item struk) diambil di background
+  // setelah checkout. Selama detail belum kembali, tombol cetak/bagikan
+  // dimatikan supaya struk tidak tercetak kosong.
+  const [isSaleDetailLoading, setIsSaleDetailLoading] = useState(false);
 
   const navigation = useNavigation<any>();
 
@@ -325,6 +329,18 @@ export const POSScreen: React.FC = () => {
       return;
     }
 
+    // QA fix M-29: Piutang (CREDIT) tidak boleh untuk pelanggan UMUM —
+    // hutang tanpa identitas pelanggan tidak bisa ditagih. Pilih pelanggan
+    // terdaftar dulu, atau bayar Tunai.
+    if (paymentMethod === 'CREDIT') {
+      const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
+      const isUmum = selectedCustomer?.type === 'UMUM' || (selectedCustomer?.name || '').toUpperCase() === 'UMUM';
+      if (isUmum) {
+        AppToast.info('Perhatian', 'Piutang tidak bisa untuk pelanggan UMUM. Pilih pelanggan terdaftar dulu, atau bayar Tunai.');
+        return;
+      }
+    }
+
     // Hitung paidAmount (DP untuk Credit, Jumlah bayar untuk Cash, Grand total untuk yang lain)
     let effectivePaid = calculation.grandTotal;
     let changeAmount = 0;
@@ -350,7 +366,10 @@ export const POSScreen: React.FC = () => {
           subtotal: item.subtotal,           // ← KRITIS: sudah dihitung di cart.store
         })),
         totalAmount: calculation.subtotal,   // ← KRITIS: total sebelum diskon global & pajak
-        discount,
+        // QA fix M-28: kirim TOTAL diskon (per-item + global). Sebelumnya
+        // hanya diskon global yang dikirim, jadi di backend
+        // totalAmount - discount != grandTotal (selisih = diskon per-item).
+        discount: calculation.totalDiscount,
         tax: calculation.tax,
         grandTotal: calculation.grandTotal,  // ← KRITIS: final total
         paymentMethod,
@@ -373,11 +392,12 @@ export const POSScreen: React.FC = () => {
         setCreatedSale(res.data); // Set data awal dulu biar langsung muncul
 
         // Ambil detail lengkap untuk cetak struk secara background
+        setIsSaleDetailLoading(true);
         salesService.getSaleById(res.data.id).then((detailRes) => {
           if (detailRes.success && detailRes.data) {
             setCreatedSale(detailRes.data);
           }
-        }).catch(() => {});
+        }).catch(() => {}).finally(() => setIsSaleDetailLoading(false));
 
         // Refresh stock secara background tanpa memblokir UI
         loadProducts();
@@ -945,7 +965,17 @@ export const POSScreen: React.FC = () => {
                     styles.methodCard,
                     paymentMethod === m.type && styles.methodCardActive,
                   ]}
-                  onPress={() => setPaymentMethod(m.type as PaymentMethod)}
+                  onPress={() => {
+                    // QA fix M-29: jangan biarkan Piutang dipilih untuk UMUM.
+                    if (m.type === 'CREDIT') {
+                      const cust = customers.find((c) => c.id === selectedCustomerId);
+                      if (cust?.type === 'UMUM' || (cust?.name || '').toUpperCase() === 'UMUM') {
+                        AppToast.info('Perhatian', 'Piutang tidak bisa untuk pelanggan UMUM. Pilih pelanggan terdaftar dulu.');
+                        return;
+                      }
+                    }
+                    setPaymentMethod(m.type as PaymentMethod);
+                  }}
                 >
                   <Ionicons
                     name={m.icon as any}
@@ -1165,17 +1195,21 @@ export const POSScreen: React.FC = () => {
 
             <View style={{ marginTop: Spacing.xl, gap: Spacing.md, width: '100%' }}>
               <GradientButton
-                title="Cetak Struk / PDF"
+                title={isSaleDetailLoading ? 'Memuat Detail Struk...' : 'Cetak Struk / PDF'}
                 onPress={() => createdSale && printInvoice(createdSale)}
                 variant="success"
                 fullWidth
+                loading={isSaleDetailLoading}
+                disabled={isSaleDetailLoading || !(createdSale?.saleItems?.length)}
                 icon={<Ionicons name="print-outline" size={20} color="#FFFFFF" />}
               />
               <GradientButton
-                title="Bagikan PDF"
+                title={isSaleDetailLoading ? 'Memuat Detail Struk...' : 'Bagikan PDF'}
                 onPress={() => createdSale && shareInvoicePdf(createdSale)}
                 variant="primary"
                 fullWidth
+                loading={isSaleDetailLoading}
+                disabled={isSaleDetailLoading || !(createdSale?.saleItems?.length)}
                 icon={<Ionicons name="share-social-outline" size={20} color="#FFFFFF" />}
               />
               <GradientButton

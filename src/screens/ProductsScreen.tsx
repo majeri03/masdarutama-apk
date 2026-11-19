@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -183,10 +183,22 @@ export const ProductsScreen: React.FC = () => {
     loadProducts();
   }, []);
 
+  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
+  // di setiap ketikan.
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
+
   const handleSearch = (text: string) => {
     setSearchQuery(text);
     setPage(1);
-    loadProducts(text, selectedCategory as any, 1, true);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      loadProducts(text, selectedCategory as any, 1, true);
+    }, 300);
   };
 
   const handleCategorySelect = (catId: string | null) => {

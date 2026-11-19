@@ -8,6 +8,7 @@ import { GlassCard, GradientButton } from '../components/ui';
 import { masterService } from '../services/master.service';
 import { salesService } from '../services/sales.service';
 import type { Customer, Sale } from '../types';
+import { useDebouncedValue } from '../utils/debounce';
 import { AppToast } from '../utils/toast';
 
 export const CustomersScreen: React.FC = () => {
@@ -16,6 +17,9 @@ export const CustomersScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
+  // di setiap ketikan.
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   // Modals state
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -32,7 +36,7 @@ export const CustomersScreen: React.FC = () => {
     else setLoading(true);
 
     try {
-      const res = await masterService.getCustomers(search || undefined);
+      const res = await masterService.getCustomers(debouncedSearch || undefined);
       if (res.success && res.data?.customers) {
         setCustomers(res.data.customers);
       }
@@ -42,7 +46,7 @@ export const CustomersScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search]);
+  }, [debouncedSearch]);
 
   useFocusEffect(
     useCallback(() => {

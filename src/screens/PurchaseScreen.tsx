@@ -23,6 +23,8 @@ import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { purchaseService } from '../services/purchase.service';
 import { masterService } from '../services/master.service';
 import { productService } from '../services/product.service';
+import { useAuthStore } from '../stores/auth.store';
+import { useDebouncedValue } from '../utils/debounce';
 import { AppToast } from '../utils/toast';
 import type { Supplier, Product } from '../types';
 
@@ -67,11 +69,20 @@ interface PurchaseOrder {
 
 export const PurchaseScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const { isAdmin } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [purchases, setPurchases] = useState<PurchaseOrder[]>([]);
   const [search, setSearch] = useState('');
+  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
+  // di setiap ketikan.
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  // QA fix M-27: pagination PO (sebelumnya hanya 10 PO pertama yang
+  // pernah tampil karena tidak ada halaman berikut yang diminta).
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Details Modal
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
@@ -139,34 +150,59 @@ export const PurchaseScreen: React.FC = () => {
     subtotal: number;
   }>>([]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (pageNum = 1, resetList = true) => {
+    if (pageNum === 1) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
     try {
       const res = await purchaseService.getPurchases({
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         supplierId: undefined,
         status: statusFilter || undefined,
+        page: pageNum,
+        limit: 10,
       });
       if (res.success && res.data) {
-        setPurchases(res.data as PurchaseOrder[]);
+        const list = res.data as PurchaseOrder[];
+        if (resetList || pageNum === 1) {
+          setPurchases(list);
+        } else {
+          setPurchases((prev) => [...prev, ...list]);
+        }
+        if (res.pagination) {
+          setTotalPages(res.pagination.totalPages || 1);
+        }
       }
     } catch (e) {
       console.warn('[PURCHASE] Error loading POs:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingMore(false);
     }
-  }, [search, statusFilter]);
+  }, [debouncedSearch, statusFilter]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
+      setPage(1);
+      loadData(1, true);
     }, [loadData])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData();
+    setPage(1);
+    loadData(1, true);
+  };
+
+  const loadMore = () => {
+    if (!loadingMore && page < totalPages) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      loadData(nextPage, false);
+    }
   };
 
   const loadMasterData = async () => {
@@ -232,7 +268,8 @@ export const PurchaseScreen: React.FC = () => {
 
     const qtyVal = Number(quantity);
     const priceVal = Number(purchasePrice);
-    const discVal = Number(itemDiscount || 0);
+    // QA fix M-40 (lanjutan): diskon baris tidak boleh melebihi nilai baris.
+    const discVal = Math.max(0, Math.min(Number(itemDiscount || 0), qtyVal * priceVal));
     const itemSubtotal = qtyVal * priceVal - discVal;
 
     const existingIndex = poItems.findIndex(
@@ -240,9 +277,21 @@ export const PurchaseScreen: React.FC = () => {
     );
 
     if (existingIndex >= 0) {
+      // QA fix M-40: sebelumnya baris kedua menghilangkan diskonnya sendiri
+      // (hanya diskon lama yang dipakai) DAN mengubah harga baris pertama
+      // ke harga input terbaru. Sekarang: harga baris pertama dipertahankan,
+      // diskon kedua DITAMBAHKAN ke diskon yang sudah ada, lalu subtotal
+      // dihitung ulang dari harga & diskon hasil gabungan (tidak negatif).
       const updated = [...poItems];
-      updated[existingIndex].quantity += qtyVal;
-      updated[existingIndex].subtotal = updated[existingIndex].quantity * priceVal - updated[existingIndex].discount;
+      const existing = updated[existingIndex];
+      const newQty = existing.quantity + qtyVal;
+      const newDiscount = Math.min(existing.discount + discVal, newQty * existing.unitPrice);
+      updated[existingIndex] = {
+        ...existing,
+        quantity: newQty,
+        discount: newDiscount,
+        subtotal: newQty * existing.unitPrice - newDiscount,
+      };
       setPoItems(updated);
     } else {
       setPoItems([
@@ -498,9 +547,15 @@ export const PurchaseScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>MANAJEMEN PO BARANG</Text>
-        <TouchableOpacity onPress={() => setShowCreateModal(true)} style={styles.addBtn}>
-          <Ionicons name="add" size={24} color={Colors.primaryStart} />
-        </TouchableOpacity>
+        {/* QA fix M-39: tombol Buat PO hanya untuk ADMIN/SUPER_ADMIN —
+            backend selalu menolak (403) kalau kasir yang membuat PO. */}
+        {isAdmin() ? (
+          <TouchableOpacity onPress={() => setShowCreateModal(true)} style={styles.addBtn}>
+            <Ionicons name="add" size={24} color={Colors.primaryStart} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 24 }} />
+        )}
       </View>
 
       {/* Filter & Search */}
@@ -562,7 +617,14 @@ export const PurchaseScreen: React.FC = () => {
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />
             }
-            
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={
+              loadingMore ? (
+                <ActivityIndicator size="small" color={Colors.primaryStart} style={{ padding: 16 }} />
+              ) : null
+            }
+
             // Optimasi FlatList
             removeClippedSubviews={true}
             initialNumToRender={10}
@@ -588,7 +650,7 @@ export const PurchaseScreen: React.FC = () => {
                 <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
               </TouchableOpacity>
               <Text style={styles.modalHeaderTitle}>Detail Purchase Order</Text>
-              {selectedPO.status === 'PENDING' ? (
+              {selectedPO.status === 'PENDING' && isAdmin() ? (
                 <TouchableOpacity onPress={() => handleDeletePO(selectedPO.id)} style={styles.deleteBtn}>
                   <Ionicons name="trash-outline" size={20} color={Colors.error} />
                 </TouchableOpacity>
@@ -693,7 +755,8 @@ export const PurchaseScreen: React.FC = () => {
 
               {/* Action Buttons */}
               <View style={{ gap: Spacing.md, marginTop: Spacing.md, marginBottom: Spacing['3xl'] }}>
-                {selectedPO.status === 'PENDING' && (
+                {/* QA fix M-39: konfirmasi penerimaan juga hanya admin. */}
+                {selectedPO.status === 'PENDING' && isAdmin() && (
                   <GradientButton
                     title={receivingPO ? 'Memproses...' : 'Konfirmasi Penerimaan Barang'}
                     onPress={() => handleReceivePO(selectedPO.id)}

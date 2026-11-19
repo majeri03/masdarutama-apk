@@ -20,6 +20,9 @@ interface NotificationState {
   _lastDebtNotifAt: number;
   _lastPoNotifAt: number;
   _lastStockNotifAt: number;
+  // FIX (Nov 2026): pelacak pesanan terbaru untuk polling penjualan baru
+  _prevLastSaleId: string;
+  _lastSaleNotifAt: number;
   startPolling: () => void;
   stopPolling: () => void;
   fetchCounts: () => Promise<void>;
@@ -64,6 +67,8 @@ export const useNotificationStore = create<NotificationState>()(
       _lastDebtNotifAt: 0,
       _lastPoNotifAt: 0,
       _lastStockNotifAt: 0,
+      _prevLastSaleId: '',
+      _lastSaleNotifAt: 0,
 
       fetchCounts: async () => {
         try {
@@ -78,7 +83,11 @@ export const useNotificationStore = create<NotificationState>()(
               const count = Array.isArray(overdueList) ? overdueList.length : 0;
               const prev = state._prevOverdueDebts;
 
-              if (count > 0 && count !== prev && prev !== -1) {
+              // FIX (Nov 2026): hapus syarat prev !== -1 — sebelumnya hutang yang
+              // sudah jatuh tempo sebelum aplikasi dibuka tidak pernah bunyi,
+              // karena fetch pertama cuma jadi patokan. Sekarang fetch pertama
+              // pun bunyi sekali (cooldown 5 menit mencegah spam).
+              if (count > 0 && count !== prev) {
                 const totalAmount = overdueList.reduce((sum: number, d: { remainingAmount?: number; amount?: number }) =>
                   sum + (d.remainingAmount || d.amount || 0), 0);
                 const title = '⚠️ Hutang Jatuh Tempo!';
@@ -102,7 +111,9 @@ export const useNotificationStore = create<NotificationState>()(
               const count = Array.isArray(poList) ? poList.length : 0;
               const prev = state._prevPendingPurchases;
 
-              if (count > 0 && count > prev && prev !== -1) {
+              // FIX (Nov 2026): sama seperti hutang — PO yang sudah pending
+              // sebelum aplikasi dibuka sekarang bunyi sekali saat pertama cek.
+              if (count > 0 && count > prev) {
                 const title = '🛒 Purchase Order Pending';
                 const body = `Ada ${count} PO yang belum dikonfirmasi/diterima.`;
                 if (shouldSendNotif(state._lastPoNotifAt, title, body)) {
@@ -113,6 +124,34 @@ export const useNotificationStore = create<NotificationState>()(
               }
 
               set({ pendingPurchases: count, _prevPendingPurchases: count });
+            }
+          } catch {}
+
+          // 2. Pesanan / penjualan baru (FIX Nov 2026: sebelumnya tidak dicek
+          // sama sekali — tidak ada api.get /api/sales di file ini, jadi
+          // pesanan masuk tidak pernah jadi notifikasi lokal. Sekarang dicek
+          // tiap polling: kalau ID penjualan terbaru berubah, bunyikan.
+          // Fetch pertama hanya jadi patokan, supaya penjualan lama tidak
+          // membunyikan notifikasi setiap kali login.)
+          try {
+            const salesRes = await api.get('/api/sales?limit=1&sortOrder=desc');
+            if (salesRes.data?.success) {
+              const latest = salesRes.data?.data?.sales?.[0] as
+                | { id?: string; invoiceNumber?: string; grandTotal?: number; customer?: { name?: string } | null }
+                | undefined;
+              const prevSaleId = get()._prevLastSaleId;
+              if (latest?.id) {
+                if (latest.id !== prevSaleId && prevSaleId !== '') {
+                  const title = '🛒 Pesanan Baru Masuk!';
+                  const body = `${latest.customer?.name || 'Pelanggan'} — Invoice #${latest.invoiceNumber || ''} (Rp ${Number(latest.grandTotal || 0).toLocaleString('id-ID')})`;
+                  if (shouldSendNotif(get()._lastSaleNotifAt, title, body)) {
+                    addNotif({ title, body, data: { screen: 'History' } });
+                    scheduleLocalNotification(title, body, { screen: 'History' }, 'orders');
+                    set({ _lastSaleNotifAt: Date.now() });
+                  }
+                }
+                set({ _prevLastSaleId: latest.id });
+              }
             }
           } catch {}
 
@@ -201,6 +240,8 @@ export const useNotificationStore = create<NotificationState>()(
         _lastDebtNotifAt: state._lastDebtNotifAt,
         _lastPoNotifAt: state._lastPoNotifAt,
         _lastStockNotifAt: state._lastStockNotifAt,
+        _prevLastSaleId: state._prevLastSaleId,
+        _lastSaleNotifAt: state._lastSaleNotifAt,
       }),
     }
   )

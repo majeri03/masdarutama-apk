@@ -27,15 +27,38 @@ export const purchaseService = {
     search?: string;
     supplierId?: string;
     status?: string;
+    page?: number;
+    limit?: number;
   } = {}): Promise<ApiResponse<any[]>> {
     try {
       const params = new URLSearchParams();
       if (filters.search) params.append('search', filters.search);
       if (filters.supplierId) params.append('supplierId', filters.supplierId);
       if (filters.status) params.append('status', filters.status);
+      if (filters.page) params.append('page', String(filters.page));
+      if (filters.limit) params.append('limit', String(filters.limit));
 
       const url = `${API_ENDPOINTS.PURCHASES}?${params.toString()}`;
-      const response = await api.get<ApiResponse<any[]>>(url);
+      const response = await api.get<ApiResponse<any>>(url);
+
+      // QA fix M-27: backend membuang `pagination` dari action
+      // (`successResponse(result.data)`), jadi daftar PO hanya pernah
+      // menampilkan 10 PO pertama. Sintesis seperti produk/stok:
+      // halaman penuh berarti mungkin masih ada halaman berikut.
+      // (Perbaikan permanen tetap di backend: teruskan pagination.)
+      if (response.data.success && response.data.data) {
+        const rawData = response.data.data;
+        const list = Array.isArray(rawData) ? rawData : rawData?.purchases || rawData;
+        const pageNum = filters.page || 1;
+        const limitNum = filters.limit || 10;
+        const pagination = response.data.pagination || (rawData as any)?.pagination || {
+          total: Array.isArray(list) ? list.length : 0,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Array.isArray(list) && list.length < limitNum ? pageNum : pageNum + 1,
+        };
+        return { ...response.data, data: list, pagination };
+      }
       return response.data;
     } catch (error: any) {
       return { success: false, error: error.response?.data?.error || 'Gagal memuat PO barang' };

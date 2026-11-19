@@ -46,7 +46,11 @@ export const deliveryService = {
     search?: string;
     customerId?: string;
     status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    /** @deprecated pakai dateFrom — dipertahankan supaya pemanggil lama tidak rusak */
     startDate?: string;
+    /** @deprecated pakai dateTo — dipertahankan supaya pemanggil lama tidak rusak */
     endDate?: string;
   } = {}): Promise<ApiResponse<any[]>> {
     try {
@@ -54,8 +58,13 @@ export const deliveryService = {
       if (filters.search) params.append('search', filters.search);
       if (filters.customerId) params.append('customerId', filters.customerId);
       if (filters.status) params.append('status', filters.status);
-      if (filters.startDate) params.append('startDate', filters.startDate);
-      if (filters.endDate) params.append('endDate', filters.endDate);
+      // QA fix M-33: backend hanya membaca `dateFrom`/`dateTo`
+      // (parseSearchParams), jadi `startDate`/`endDate` selama ini diam-diam
+      // dibuang dan filter tanggal pengiriman tidak pernah jalan.
+      const dateFrom = filters.dateFrom ?? filters.startDate;
+      const dateTo = filters.dateTo ?? filters.endDate;
+      if (dateFrom) params.append('dateFrom', dateFrom);
+      if (dateTo) params.append('dateTo', dateTo);
 
       const url = `${API_ENDPOINTS.DELIVERY_ORDERS}?${params.toString()}`;
       const response = await api.get<ApiResponse<any[]>>(url);

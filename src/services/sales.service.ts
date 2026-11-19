@@ -3,6 +3,7 @@
  */
 import api from './api';
 import { API_ENDPOINTS } from '../constants/api';
+import { toDayStartISO, toDayEndISO } from '../utils/dates';
 import type { ApiResponse, Sale, PaymentMethod } from '../types';
 
 export interface CheckoutPayload {
@@ -59,7 +60,14 @@ export const salesService = {
     try {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
-        if (value) params.append(key, String(value));
+        if (!value) return;
+        // QA fix M-31: tanggal "YYYY-MM-DD" dinormalisasi ke batas hari
+        // lokal (awal hari untuk dateFrom, akhir hari untuk dateTo),
+        // supaya filter satu hari benar-benar mencakup hari itu penuh
+        // dan tidak bergeser karena UTC. Timestamp ISO lengkap tidak diubah.
+        if (key === 'dateFrom') params.append(key, toDayStartISO(String(value)));
+        else if (key === 'dateTo') params.append(key, toDayEndISO(String(value)));
+        else params.append(key, String(value));
       });
       const response = await api.get<ApiResponse<SaleListResponse>>(
         `${API_ENDPOINTS.SALES}?${params.toString()}`

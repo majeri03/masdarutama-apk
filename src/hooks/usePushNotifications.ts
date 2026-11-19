@@ -3,11 +3,43 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import { useAuthStore } from '../stores/auth.store';
 import { navigationRef } from '../utils/navigation';
 
+
+// ── Pastikan channel Android sudah dibuat sebelum menjadwalkan ────────────
+// FIX (Nov 2026): channel sebelumnya dibuat dengan promise mengambang tanpa
+// await di level modul, jadi notifikasi pertama bisa dijadwalkan sebelum
+// channel-nya selesai dibuat. Sekarang setiap penjadwalan menunggu channel.
+const CHANNEL_CONFIGS: Record<string, { name: string; description: string; sound: string }> = {
+  masdar_channel_v2: { name: 'TB Masdar Utama (Suara Khas)', description: 'Notifikasi utama sistem dengan suara khas Masdar Utama', sound: 'masdar_utama.mp3' },
+  default: { name: 'Notifikasi Umum', description: 'Notifikasi umum sistem', sound: 'default' },
+  orders: { name: 'Pesanan & Penjualan', description: 'Pesanan POS baru dan orderan WA', sound: 'default' },
+  deliveries: { name: 'Surat Jalan & Pengiriman', description: 'Status pengiriman dan armada', sound: 'default' },
+  finance: { name: 'Keuangan & Piutang', description: 'Pembayaran cicilan dan jatuh tempo', sound: 'default' },
+};
+
+async function ensureNotificationChannel(channelId: string): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  const cfg = CHANNEL_CONFIGS[channelId] ?? { name: 'Notifikasi Masdar Utama', description: 'Notifikasi sistem', sound: 'default' };
+  try {
+    await Notifications.setNotificationChannelAsync(channelId, {
+      name: cfg.name,
+      description: cfg.description,
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#2563EB',
+      enableVibrate: true,
+      showBadge: true,
+      sound: cfg.sound,
+    });
+  } catch (e) {
+    console.warn('[PushNotif] Gagal membuat channel:', channelId, e);
+  }
+}
 
 // ── Kirim notifikasi lokal native (muncul di system tray saat app foreground/background) ─
 export async function scheduleLocalNotification(
@@ -18,6 +50,7 @@ export async function scheduleLocalNotification(
 ) {
   if (!title || !body || title.trim() === '' || body.trim() === '') return;
   try {
+    await ensureNotificationChannel(channelId);
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
@@ -228,10 +261,43 @@ export async function registerForPushNotificationsAsync(): Promise<string | unde
   return undefined;
 }
 
+const STORED_PUSH_TOKEN_KEY = 'masdar_expo_push_token';
+
+/** Tes cepat: kirim satu notifikasi lokal langsung. Dipakai tombol "Tes Notifikasi". */
+export async function sendTestNotification(): Promise<{ ok: boolean; permission: string; reason?: string }> {
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status !== 'granted') {
+    const req = await Notifications.requestPermissionsAsync();
+    if (req.status !== 'granted') {
+      return { ok: false, permission: req.status, reason: 'Izin notifikasi belum diberikan. Aktifkan di Pengaturan HP > Aplikasi > TB Masdar Utama > Notifikasi.' };
+    }
+    return sendTestNotification();
+  }
+  await scheduleLocalNotification(
+    '🔔 Tes Notifikasi Masdar Utama',
+    'Kalau banner ini muncul, notifikasi lokal HP kamu sudah jalan. Kalau pesanan tetap tidak muncul, masalahnya di server/token push.',
+    { screen: 'NotificationCenter' },
+    'masdar_channel_v2',
+  );
+  return { ok: true, permission: status };
+}
+
+export async function getPushTokenStatus(): Promise<{ permission: string; tokenPreview: string; isDevice: boolean }> {
+  const { status } = await Notifications.getPermissionsAsync();
+  const stored = (await AsyncStorage.getItem(STORED_PUSH_TOKEN_KEY)) ?? '';
+  return {
+    permission: status,
+    tokenPreview: stored ? stored.slice(0, 30) + '...' : '(belum ada token tersimpan)',
+    isDevice: Device.isDevice,
+  };
+}
+
 export async function syncPushTokenToServer(customToken?: string): Promise<string | undefined> {
   try {
     const token = customToken || (await registerForPushNotificationsAsync());
     if (!token) return undefined;
+    // Simpan token secara lokal supaya unregister tidak perlu minta token lagi
+    await AsyncStorage.setItem(STORED_PUSH_TOKEN_KEY, token).catch(() => {});
 
     // Kirim token ke backend multi-device registration
     await api.post('/api/notifications/register-token', {
@@ -253,12 +319,16 @@ export async function syncPushTokenToServer(customToken?: string): Promise<strin
 
 export async function unregisterPushTokenFromServer(): Promise<void> {
   try {
-    const token = await registerForPushNotificationsAsync();
+    // FIX (Nov 2026): sebelumnya fungsi ini memanggil register lagi untuk
+    // mendapatkan token — itu meminta izin ulang dan bisa gagal saat logout.
+    // Sekarang pakai token yang sudah tersimpan saat sync.
+    const token = (await AsyncStorage.getItem(STORED_PUSH_TOKEN_KEY)) ?? undefined;
     if (!token) return;
 
     await api.delete('/api/notifications/register-token', {
       data: { token },
     }).catch(() => {});
+    await AsyncStorage.removeItem(STORED_PUSH_TOKEN_KEY).catch(() => {});
     console.log('[PushNotif] Token berhasil dihapus dari server');
   } catch (err) {
     console.warn('[PushNotif] Gagal menghapus token:', err);

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { GlassCard } from '../components/ui';
-import { navigateToScreen } from '../hooks/usePushNotifications';
+import { navigateToScreen, sendTestNotification, getPushTokenStatus } from '../hooks/usePushNotifications';
 
 /**
  * Tab screen names in Main tab navigator — navigasi ke sini butuh
@@ -111,10 +111,34 @@ export const NotificationCenterScreen: React.FC = () => {
     fetchRemoteNotifications,
   } = useNotificationCenterStore();
 
+  const [testingNotif, setTestingNotif] = useState(false);
+
   useEffect(() => {
     cleanupOldNotifications();
     fetchRemoteNotifications();
   }, []);
+
+  // FIX (Nov 2026): tombol tes — memisahkan masalah "izin/channel HP" dari
+  // masalah "server tidak mengirim push". Kalau tes ini muncul tapi pesanan
+  // tidak muncul, berarti server/token yang bermasalah, bukan HP.
+  const handleTestNotification = async () => {
+    if (testingNotif) return;
+    setTestingNotif(true);
+    try {
+      const res = await sendTestNotification();
+      const status = await getPushTokenStatus();
+      Alert.alert(
+        res.ok ? 'Tes Terkirim' : 'Tes Gagal',
+        res.ok
+          ? `Banner tes sudah dijadwalkan.\n\nIzin: ${status.permission}\nToken: ${status.tokenPreview}\n\nKalau banner tidak muncul juga, cek channel notifikasi & mode Jangan Ganggu di HP.`
+          : (res.reason ?? 'Izin notifikasi ditolak.'),
+      );
+    } catch (e) {
+      Alert.alert('Tes Gagal', 'Tidak bisa menjadwalkan notifikasi tes. Coba lagi.');
+    } finally {
+      setTestingNotif(false);
+    }
+  };
 
   const formatDate = (isoString: string) => {
     const d = new Date(isoString);
@@ -267,6 +291,11 @@ export const NotificationCenterScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
+      <TouchableOpacity onPress={handleTestNotification} disabled={testingNotif} style={styles.testBtn}>
+        <Ionicons name="notifications-outline" size={16} color="#FFFFFF" />
+        <Text style={styles.testBtnText}>{testingNotif ? 'Mengirim tes...' : 'Tes Notifikasi'}</Text>
+      </TouchableOpacity>
+
       <FlatList
         data={filteredNotifications}
         keyExtractor={(item) => item.id}
@@ -358,6 +387,22 @@ const styles = StyleSheet.create({
   actionBtnText: {
     fontSize: FontSize.xs,
     color: Colors.primaryStart,
+    fontWeight: 'bold',
+  },
+  testBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.primaryStart,
+  },
+  testBtnText: {
+    fontSize: FontSize.xs,
+    color: '#FFFFFF',
     fontWeight: 'bold',
   },
   listContent: {

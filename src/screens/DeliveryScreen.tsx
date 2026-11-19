@@ -27,6 +27,7 @@ import { productService } from '../services/product.service';
 import { salesService } from '../services/sales.service';
 import { uploadService } from '../services/upload.service';
 import { AppToast } from '../utils/toast';
+import { useDebouncedValue } from '../utils/debounce';
 import { generateInvoiceHtml } from '../utils/invoicePdf';
 import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
 import { useAuthStore } from '../stores/auth.store';
@@ -206,6 +207,9 @@ export const DeliveryScreen: React.FC = () => {
   }>>([]);
 
   const [searchProductQuery, setSearchProductQuery] = useState('');
+  // QA fix m-24: pencarian produk di-debounce 300ms supaya tidak memanggil
+  // API di setiap ketikan.
+  const debouncedSearchProductQuery = useDebouncedValue(searchProductQuery, 300);
   const [loadingProducts, setLoadingProducts] = useState(false);
 
   const loadSearchProducts = async (search = '') => {
@@ -226,14 +230,22 @@ export const DeliveryScreen: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (debouncedSearchProductQuery.length > 1) {
+      loadSearchProducts(debouncedSearchProductQuery);
+    }
+  }, [debouncedSearchProductQuery]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await deliveryService.getDeliveryOrders({
         search: search || undefined,
         status: statusFilter || undefined,
-        startDate: startDate ? startDate.toISOString().split('T')[0] : undefined,
-        endDate: endDate ? endDate.toISOString().split('T')[0] : undefined,
+        // QA fix M-33: param benar adalah dateFrom/dateTo (startDate/endDate
+        // diabaikan backend, jadi filter tanggal tidak pernah jalan).
+        dateFrom: startDate ? startDate.toISOString().split('T')[0] : undefined,
+        dateTo: endDate ? endDate.toISOString().split('T')[0] : undefined,
       });
       if (res.success && res.data) {
         setDeliveryOrders(res.data as DeliveryOrder[]);
@@ -299,20 +311,35 @@ export const DeliveryScreen: React.FC = () => {
     }
     setIsLoadingSales(true);
     try {
-      const filters: any = { status: 'PENDING', limit: 30 };
-      if (saleSearch.trim()) filters.search = saleSearch.trim();
+      // QA fix M-34: sebelumnya hanya sale PENDING yang dicari, padahal
+      // penjualan yang sudah lunas (COMPLETED) juga perlu bisa dihubungkan
+      // ke surat jalan. Backend hanya menerima satu status per panggilan,
+      // jadi cari PENDING dan COMPLETED lalu gabungkan (tanpa duplikat).
+      // CANCELLED/RETURN sengaja tidak dicari.
+      const baseFilters: any = { limit: 30 };
+      if (saleSearch.trim()) baseFilters.search = saleSearch.trim();
       if (saleSearchDate) {
-        filters.dateFrom = saleSearchDate.toISOString().split('T')[0];
-        filters.dateTo = saleSearchDate.toISOString().split('T')[0];
+        baseFilters.dateFrom = saleSearchDate.toISOString().split('T')[0];
+        baseFilters.dateTo = saleSearchDate.toISOString().split('T')[0];
       }
-      const res = await salesService.getSales(filters);
-      if (res.success && res.data?.sales) {
-        setSalesList(res.data.sales);
-        if (res.data.sales.length === 0) {
-          AppToast.info('Tidak Ditemukan', 'Tidak ada transaksi PENDING yang cocok.');
+      const [pendingRes, completedRes] = await Promise.all([
+        salesService.getSales({ ...baseFilters, status: 'PENDING' }),
+        salesService.getSales({ ...baseFilters, status: 'COMPLETED' }),
+      ]);
+      const merged = [
+        ...(pendingRes.success && pendingRes.data?.sales ? pendingRes.data.sales : []),
+        ...(completedRes.success && completedRes.data?.sales ? completedRes.data.sales : []),
+      ];
+      const seen = new Set<string>();
+      const sales = merged.filter((s: any) => (seen.has(s.id) ? false : (seen.add(s.id), true)));
+      sales.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      if (pendingRes.success || completedRes.success) {
+        setSalesList(sales);
+        if (sales.length === 0) {
+          AppToast.info('Tidak Ditemukan', 'Tidak ada transaksi yang cocok.');
         }
       } else {
-        AppToast.error('Gagal', res.error || 'Gagal mencari transaksi.');
+        AppToast.error('Gagal', pendingRes.error || completedRes.error || 'Gagal mencari transaksi.');
       }
     } catch (e) {
       AppToast.error('Error', 'Gagal mencari transaksi.');
@@ -839,8 +866,8 @@ export const DeliveryScreen: React.FC = () => {
                   setSearch('');
                   deliveryService.getDeliveryOrders({
                     status: statusFilter || undefined,
-                    startDate: startDate ? startDate.toISOString().split('T')[0] : undefined,
-                    endDate: endDate ? endDate.toISOString().split('T')[0] : undefined,
+                    dateFrom: startDate ? startDate.toISOString().split('T')[0] : undefined,
+                    dateTo: endDate ? endDate.toISOString().split('T')[0] : undefined,
                   }).then((res) => {
                     if (res.success && res.data) setDeliveryOrders(res.data as DeliveryOrder[]);
                   }).catch(() => {});
@@ -1386,7 +1413,7 @@ export const DeliveryScreen: React.FC = () => {
                   </View>
                 ) : (
                   <Text style={{ fontSize: 11, color: Colors.textTertiary, marginTop: 4 }}>
-                    Ketik nomor ref/nama lalu tekan tombol cari untuk mencari transaksi PENDING.
+                    Ketik nomor ref/nama lalu tekan tombol cari untuk mencari transaksi.
                   </Text>
                 )}
               </View>
@@ -1515,9 +1542,6 @@ export const DeliveryScreen: React.FC = () => {
                     value={searchProductQuery}
                     onChangeText={(text) => {
                       setSearchProductQuery(text);
-                      if (text.length > 1) {
-                        loadSearchProducts(text);
-                      }
                     }}
                   />
                   {searchProductQuery.length > 0 && (

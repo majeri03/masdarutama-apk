@@ -3,6 +3,7 @@
  */
 import api from './api';
 import { API_ENDPOINTS } from '../constants/api';
+import { toDayStartISO, toDayEndISO } from '../utils/dates';
 import type { ApiResponse, FinancialReport, InventoryReport } from '../types';
 
 export const reportService = {
@@ -13,8 +14,10 @@ export const reportService = {
   }): Promise<ApiResponse<FinancialReport>> {
     try {
       const searchParams = new URLSearchParams();
-      if (params?.dateFrom) searchParams.append('dateFrom', params.dateFrom);
-      if (params?.dateTo) searchParams.append('dateTo', params.dateTo);
+      // QA fix M-31: sama seperti sales — tanggal saja dinormalisasi ke
+      // batas hari lokal, supaya laporan satu hari tidak kehilangan data.
+      if (params?.dateFrom) searchParams.append('dateFrom', toDayStartISO(params.dateFrom));
+      if (params?.dateTo) searchParams.append('dateTo', toDayEndISO(params.dateTo));
       if (params?.period) searchParams.append('period', params.period);
 
       const response = await api.get<ApiResponse<any>>(

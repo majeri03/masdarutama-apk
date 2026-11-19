@@ -6,6 +6,17 @@ import api from './api';
 import { API_ENDPOINTS, SECURE_STORE_KEYS } from '../constants/api';
 import type { ApiResponse, LoginResponse, SessionResponse, AuthUser } from '../types';
 
+/** Baca user tersimpan tanpa lewat service (dipakai saat offline). */
+async function getStoredUserSafe(): Promise<AuthUser | null> {
+  try {
+    const data = await SecureStore.getItemAsync(SECURE_STORE_KEYS.USER_DATA);
+    if (data) return JSON.parse(data) as AuthUser;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export const authService = {
   /**
    * Login with email and password.
@@ -50,6 +61,13 @@ export const authService = {
 
   /**
    * Check current session validity by calling GET /api/auth/session.
+   *
+   * QA fix M-36: sebelumnya SEMUA kegagalan (termasuk tidak ada jaringan)
+   * mengembalikan null, sehingga membuka aplikasi offline menendang user
+   * ke Login walau sesi tersimpan masih valid. Sekarang dibedakan:
+   * - ada respons server (mis. 401) -> sesi memang tidak valid -> null.
+   * - tidak ada respons (offline / timeout) -> kembalikan user tersimpan,
+   *   supaya aplikasi tetap bisa dibuka dalam mode offline.
    */
   async checkSession(): Promise<AuthUser | null> {
     try {
@@ -65,8 +83,10 @@ export const authService = {
       }
 
       return null;
-    } catch {
-      return null;
+    } catch (error: any) {
+      if (error?.response) return null; // server menjawab: sesi tidak valid
+      console.warn('[AUTH] checkSession gagal tanpa respons (offline?), pakai sesi tersimpan.');
+      return getStoredUserSafe();
     }
   },
 

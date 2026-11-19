@@ -1,0 +1,1158 @@
+diff --git a/src/screens/CustomersScreen.tsx b/src/screens/CustomersScreen.tsx
+index 595d077..4228211 100644
+--- a/src/screens/CustomersScreen.tsx
++++ b/src/screens/CustomersScreen.tsx
+@@ -8,6 +8,7 @@ import { GlassCard, GradientButton } from '../components/ui';
+ import { masterService } from '../services/master.service';
+ import { salesService } from '../services/sales.service';
+ import type { Customer, Sale } from '../types';
++import { useDebouncedValue } from '../utils/debounce';
+ import { AppToast } from '../utils/toast';
+ 
+ export const CustomersScreen: React.FC = () => {
+@@ -16,6 +17,9 @@ export const CustomersScreen: React.FC = () => {
+   const [loading, setLoading] = useState(true);
+   const [refreshing, setRefreshing] = useState(false);
+   const [search, setSearch] = useState('');
++  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
++  // di setiap ketikan.
++  const debouncedSearch = useDebouncedValue(search, 300);
+ 
+   // Modals state
+   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+@@ -32,7 +36,7 @@ export const CustomersScreen: React.FC = () => {
+     else setLoading(true);
+ 
+     try {
+-      const res = await masterService.getCustomers(search || undefined);
++      const res = await masterService.getCustomers(debouncedSearch || undefined);
+       if (res.success && res.data?.customers) {
+         setCustomers(res.data.customers);
+       }
+@@ -42,7 +46,7 @@ export const CustomersScreen: React.FC = () => {
+       setLoading(false);
+       setRefreshing(false);
+     }
+-  }, [search]);
++  }, [debouncedSearch]);
+ 
+   useFocusEffect(
+     useCallback(() => {
+diff --git a/src/screens/DebtScreen.tsx b/src/screens/DebtScreen.tsx
+index d41284e..792b7c7 100644
+--- a/src/screens/DebtScreen.tsx
++++ b/src/screens/DebtScreen.tsx
+@@ -21,6 +21,8 @@ import { DatePickerInput } from '../components/ui/DatePickerInput';
+ import { debtService, DebtPaymentPayload } from '../services/debt.service';
+ import { masterService } from '../services/master.service';
+ import { useSidebarStore } from '../stores/sidebar.store';
++import { useAuthStore } from '../stores/auth.store';
++import { useDebouncedValue } from '../utils/debounce';
+ import { AppToast } from '../utils/toast';
+ 
+ // Helper WITA Timezone formatting
+@@ -56,12 +58,16 @@ export const DebtScreen: React.FC = () => {
+   const navigation = useNavigation<any>();
+   const route = useRoute<any>();
+   const { openSidebar } = useSidebarStore();
++  const { isAdmin } = useAuthStore();
+ 
+   const [activeTab, setActiveTab] = useState<'customer' | 'supplier'>('customer');
+   const [debts, setDebts] = useState<any[]>([]);
+   const [loading, setLoading] = useState(true);
+   const [refreshing, setRefreshing] = useState(false);
+   const [search, setSearch] = useState('');
++  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
++  // di setiap ketikan.
++  const debouncedSearch = useDebouncedValue(search, 300);
+ 
+   // Auto-filter berdasarkan ref nama / customer dari notifikasi
+   useEffect(() => {
+@@ -93,12 +99,12 @@ export const DebtScreen: React.FC = () => {
+       let res;
+       if (activeTab === 'customer') {
+         res = await debtService.getCustomerDebts({
+-          search: search || undefined,
++          search: debouncedSearch || undefined,
+           status: statusFilter || undefined,
+         });
+       } else {
+         res = await debtService.getSupplierDebts({
+-          search: search || undefined,
++          search: debouncedSearch || undefined,
+           status: statusFilter || undefined,
+         });
+       }
+@@ -144,18 +150,18 @@ export const DebtScreen: React.FC = () => {
+       setLoading(false);
+       setRefreshing(false);
+     }
+-  }, [activeTab, search, statusFilter, startDate, endDate]);
++  }, [activeTab, debouncedSearch, statusFilter, startDate, endDate]);
+ 
++  // QA fix m-23: sebelumnya ada useEffect kedua yang juga memanggil
++  // fetchDebts() dengan dependensi hampir sama, sehingga layar ini
++  // memanggil API 2x setiap kali dibuka / filter berubah. useFocusEffect
++  // di bawah ini sudah mencakup mount + kembali fokus, jadi cukup satu.
+   useFocusEffect(
+     useCallback(() => {
+       fetchDebts();
+     }, [fetchDebts])
+   );
+ 
+-  useEffect(() => {
+-    fetchDebts();
+-  }, [activeTab, statusFilter, startDate, endDate]);
+-
+   const onRefresh = () => {
+     setRefreshing(true);
+     fetchDebts(true);
+@@ -278,7 +284,10 @@ export const DebtScreen: React.FC = () => {
+           </View>
+         </View>
+ 
+-        {item.remainingDebt > 0 && (
++        {/* QA fix M-39: tombol Bayar Cicilan hanya untuk ADMIN/SUPER_ADMIN.
++            Backend selalu menolak (403) kalau kasir yang membayar, jadi
++            tombolnya disembunyikan dari kasir supaya tidak menyesatkan. */}
++        {isAdmin() && item.remainingDebt > 0 && (
+           <View style={{ marginTop: 12 }}>
+             <GradientButton
+               title="Bayar Cicilan / Pelunasan"
+@@ -368,7 +377,7 @@ export const DebtScreen: React.FC = () => {
+               onSubmitEditing={() => fetchDebts()}
+             />
+             {search ? (
+-              <TouchableOpacity onPress={() => { setSearch(''); setTimeout(() => fetchDebts(), 50); }}>
++              <TouchableOpacity onPress={() => setSearch('')}>
+                 <Ionicons name="close-circle" size={18} color={Colors.textTertiary} />
+               </TouchableOpacity>
+             ) : null}
+@@ -397,6 +406,9 @@ export const DebtScreen: React.FC = () => {
+             { value: 'UNPAID', label: 'Belum Lunas' },
+             { value: 'PARTIAL', label: 'Dicicil' },
+             { value: 'PAID', label: 'Lunas' },
++            // QA fix m-22: chip filter OVERDUE (Jatuh Tempo) — status ini
++            // ada di backend (DebtStatus.OVERDUE) tapi tidak bisa dipilih.
++            { value: 'OVERDUE', label: 'Jatuh Tempo' },
+           ].map((item) => (
+             <TouchableOpacity
+               key={item.value}
+diff --git a/src/screens/DeliveryScreen.tsx b/src/screens/DeliveryScreen.tsx
+index 845f70d..bd90855 100644
+--- a/src/screens/DeliveryScreen.tsx
++++ b/src/screens/DeliveryScreen.tsx
+@@ -27,6 +27,7 @@ import { productService } from '../services/product.service';
+ import { salesService } from '../services/sales.service';
+ import { uploadService } from '../services/upload.service';
+ import { AppToast } from '../utils/toast';
++import { useDebouncedValue } from '../utils/debounce';
+ import { generateInvoiceHtml } from '../utils/invoicePdf';
+ import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
+ import { useAuthStore } from '../stores/auth.store';
+@@ -206,6 +207,9 @@ export const DeliveryScreen: React.FC = () => {
+   }>>([]);
+ 
+   const [searchProductQuery, setSearchProductQuery] = useState('');
++  // QA fix m-24: pencarian produk di-debounce 300ms supaya tidak memanggil
++  // API di setiap ketikan.
++  const debouncedSearchProductQuery = useDebouncedValue(searchProductQuery, 300);
+   const [loadingProducts, setLoadingProducts] = useState(false);
+ 
+   const loadSearchProducts = async (search = '') => {
+@@ -226,14 +230,22 @@ export const DeliveryScreen: React.FC = () => {
+     }
+   };
+ 
++  useEffect(() => {
++    if (debouncedSearchProductQuery.length > 1) {
++      loadSearchProducts(debouncedSearchProductQuery);
++    }
++  }, [debouncedSearchProductQuery]);
++
+   const loadData = useCallback(async () => {
+     setLoading(true);
+     try {
+       const res = await deliveryService.getDeliveryOrders({
+         search: search || undefined,
+         status: statusFilter || undefined,
+-        startDate: startDate ? startDate.toISOString().split('T')[0] : undefined,
+-        endDate: endDate ? endDate.toISOString().split('T')[0] : undefined,
++        // QA fix M-33: param benar adalah dateFrom/dateTo (startDate/endDate
++        // diabaikan backend, jadi filter tanggal tidak pernah jalan).
++        dateFrom: startDate ? startDate.toISOString().split('T')[0] : undefined,
++        dateTo: endDate ? endDate.toISOString().split('T')[0] : undefined,
+       });
+       if (res.success && res.data) {
+         setDeliveryOrders(res.data as DeliveryOrder[]);
+@@ -299,20 +311,35 @@ export const DeliveryScreen: React.FC = () => {
+     }
+     setIsLoadingSales(true);
+     try {
+-      const filters: any = { status: 'PENDING', limit: 30 };
+-      if (saleSearch.trim()) filters.search = saleSearch.trim();
++      // QA fix M-34: sebelumnya hanya sale PENDING yang dicari, padahal
++      // penjualan yang sudah lunas (COMPLETED) juga perlu bisa dihubungkan
++      // ke surat jalan. Backend hanya menerima satu status per panggilan,
++      // jadi cari PENDING dan COMPLETED lalu gabungkan (tanpa duplikat).
++      // CANCELLED/RETURN sengaja tidak dicari.
++      const baseFilters: any = { limit: 30 };
++      if (saleSearch.trim()) baseFilters.search = saleSearch.trim();
+       if (saleSearchDate) {
+-        filters.dateFrom = saleSearchDate.toISOString().split('T')[0];
+-        filters.dateTo = saleSearchDate.toISOString().split('T')[0];
++        baseFilters.dateFrom = saleSearchDate.toISOString().split('T')[0];
++        baseFilters.dateTo = saleSearchDate.toISOString().split('T')[0];
+       }
+-      const res = await salesService.getSales(filters);
+-      if (res.success && res.data?.sales) {
+-        setSalesList(res.data.sales);
+-        if (res.data.sales.length === 0) {
+-          AppToast.info('Tidak Ditemukan', 'Tidak ada transaksi PENDING yang cocok.');
++      const [pendingRes, completedRes] = await Promise.all([
++        salesService.getSales({ ...baseFilters, status: 'PENDING' }),
++        salesService.getSales({ ...baseFilters, status: 'COMPLETED' }),
++      ]);
++      const merged = [
++        ...(pendingRes.success && pendingRes.data?.sales ? pendingRes.data.sales : []),
++        ...(completedRes.success && completedRes.data?.sales ? completedRes.data.sales : []),
++      ];
++      const seen = new Set<string>();
++      const sales = merged.filter((s: any) => (seen.has(s.id) ? false : (seen.add(s.id), true)));
++      sales.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
++      if (pendingRes.success || completedRes.success) {
++        setSalesList(sales);
++        if (sales.length === 0) {
++          AppToast.info('Tidak Ditemukan', 'Tidak ada transaksi yang cocok.');
+         }
+       } else {
+-        AppToast.error('Gagal', res.error || 'Gagal mencari transaksi.');
++        AppToast.error('Gagal', pendingRes.error || completedRes.error || 'Gagal mencari transaksi.');
+       }
+     } catch (e) {
+       AppToast.error('Error', 'Gagal mencari transaksi.');
+@@ -839,8 +866,8 @@ export const DeliveryScreen: React.FC = () => {
+                   setSearch('');
+                   deliveryService.getDeliveryOrders({
+                     status: statusFilter || undefined,
+-                    startDate: startDate ? startDate.toISOString().split('T')[0] : undefined,
+-                    endDate: endDate ? endDate.toISOString().split('T')[0] : undefined,
++                    dateFrom: startDate ? startDate.toISOString().split('T')[0] : undefined,
++                    dateTo: endDate ? endDate.toISOString().split('T')[0] : undefined,
+                   }).then((res) => {
+                     if (res.success && res.data) setDeliveryOrders(res.data as DeliveryOrder[]);
+                   }).catch(() => {});
+@@ -1386,7 +1413,7 @@ export const DeliveryScreen: React.FC = () => {
+                   </View>
+                 ) : (
+                   <Text style={{ fontSize: 11, color: Colors.textTertiary, marginTop: 4 }}>
+-                    Ketik nomor ref/nama lalu tekan tombol cari untuk mencari transaksi PENDING.
++                    Ketik nomor ref/nama lalu tekan tombol cari untuk mencari transaksi.
+                   </Text>
+                 )}
+               </View>
+@@ -1515,9 +1542,6 @@ export const DeliveryScreen: React.FC = () => {
+                     value={searchProductQuery}
+                     onChangeText={(text) => {
+                       setSearchProductQuery(text);
+-                      if (text.length > 1) {
+-                        loadSearchProducts(text);
+-                      }
+                     }}
+                   />
+                   {searchProductQuery.length > 0 && (
+diff --git a/src/screens/POSScreen.tsx b/src/screens/POSScreen.tsx
+index 41c2b01..c36a77e 100644
+--- a/src/screens/POSScreen.tsx
++++ b/src/screens/POSScreen.tsx
+@@ -90,6 +90,10 @@ export const POSScreen: React.FC = () => {
+   // Checkout Success Modal States
+   const [showSuccessModal, setShowSuccessModal] = useState(false);
+   const [createdSale, setCreatedSale] = useState<any | null>(null);
++  // QA fix M-38: detail penjualan (termasuk item struk) diambil di background
++  // setelah checkout. Selama detail belum kembali, tombol cetak/bagikan
++  // dimatikan supaya struk tidak tercetak kosong.
++  const [isSaleDetailLoading, setIsSaleDetailLoading] = useState(false);
+ 
+   const navigation = useNavigation<any>();
+ 
+@@ -325,6 +329,18 @@ export const POSScreen: React.FC = () => {
+       return;
+     }
+ 
++    // QA fix M-29: Piutang (CREDIT) tidak boleh untuk pelanggan UMUM —
++    // hutang tanpa identitas pelanggan tidak bisa ditagih. Pilih pelanggan
++    // terdaftar dulu, atau bayar Tunai.
++    if (paymentMethod === 'CREDIT') {
++      const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
++      const isUmum = selectedCustomer?.type === 'UMUM' || (selectedCustomer?.name || '').toUpperCase() === 'UMUM';
++      if (isUmum) {
++        AppToast.info('Perhatian', 'Piutang tidak bisa untuk pelanggan UMUM. Pilih pelanggan terdaftar dulu, atau bayar Tunai.');
++        return;
++      }
++    }
++
+     // Hitung paidAmount (DP untuk Credit, Jumlah bayar untuk Cash, Grand total untuk yang lain)
+     let effectivePaid = calculation.grandTotal;
+     let changeAmount = 0;
+@@ -350,7 +366,10 @@ export const POSScreen: React.FC = () => {
+           subtotal: item.subtotal,           // ← KRITIS: sudah dihitung di cart.store
+         })),
+         totalAmount: calculation.subtotal,   // ← KRITIS: total sebelum diskon global & pajak
+-        discount,
++        // QA fix M-28: kirim TOTAL diskon (per-item + global). Sebelumnya
++        // hanya diskon global yang dikirim, jadi di backend
++        // totalAmount - discount != grandTotal (selisih = diskon per-item).
++        discount: calculation.totalDiscount,
+         tax: calculation.tax,
+         grandTotal: calculation.grandTotal,  // ← KRITIS: final total
+         paymentMethod,
+@@ -373,11 +392,12 @@ export const POSScreen: React.FC = () => {
+         setCreatedSale(res.data); // Set data awal dulu biar langsung muncul
+ 
+         // Ambil detail lengkap untuk cetak struk secara background
++        setIsSaleDetailLoading(true);
+         salesService.getSaleById(res.data.id).then((detailRes) => {
+           if (detailRes.success && detailRes.data) {
+             setCreatedSale(detailRes.data);
+           }
+-        }).catch(() => {});
++        }).catch(() => {}).finally(() => setIsSaleDetailLoading(false));
+ 
+         // Refresh stock secara background tanpa memblokir UI
+         loadProducts();
+@@ -945,7 +965,17 @@ export const POSScreen: React.FC = () => {
+                     styles.methodCard,
+                     paymentMethod === m.type && styles.methodCardActive,
+                   ]}
+-                  onPress={() => setPaymentMethod(m.type as PaymentMethod)}
++                  onPress={() => {
++                    // QA fix M-29: jangan biarkan Piutang dipilih untuk UMUM.
++                    if (m.type === 'CREDIT') {
++                      const cust = customers.find((c) => c.id === selectedCustomerId);
++                      if (cust?.type === 'UMUM' || (cust?.name || '').toUpperCase() === 'UMUM') {
++                        AppToast.info('Perhatian', 'Piutang tidak bisa untuk pelanggan UMUM. Pilih pelanggan terdaftar dulu.');
++                        return;
++                      }
++                    }
++                    setPaymentMethod(m.type as PaymentMethod);
++                  }}
+                 >
+                   <Ionicons
+                     name={m.icon as any}
+@@ -1165,17 +1195,21 @@ export const POSScreen: React.FC = () => {
+ 
+             <View style={{ marginTop: Spacing.xl, gap: Spacing.md, width: '100%' }}>
+               <GradientButton
+-                title="Cetak Struk / PDF"
++                title={isSaleDetailLoading ? 'Memuat Detail Struk...' : 'Cetak Struk / PDF'}
+                 onPress={() => createdSale && printInvoice(createdSale)}
+                 variant="success"
+                 fullWidth
++                loading={isSaleDetailLoading}
++                disabled={isSaleDetailLoading || !(createdSale?.saleItems?.length)}
+                 icon={<Ionicons name="print-outline" size={20} color="#FFFFFF" />}
+               />
+               <GradientButton
+-                title="Bagikan PDF"
++                title={isSaleDetailLoading ? 'Memuat Detail Struk...' : 'Bagikan PDF'}
+                 onPress={() => createdSale && shareInvoicePdf(createdSale)}
+                 variant="primary"
+                 fullWidth
++                loading={isSaleDetailLoading}
++                disabled={isSaleDetailLoading || !(createdSale?.saleItems?.length)}
+                 icon={<Ionicons name="share-social-outline" size={20} color="#FFFFFF" />}
+               />
+               <GradientButton
+diff --git a/src/screens/ProductsScreen.tsx b/src/screens/ProductsScreen.tsx
+index 7a54af2..c54d4c7 100644
+--- a/src/screens/ProductsScreen.tsx
++++ b/src/screens/ProductsScreen.tsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useEffect } from 'react';
++import React, { useState, useEffect, useRef } from 'react';
+ import {
+   View,
+   Text,
+@@ -183,10 +183,22 @@ export const ProductsScreen: React.FC = () => {
+     loadProducts();
+   }, []);
+ 
++  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
++  // di setiap ketikan.
++  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
++  useEffect(() => {
++    return () => {
++      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
++    };
++  }, []);
++
+   const handleSearch = (text: string) => {
+     setSearchQuery(text);
+     setPage(1);
+-    loadProducts(text, selectedCategory as any, 1, true);
++    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
++    searchDebounceRef.current = setTimeout(() => {
++      loadProducts(text, selectedCategory as any, 1, true);
++    }, 300);
+   };
+ 
+   const handleCategorySelect = (catId: string | null) => {
+diff --git a/src/screens/PurchaseScreen.tsx b/src/screens/PurchaseScreen.tsx
+index d43e9a0..abbcc4d 100644
+--- a/src/screens/PurchaseScreen.tsx
++++ b/src/screens/PurchaseScreen.tsx
+@@ -23,6 +23,8 @@ import { DatePickerInput } from '../components/ui/DatePickerInput';
+ import { purchaseService } from '../services/purchase.service';
+ import { masterService } from '../services/master.service';
+ import { productService } from '../services/product.service';
++import { useAuthStore } from '../stores/auth.store';
++import { useDebouncedValue } from '../utils/debounce';
+ import { AppToast } from '../utils/toast';
+ import type { Supplier, Product } from '../types';
+ 
+@@ -67,11 +69,20 @@ interface PurchaseOrder {
+ 
+ export const PurchaseScreen: React.FC = () => {
+   const navigation = useNavigation<any>();
++  const { isAdmin } = useAuthStore();
+   const [loading, setLoading] = useState(true);
+   const [refreshing, setRefreshing] = useState(false);
+   const [purchases, setPurchases] = useState<PurchaseOrder[]>([]);
+   const [search, setSearch] = useState('');
++  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
++  // di setiap ketikan.
++  const debouncedSearch = useDebouncedValue(search, 300);
+   const [statusFilter, setStatusFilter] = useState<string>('');
++  // QA fix M-27: pagination PO (sebelumnya hanya 10 PO pertama yang
++  // pernah tampil karena tidak ada halaman berikut yang diminta).
++  const [page, setPage] = useState(1);
++  const [totalPages, setTotalPages] = useState(1);
++  const [loadingMore, setLoadingMore] = useState(false);
+ 
+   // Details Modal
+   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
+@@ -139,34 +150,59 @@ export const PurchaseScreen: React.FC = () => {
+     subtotal: number;
+   }>>([]);
+ 
+-  const loadData = useCallback(async () => {
+-    setLoading(true);
++  const loadData = useCallback(async (pageNum = 1, resetList = true) => {
++    if (pageNum === 1) {
++      setLoading(true);
++    } else {
++      setLoadingMore(true);
++    }
+     try {
+       const res = await purchaseService.getPurchases({
+-        search: search || undefined,
++        search: debouncedSearch || undefined,
+         supplierId: undefined,
+         status: statusFilter || undefined,
++        page: pageNum,
++        limit: 10,
+       });
+       if (res.success && res.data) {
+-        setPurchases(res.data as PurchaseOrder[]);
++        const list = res.data as PurchaseOrder[];
++        if (resetList || pageNum === 1) {
++          setPurchases(list);
++        } else {
++          setPurchases((prev) => [...prev, ...list]);
++        }
++        if (res.pagination) {
++          setTotalPages(res.pagination.totalPages || 1);
++        }
+       }
+     } catch (e) {
+       console.warn('[PURCHASE] Error loading POs:', e);
+     } finally {
+       setLoading(false);
+       setRefreshing(false);
++      setLoadingMore(false);
+     }
+-  }, [search, statusFilter]);
++  }, [debouncedSearch, statusFilter]);
+ 
+   useFocusEffect(
+     useCallback(() => {
+-      loadData();
++      setPage(1);
++      loadData(1, true);
+     }, [loadData])
+   );
+ 
+   const onRefresh = () => {
+     setRefreshing(true);
+-    loadData();
++    setPage(1);
++    loadData(1, true);
++  };
++
++  const loadMore = () => {
++    if (!loadingMore && page < totalPages) {
++      const nextPage = page + 1;
++      setPage(nextPage);
++      loadData(nextPage, false);
++    }
+   };
+ 
+   const loadMasterData = async () => {
+@@ -232,7 +268,8 @@ export const PurchaseScreen: React.FC = () => {
+ 
+     const qtyVal = Number(quantity);
+     const priceVal = Number(purchasePrice);
+-    const discVal = Number(itemDiscount || 0);
++    // QA fix M-40 (lanjutan): diskon baris tidak boleh melebihi nilai baris.
++    const discVal = Math.max(0, Math.min(Number(itemDiscount || 0), qtyVal * priceVal));
+     const itemSubtotal = qtyVal * priceVal - discVal;
+ 
+     const existingIndex = poItems.findIndex(
+@@ -240,9 +277,21 @@ export const PurchaseScreen: React.FC = () => {
+     );
+ 
+     if (existingIndex >= 0) {
++      // QA fix M-40: sebelumnya baris kedua menghilangkan diskonnya sendiri
++      // (hanya diskon lama yang dipakai) DAN mengubah harga baris pertama
++      // ke harga input terbaru. Sekarang: harga baris pertama dipertahankan,
++      // diskon kedua DITAMBAHKAN ke diskon yang sudah ada, lalu subtotal
++      // dihitung ulang dari harga & diskon hasil gabungan (tidak negatif).
+       const updated = [...poItems];
+-      updated[existingIndex].quantity += qtyVal;
+-      updated[existingIndex].subtotal = updated[existingIndex].quantity * priceVal - updated[existingIndex].discount;
++      const existing = updated[existingIndex];
++      const newQty = existing.quantity + qtyVal;
++      const newDiscount = Math.min(existing.discount + discVal, newQty * existing.unitPrice);
++      updated[existingIndex] = {
++        ...existing,
++        quantity: newQty,
++        discount: newDiscount,
++        subtotal: newQty * existing.unitPrice - newDiscount,
++      };
+       setPoItems(updated);
+     } else {
+       setPoItems([
+@@ -498,9 +547,15 @@ export const PurchaseScreen: React.FC = () => {
+           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+         </TouchableOpacity>
+         <Text style={styles.headerTitle}>MANAJEMEN PO BARANG</Text>
+-        <TouchableOpacity onPress={() => setShowCreateModal(true)} style={styles.addBtn}>
+-          <Ionicons name="add" size={24} color={Colors.primaryStart} />
+-        </TouchableOpacity>
++        {/* QA fix M-39: tombol Buat PO hanya untuk ADMIN/SUPER_ADMIN —
++            backend selalu menolak (403) kalau kasir yang membuat PO. */}
++        {isAdmin() ? (
++          <TouchableOpacity onPress={() => setShowCreateModal(true)} style={styles.addBtn}>
++            <Ionicons name="add" size={24} color={Colors.primaryStart} />
++          </TouchableOpacity>
++        ) : (
++          <View style={{ width: 24 }} />
++        )}
+       </View>
+ 
+       {/* Filter & Search */}
+@@ -562,7 +617,14 @@ export const PurchaseScreen: React.FC = () => {
+             refreshControl={
+               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />
+             }
+-            
++            onEndReached={loadMore}
++            onEndReachedThreshold={0.3}
++            ListFooterComponent={
++              loadingMore ? (
++                <ActivityIndicator size="small" color={Colors.primaryStart} style={{ padding: 16 }} />
++              ) : null
++            }
++
+             // Optimasi FlatList
+             removeClippedSubviews={true}
+             initialNumToRender={10}
+@@ -588,7 +650,7 @@ export const PurchaseScreen: React.FC = () => {
+                 <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+               </TouchableOpacity>
+               <Text style={styles.modalHeaderTitle}>Detail Purchase Order</Text>
+-              {selectedPO.status === 'PENDING' ? (
++              {selectedPO.status === 'PENDING' && isAdmin() ? (
+                 <TouchableOpacity onPress={() => handleDeletePO(selectedPO.id)} style={styles.deleteBtn}>
+                   <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                 </TouchableOpacity>
+@@ -693,7 +755,8 @@ export const PurchaseScreen: React.FC = () => {
+ 
+               {/* Action Buttons */}
+               <View style={{ gap: Spacing.md, marginTop: Spacing.md, marginBottom: Spacing['3xl'] }}>
+-                {selectedPO.status === 'PENDING' && (
++                {/* QA fix M-39: konfirmasi penerimaan juga hanya admin. */}
++                {selectedPO.status === 'PENDING' && isAdmin() && (
+                   <GradientButton
+                     title={receivingPO ? 'Memproses...' : 'Konfirmasi Penerimaan Barang'}
+                     onPress={() => handleReceivePO(selectedPO.id)}
+diff --git a/src/screens/StockOpnameScreen.tsx b/src/screens/StockOpnameScreen.tsx
+index b29bb8d..ba88edb 100644
+--- a/src/screens/StockOpnameScreen.tsx
++++ b/src/screens/StockOpnameScreen.tsx
+@@ -22,6 +22,7 @@ import { useAuthStore } from '../stores/auth.store';
+ import type { Product } from '../types';
+ import { CameraView, useCameraPermissions } from 'expo-camera';
+ import { AppToast } from '../utils/toast';
++import { useDebouncedValue } from '../utils/debounce';
+ 
+ const MOVEMENT_LABEL: Record<string, string> = {
+   IN: 'Stok Masuk',
+@@ -48,6 +49,9 @@ export const StockOpnameScreen: React.FC = () => {
+   
+   // Filters
+   const [searchQuery, setSearchQuery] = useState('');
++  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
++  // di setiap ketikan.
++  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
+   const [selectedType, setSelectedType] = useState<string>('');
+ 
+   // Adjustment Modal
+@@ -76,7 +80,7 @@ export const StockOpnameScreen: React.FC = () => {
+ 
+     try {
+       const res = await stockService.getStockMovements({
+-        search: searchQuery || undefined,
++        search: debouncedSearchQuery || undefined,
+         type: selectedType || undefined,
+         page: pageNum,
+         limit: 15,
+@@ -104,12 +108,12 @@ export const StockOpnameScreen: React.FC = () => {
+       setRefreshing(false);
+       setLoadingMore(false);
+     }
+-  }, [searchQuery, selectedType]);
++  }, [debouncedSearchQuery, selectedType]);
+ 
+   useEffect(() => {
+     setPage(1);
+     fetchMovements(1, true);
+-  }, [searchQuery, selectedType]);
++  }, [debouncedSearchQuery, selectedType]);
+ 
+   const onRefresh = () => {
+     setPage(1);
+diff --git a/src/services/api.ts b/src/services/api.ts
+index a713ff8..09393c6 100644
+--- a/src/services/api.ts
++++ b/src/services/api.ts
+@@ -5,7 +5,13 @@
+ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+ import * as SecureStore from 'expo-secure-store';
+ import { API_BASE_URL, SECURE_STORE_KEYS } from '../constants/api';
++import { navigationRef } from '../utils/navigation';
+ import type { ApiResponse } from '../types';
++
++// Penjaga re-entry: penanganan 401 memanggil logout(), dan logout() sendiri
++// memanggil API (unregister push token) yang bisa 401 lagi. Tanpa penjaga
++// ini bisa berputar tanpa henti.
++let isHandling401 = false;
+ // Create axios instance
+ const api = axios.create({
+   baseURL: API_BASE_URL,
+@@ -80,14 +86,35 @@ api.interceptors.response.use(
+   },
+   async (error: AxiosError<ApiResponse>) => {
+     // Handle 401 - session expired — hapus cookie dan paksa re-login
+-    if (error.response?.status === 401) {
+-      console.warn('[API] 401 Unauthorized — clearing session cookie.');
++    // QA fix M-35: sebelumnya cookie memang dihapus, tapi UI tidak
++    // diberitahu — aplikasi tetap di layar dalam sampai di-restart.
++    // Sekarang: bersihkan state auth dan arahkan ke layar Login.
++    if (error.response?.status === 401 && !isHandling401) {
++      isHandling401 = true;
++      console.warn('[API] 401 Unauthorized — clearing session and going to Login.');
+       try {
+         await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.AUTH_COOKIE);
+         await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.USER_DATA);
+       } catch (e) {
+         console.warn('[API] Failed to clear stored session:', e);
+       }
++      try {
++        // Dynamic import supaya tidak ada circular import statis
++        // (auth.store mengimpor api ini).
++        const { useAuthStore } = await import('../stores/auth.store');
++        await useAuthStore.getState().logout();
++      } catch (e) {
++        console.warn('[API] Failed to logout on 401:', e);
++      } finally {
++        isHandling401 = false;
++      }
++      try {
++        if (navigationRef.isReady() && navigationRef.getCurrentRoute()?.name !== 'Login') {
++          navigationRef.reset({ index: 0, routes: [{ name: 'Login' }] });
++        }
++      } catch (e) {
++        console.warn('[API] Failed to navigate to Login on 401:', e);
++      }
+     }
+ 
+     // Handle HTML/String error response (Gagal JSON fix)
+diff --git a/src/services/auth.service.ts b/src/services/auth.service.ts
+index 02464b4..4883733 100644
+--- a/src/services/auth.service.ts
++++ b/src/services/auth.service.ts
+@@ -6,6 +6,17 @@ import api from './api';
+ import { API_ENDPOINTS, SECURE_STORE_KEYS } from '../constants/api';
+ import type { ApiResponse, LoginResponse, SessionResponse, AuthUser } from '../types';
+ 
++/** Baca user tersimpan tanpa lewat service (dipakai saat offline). */
++async function getStoredUserSafe(): Promise<AuthUser | null> {
++  try {
++    const data = await SecureStore.getItemAsync(SECURE_STORE_KEYS.USER_DATA);
++    if (data) return JSON.parse(data) as AuthUser;
++    return null;
++  } catch {
++    return null;
++  }
++}
++
+ export const authService = {
+   /**
+    * Login with email and password.
+@@ -50,6 +61,13 @@ export const authService = {
+ 
+   /**
+    * Check current session validity by calling GET /api/auth/session.
++   *
++   * QA fix M-36: sebelumnya SEMUA kegagalan (termasuk tidak ada jaringan)
++   * mengembalikan null, sehingga membuka aplikasi offline menendang user
++   * ke Login walau sesi tersimpan masih valid. Sekarang dibedakan:
++   * - ada respons server (mis. 401) -> sesi memang tidak valid -> null.
++   * - tidak ada respons (offline / timeout) -> kembalikan user tersimpan,
++   *   supaya aplikasi tetap bisa dibuka dalam mode offline.
+    */
+   async checkSession(): Promise<AuthUser | null> {
+     try {
+@@ -65,8 +83,10 @@ export const authService = {
+       }
+ 
+       return null;
+-    } catch {
+-      return null;
++    } catch (error: any) {
++      if (error?.response) return null; // server menjawab: sesi tidak valid
++      console.warn('[AUTH] checkSession gagal tanpa respons (offline?), pakai sesi tersimpan.');
++      return getStoredUserSafe();
+     }
+   },
+ 
+diff --git a/src/services/delivery.service.ts b/src/services/delivery.service.ts
+index ec0a2f6..46e4a2e 100644
+--- a/src/services/delivery.service.ts
++++ b/src/services/delivery.service.ts
+@@ -46,7 +46,11 @@ export const deliveryService = {
+     search?: string;
+     customerId?: string;
+     status?: string;
++    dateFrom?: string;
++    dateTo?: string;
++    /** @deprecated pakai dateFrom — dipertahankan supaya pemanggil lama tidak rusak */
+     startDate?: string;
++    /** @deprecated pakai dateTo — dipertahankan supaya pemanggil lama tidak rusak */
+     endDate?: string;
+   } = {}): Promise<ApiResponse<any[]>> {
+     try {
+@@ -54,8 +58,13 @@ export const deliveryService = {
+       if (filters.search) params.append('search', filters.search);
+       if (filters.customerId) params.append('customerId', filters.customerId);
+       if (filters.status) params.append('status', filters.status);
+-      if (filters.startDate) params.append('startDate', filters.startDate);
+-      if (filters.endDate) params.append('endDate', filters.endDate);
++      // QA fix M-33: backend hanya membaca `dateFrom`/`dateTo`
++      // (parseSearchParams), jadi `startDate`/`endDate` selama ini diam-diam
++      // dibuang dan filter tanggal pengiriman tidak pernah jalan.
++      const dateFrom = filters.dateFrom ?? filters.startDate;
++      const dateTo = filters.dateTo ?? filters.endDate;
++      if (dateFrom) params.append('dateFrom', dateFrom);
++      if (dateTo) params.append('dateTo', dateTo);
+ 
+       const url = `${API_ENDPOINTS.DELIVERY_ORDERS}?${params.toString()}`;
+       const response = await api.get<ApiResponse<any[]>>(url);
+diff --git a/src/services/master.service.ts b/src/services/master.service.ts
+index 3e0bd3b..5439689 100644
+--- a/src/services/master.service.ts
++++ b/src/services/master.service.ts
+@@ -14,7 +14,18 @@ export const masterService = {
+       );
+       if (response.data.success) {
+         const rawData = response.data.data;
+-        const customersList = Array.isArray(rawData) ? rawData : rawData?.customers || [];
++        let customersList: Customer[] = Array.isArray(rawData) ? rawData : rawData?.customers || [];
++        // QA fix M-32: param `search` memang dikirim, tapi route backend
++        // mengabaikannya (tidak diteruskan ke action getCustomers), jadi
++        // pencarian pelanggan tidak pernah memfilter. Selama backend belum
++        // diperbaiki, filter di sisi klien (nama / kode / telepon).
++        // (Perbaikan permanen tetap di backend: teruskan `search`.)
++        if (search) {
++          const q = search.trim().toLowerCase();
++          customersList = customersList.filter((c) =>
++            [c.name, c.code, c.phone, c.email].some((v) => (v || '').toLowerCase().includes(q))
++          );
++        }
+         return {
+           ...response.data,
+           data: { customers: customersList }
+@@ -164,6 +175,13 @@ export const masterService = {
+   async getPublicSettings(): Promise<ApiResponse<{ name: string; tagline: string | null; logoUrl: string | null }>> {
+     try {
+       const response = await api.get<ApiResponse<any>>('/api/settings/public');
++      // QA fix m-18: respons backend berbentuk { success, data: { name, logoUrl } }.
++      // Sebelumnya seluruh body dikembalikan apa adanya, jadi LoginScreen
++      // membaca res.data.logoUrl dari level yang salah (undefined) dan
++      // logo/nama toko tidak pernah tampil. Buka satu level `data`.
++      if (response.data?.success && response.data?.data) {
++        return { ...response.data, data: response.data.data };
++      }
+       return response.data;
+     } catch (error: any) {
+       return { success: false, error: error.response?.data?.error || 'Gagal memuat info logo toko' };
+diff --git a/src/services/product.service.ts b/src/services/product.service.ts
+index 59e2a29..c23d7b7 100644
+--- a/src/services/product.service.ts
++++ b/src/services/product.service.ts
+@@ -45,11 +45,19 @@ export const productService = {
+           ? rawData
+           : rawData?.products || [];
+ 
++        // QA fix M-25: backend mengembalikan pagination di dalam action,
++        // tapi route membuangnya (`successResponse(result.data)`), jadi
++        // `pagination` tidak pernah sampai ke APK dan layar mengira hanya
++        // ada 1 halaman. Selama backend belum diperbaiki, sintesis dari
++        // panjang halaman: halaman penuh (= limit) berarti mungkin masih
++        // ada halaman berikut; halaman pendek berarti ini halaman terakhir.
++        const pageNum = filters.page || 1;
++        const limitNum = filters.limit || 10;
+         const pagination = response.data.pagination || rawData?.pagination || {
+           total: productsList.length,
+-          page: 1,
+-          limit: 10,
+-          totalPages: 1,
++          page: pageNum,
++          limit: limitNum,
++          totalPages: productsList.length < limitNum ? pageNum : pageNum + 1,
+         };
+ 
+         return {
+diff --git a/src/services/purchase.service.ts b/src/services/purchase.service.ts
+index 6b796e4..f520f6c 100644
+--- a/src/services/purchase.service.ts
++++ b/src/services/purchase.service.ts
+@@ -27,15 +27,38 @@ export const purchaseService = {
+     search?: string;
+     supplierId?: string;
+     status?: string;
++    page?: number;
++    limit?: number;
+   } = {}): Promise<ApiResponse<any[]>> {
+     try {
+       const params = new URLSearchParams();
+       if (filters.search) params.append('search', filters.search);
+       if (filters.supplierId) params.append('supplierId', filters.supplierId);
+       if (filters.status) params.append('status', filters.status);
++      if (filters.page) params.append('page', String(filters.page));
++      if (filters.limit) params.append('limit', String(filters.limit));
+ 
+       const url = `${API_ENDPOINTS.PURCHASES}?${params.toString()}`;
+-      const response = await api.get<ApiResponse<any[]>>(url);
++      const response = await api.get<ApiResponse<any>>(url);
++
++      // QA fix M-27: backend membuang `pagination` dari action
++      // (`successResponse(result.data)`), jadi daftar PO hanya pernah
++      // menampilkan 10 PO pertama. Sintesis seperti produk/stok:
++      // halaman penuh berarti mungkin masih ada halaman berikut.
++      // (Perbaikan permanen tetap di backend: teruskan pagination.)
++      if (response.data.success && response.data.data) {
++        const rawData = response.data.data;
++        const list = Array.isArray(rawData) ? rawData : rawData?.purchases || rawData;
++        const pageNum = filters.page || 1;
++        const limitNum = filters.limit || 10;
++        const pagination = response.data.pagination || (rawData as any)?.pagination || {
++          total: Array.isArray(list) ? list.length : 0,
++          page: pageNum,
++          limit: limitNum,
++          totalPages: Array.isArray(list) && list.length < limitNum ? pageNum : pageNum + 1,
++        };
++        return { ...response.data, data: list, pagination };
++      }
+       return response.data;
+     } catch (error: any) {
+       return { success: false, error: error.response?.data?.error || 'Gagal memuat PO barang' };
+diff --git a/src/services/report.service.ts b/src/services/report.service.ts
+index 8a83c28..92f2257 100644
+--- a/src/services/report.service.ts
++++ b/src/services/report.service.ts
+@@ -3,6 +3,7 @@
+  */
+ import api from './api';
+ import { API_ENDPOINTS } from '../constants/api';
++import { toDayStartISO, toDayEndISO } from '../utils/dates';
+ import type { ApiResponse, FinancialReport, InventoryReport } from '../types';
+ 
+ export const reportService = {
+@@ -13,8 +14,10 @@ export const reportService = {
+   }): Promise<ApiResponse<FinancialReport>> {
+     try {
+       const searchParams = new URLSearchParams();
+-      if (params?.dateFrom) searchParams.append('dateFrom', params.dateFrom);
+-      if (params?.dateTo) searchParams.append('dateTo', params.dateTo);
++      // QA fix M-31: sama seperti sales — tanggal saja dinormalisasi ke
++      // batas hari lokal, supaya laporan satu hari tidak kehilangan data.
++      if (params?.dateFrom) searchParams.append('dateFrom', toDayStartISO(params.dateFrom));
++      if (params?.dateTo) searchParams.append('dateTo', toDayEndISO(params.dateTo));
+       if (params?.period) searchParams.append('period', params.period);
+ 
+       const response = await api.get<ApiResponse<any>>(
+diff --git a/src/services/sales.service.ts b/src/services/sales.service.ts
+index f40902e..71350d0 100644
+--- a/src/services/sales.service.ts
++++ b/src/services/sales.service.ts
+@@ -3,6 +3,7 @@
+  */
+ import api from './api';
+ import { API_ENDPOINTS } from '../constants/api';
++import { toDayStartISO, toDayEndISO } from '../utils/dates';
+ import type { ApiResponse, Sale, PaymentMethod } from '../types';
+ 
+ export interface CheckoutPayload {
+@@ -59,7 +60,14 @@ export const salesService = {
+     try {
+       const params = new URLSearchParams();
+       Object.entries(filters).forEach(([key, value]) => {
+-        if (value) params.append(key, String(value));
++        if (!value) return;
++        // QA fix M-31: tanggal "YYYY-MM-DD" dinormalisasi ke batas hari
++        // lokal (awal hari untuk dateFrom, akhir hari untuk dateTo),
++        // supaya filter satu hari benar-benar mencakup hari itu penuh
++        // dan tidak bergeser karena UTC. Timestamp ISO lengkap tidak diubah.
++        if (key === 'dateFrom') params.append(key, toDayStartISO(String(value)));
++        else if (key === 'dateTo') params.append(key, toDayEndISO(String(value)));
++        else params.append(key, String(value));
+       });
+       const response = await api.get<ApiResponse<SaleListResponse>>(
+         `${API_ENDPOINTS.SALES}?${params.toString()}`
+diff --git a/src/services/stock.service.ts b/src/services/stock.service.ts
+index 41c6ff2..b2128bb 100644
+--- a/src/services/stock.service.ts
++++ b/src/services/stock.service.ts
+@@ -76,9 +76,31 @@ export const stockService = {
+       if (response.data.success && response.data.data) {
+         const rawData = response.data.data;
+         if (Array.isArray(rawData)) {
++          // QA fix M-26: sama seperti produk — route backend membuang
++          // `pagination` dari action (`successResponse(result.data)`),
++          // jadi layar hanya pernah melihat halaman pertama (15 item).
++          // Sintesis seperti di product.service: halaman penuh berarti
++          // mungkin masih ada halaman berikut.
++          const pageNum = filters.page || 1;
++          const limitNum = filters.limit || 15;
+           return {
+             success: true,
+-            data: rawData,
++            data: {
++              movements: rawData,
++              pagination: {
++                total: rawData.length,
++                page: pageNum,
++                limit: limitNum,
++                totalPages: rawData.length < limitNum ? pageNum : pageNum + 1,
++              },
++            } as StockMovementListResponse,
++          };
++        }
++        // Bentuk { movements, pagination } — teruskan apa adanya.
++        if ((rawData as any).movements) {
++          return {
++            success: true,
++            data: rawData as StockMovementListResponse,
+           };
+         }
+       }
+diff --git a/src/stores/auth.store.ts b/src/stores/auth.store.ts
+index 1fdfeec..38a1476 100644
+--- a/src/stores/auth.store.ts
++++ b/src/stores/auth.store.ts
+@@ -140,14 +140,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
+         set({ allowedPages: res.data.data.allowedPages });
+       } else if (res.data?.success && res.data?.allowedPages) {
+         set({ allowedPages: res.data.allowedPages });
++      } else if (userRole === 'ADMIN') {
++        // Respons tidak membawa daftar halaman — fallback seperti di catch.
++        set({
++          allowedPages: ['pos', 'products', 'reports_settings', 'stock_opname', 'delivery', 'purchase', 'debt', 'customers'],
++        });
++      } else if (userRole === 'KASIR') {
++        set({
++          allowedPages: ['pos', 'products', 'stock_opname', 'delivery', 'debt', 'customers'],
++        });
+       }
+     } catch (error) {
+       console.warn('Gagal memuat dynamic allowed pages:', error);
+-      // Fallback: If ADMIN, give basic access
++      // QA fix M-37: sebelumnya hanya ADMIN yang punya fallback — kalau
++      // /api/page-access gagal, KASIR mendapat allowedPages kosong dan
++      // dashboard-nya kosong total. Beri menu default sesuai role,
++      // sama seperti ADMIN (tanpa users_management / system_settings).
+       if (userRole === 'ADMIN') {
+         set({
+           allowedPages: ['pos', 'products', 'reports_settings', 'stock_opname', 'delivery', 'purchase', 'debt', 'customers'],
+         });
++      } else if (userRole === 'KASIR') {
++        set({
++          allowedPages: ['pos', 'products', 'stock_opname', 'delivery', 'debt', 'customers'],
++        });
+       }
+     }
+   },
+diff --git a/src/stores/cart.store.ts b/src/stores/cart.store.ts
+index 9501ab9..ae13d46 100644
+--- a/src/stores/cart.store.ts
++++ b/src/stores/cart.store.ts
+@@ -104,29 +104,26 @@ export const useCartStore = create<CartState>((set, get) => ({
+   updateQuantity: (cartItemId: string, quantity: number) => {
+     if (quantity < 1) return;
+     set({
+-      items: get().items.map((item) =>
+-        item.id === cartItemId
+-          ? {
+-              ...item,
+-              quantity,
+-              subtotal: quantity * item.unitPrice - item.discount,
+-            }
+-          : item
+-      ),
++      items: get().items.map((item) => {
++        if (item.id !== cartItemId) return item;
++        // QA fix M-30: diskon ikut dibatasi saat qty turun, supaya subtotal
++        // tidak negatif (mis. qty 1 x Rp10.000 dengan diskon Rp15.000).
++        const discount = Math.min(item.discount, quantity * item.unitPrice);
++        return { ...item, quantity, discount, subtotal: quantity * item.unitPrice - discount };
++      }),
+     });
+   },
+ 
+   updateItemDiscount: (cartItemId: string, discount: number) => {
+     set({
+-      items: get().items.map((item) =>
+-        item.id === cartItemId
+-          ? {
+-              ...item,
+-              discount,
+-              subtotal: item.quantity * item.unitPrice - discount,
+-            }
+-          : item
+-      ),
++      items: get().items.map((item) => {
++        if (item.id !== cartItemId) return item;
++        // QA fix M-30: diskon per-item dibatasi 0..(qty x harga). Tanpa
++        // batas ini subtotal bisa negatif dan checkout gagal dengan pesan
++        // generik dari server.
++        const clamped = Math.max(0, Math.min(discount || 0, item.quantity * item.unitPrice));
++        return { ...item, discount: clamped, subtotal: item.quantity * item.unitPrice - clamped };
++      }),
+     });
+   },
+ 
+@@ -136,6 +133,9 @@ export const useCartStore = create<CartState>((set, get) => ({
+         if (item.id !== cartItemId) return item;
+         const newUnit = item.availableUnits.find((u) => u.unitId === unitId);
+         if (!newUnit) return item;
++        // QA fix M-30: ganti satuan ke yang lebih murah juga bisa membuat
++        // subtotal negatif — batasi diskon ke harga baru.
++        const discount = Math.min(item.discount, item.quantity * newUnit.price);
+         return {
+           ...item,
+           unitId: newUnit.unitId,
+@@ -143,14 +143,22 @@ export const useCartStore = create<CartState>((set, get) => ({
+           productUnitId: newUnit.id,
+           unitPrice: newUnit.price,
+           originalPrice: newUnit.price,
+-          subtotal: item.quantity * newUnit.price - item.discount,
++          discount,
++          subtotal: item.quantity * newUnit.price - discount,
+         };
+       }),
+     });
+   },
+ 
+   setCustomer: (customerId) => set({ selectedCustomerId: customerId }),
+-  setDiscount: (discount) => set({ discount }),
++  // QA fix M-30: diskon global (pelanggan) dibatasi 0..(subtotal - diskon item).
++  setDiscount: (discount) =>
++    set((state) => {
++      const gross = state.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
++      const itemDiscount = state.items.reduce((sum, item) => sum + item.discount, 0);
++      const maxDiscount = Math.max(0, gross - itemDiscount);
++      return { discount: Math.max(0, Math.min(discount || 0, maxDiscount)) };
++    }),
+   setNotes: (notes) => set({ notes }),
+ 
+   clearCart: () =>
+diff --git a/src/utils/dates.ts b/src/utils/dates.ts
+new file mode 100644
+index 0000000..d3717a0
+--- /dev/null
++++ b/src/utils/dates.ts
+@@ -0,0 +1,39 @@
++/**
++ * Date helpers — QA fix M-31.
++ *
++ * Masalah: layar-layar mengirim filter tanggal sebagai string "YYYY-MM-DD"
++ * yang diambil dari `date.toISOString().split('T')[0]`. Itu tanggal UTC,
++ * bukan tanggal lokal (WITA = UTC+8, jadi tanggal bisa mundur 1 hari),
++ * dan `dateTo` yang hanya tanggal berarti tengah malam — backend
++ * `new Date("2026-11-19")` = 00:00, sehingga transaksi di hari itu
++ * hampir semuanya terlewat.
++ *
++ * Perbaikan: normalisasi di service sebelum dikirim —
++ * dateFrom  -> awal hari lokal (00:00:00.000) sebagai ISO (UTC),
++ * dateTo   -> akhir hari lokal (23:59:59.999) sebagai ISO (UTC).
++ * Nilai yang sudah berupa timestamp ISO lengkap tidak diubah.
++ */
++
++const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
++
++/** "2026-11-19" -> ISO awal hari lokal. Nilai lain dikembalikan apa adanya. */
++export function toDayStartISO(value: string): string {
++  if (!DATE_ONLY_RE.test(value)) return value;
++  const [y, m, d] = value.split('-').map(Number);
++  return new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
++}
++
++/** "2026-11-19" -> ISO akhir hari lokal. Nilai lain dikembalikan apa adanya. */
++export function toDayEndISO(value: string): string {
++  if (!DATE_ONLY_RE.test(value)) return value;
++  const [y, m, d] = value.split('-').map(Number);
++  return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
++}
++
++/** Date -> "YYYY-MM-DD" memakai kalender LOKAL (bukan UTC). */
++export function toLocalDateString(date: Date): string {
++  const y = date.getFullYear();
++  const m = String(date.getMonth() + 1).padStart(2, '0');
++  const d = String(date.getDate()).padStart(2, '0');
++  return `${y}-${m}-${d}`;
++}
+diff --git a/src/utils/debounce.ts b/src/utils/debounce.ts
+new file mode 100644
+index 0000000..6e427ac
+--- /dev/null
++++ b/src/utils/debounce.ts
+@@ -0,0 +1,16 @@
++/**
++ * useDebouncedValue — QA fix m-24.
++ * Pencarian di banyak layar memanggil API di setiap ketikan.
++ * Hook ini menahan nilai 300ms setelah ketikan terakhir sebelum
++ * nilai diteruskan ke pemicu fetch.
++ */
++import { useEffect, useState } from 'react';
++
++export function useDebouncedValue<T>(value: T, delayMs = 300): T {
++  const [debounced, setDebounced] = useState(value);
++  useEffect(() => {
++    const timer = setTimeout(() => setDebounced(value), delayMs);
++    return () => clearTimeout(timer);
++  }, [value, delayMs]);
++  return debounced;
++}

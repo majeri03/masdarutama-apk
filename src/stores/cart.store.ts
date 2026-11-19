@@ -104,29 +104,26 @@ export const useCartStore = create<CartState>((set, get) => ({
   updateQuantity: (cartItemId: string, quantity: number) => {
     if (quantity < 1) return;
     set({
-      items: get().items.map((item) =>
-        item.id === cartItemId
-          ? {
-              ...item,
-              quantity,
-              subtotal: quantity * item.unitPrice - item.discount,
-            }
-          : item
-      ),
+      items: get().items.map((item) => {
+        if (item.id !== cartItemId) return item;
+        // QA fix M-30: diskon ikut dibatasi saat qty turun, supaya subtotal
+        // tidak negatif (mis. qty 1 x Rp10.000 dengan diskon Rp15.000).
+        const discount = Math.min(item.discount, quantity * item.unitPrice);
+        return { ...item, quantity, discount, subtotal: quantity * item.unitPrice - discount };
+      }),
     });
   },
 
   updateItemDiscount: (cartItemId: string, discount: number) => {
     set({
-      items: get().items.map((item) =>
-        item.id === cartItemId
-          ? {
-              ...item,
-              discount,
-              subtotal: item.quantity * item.unitPrice - discount,
-            }
-          : item
-      ),
+      items: get().items.map((item) => {
+        if (item.id !== cartItemId) return item;
+        // QA fix M-30: diskon per-item dibatasi 0..(qty x harga). Tanpa
+        // batas ini subtotal bisa negatif dan checkout gagal dengan pesan
+        // generik dari server.
+        const clamped = Math.max(0, Math.min(discount || 0, item.quantity * item.unitPrice));
+        return { ...item, discount: clamped, subtotal: item.quantity * item.unitPrice - clamped };
+      }),
     });
   },
 
@@ -136,6 +133,9 @@ export const useCartStore = create<CartState>((set, get) => ({
         if (item.id !== cartItemId) return item;
         const newUnit = item.availableUnits.find((u) => u.unitId === unitId);
         if (!newUnit) return item;
+        // QA fix M-30: ganti satuan ke yang lebih murah juga bisa membuat
+        // subtotal negatif — batasi diskon ke harga baru.
+        const discount = Math.min(item.discount, item.quantity * newUnit.price);
         return {
           ...item,
           unitId: newUnit.unitId,
@@ -143,14 +143,22 @@ export const useCartStore = create<CartState>((set, get) => ({
           productUnitId: newUnit.id,
           unitPrice: newUnit.price,
           originalPrice: newUnit.price,
-          subtotal: item.quantity * newUnit.price - item.discount,
+          discount,
+          subtotal: item.quantity * newUnit.price - discount,
         };
       }),
     });
   },
 
   setCustomer: (customerId) => set({ selectedCustomerId: customerId }),
-  setDiscount: (discount) => set({ discount }),
+  // QA fix M-30: diskon global (pelanggan) dibatasi 0..(subtotal - diskon item).
+  setDiscount: (discount) =>
+    set((state) => {
+      const gross = state.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      const itemDiscount = state.items.reduce((sum, item) => sum + item.discount, 0);
+      const maxDiscount = Math.max(0, gross - itemDiscount);
+      return { discount: Math.max(0, Math.min(discount || 0, maxDiscount)) };
+    }),
   setNotes: (notes) => set({ notes }),
 
   clearCart: () =>

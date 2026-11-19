@@ -22,6 +22,7 @@ import { useAuthStore } from '../stores/auth.store';
 import type { Product } from '../types';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { AppToast } from '../utils/toast';
+import { useDebouncedValue } from '../utils/debounce';
 
 const MOVEMENT_LABEL: Record<string, string> = {
   IN: 'Stok Masuk',
@@ -48,6 +49,9 @@ export const StockOpnameScreen: React.FC = () => {
   
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
+  // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
+  // di setiap ketikan.
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
   const [selectedType, setSelectedType] = useState<string>('');
 
   // Adjustment Modal
@@ -76,7 +80,7 @@ export const StockOpnameScreen: React.FC = () => {
 
     try {
       const res = await stockService.getStockMovements({
-        search: searchQuery || undefined,
+        search: debouncedSearchQuery || undefined,
         type: selectedType || undefined,
         page: pageNum,
         limit: 15,
@@ -104,12 +108,12 @@ export const StockOpnameScreen: React.FC = () => {
       setRefreshing(false);
       setLoadingMore(false);
     }
-  }, [searchQuery, selectedType]);
+  }, [debouncedSearchQuery, selectedType]);
 
   useEffect(() => {
     setPage(1);
     fetchMovements(1, true);
-  }, [searchQuery, selectedType]);
+  }, [debouncedSearchQuery, selectedType]);
 
   const onRefresh = () => {
     setPage(1);

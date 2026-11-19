@@ -45,11 +45,19 @@ export const productService = {
           ? rawData
           : rawData?.products || [];
 
+        // QA fix M-25: backend mengembalikan pagination di dalam action,
+        // tapi route membuangnya (`successResponse(result.data)`), jadi
+        // `pagination` tidak pernah sampai ke APK dan layar mengira hanya
+        // ada 1 halaman. Selama backend belum diperbaiki, sintesis dari
+        // panjang halaman: halaman penuh (= limit) berarti mungkin masih
+        // ada halaman berikut; halaman pendek berarti ini halaman terakhir.
+        const pageNum = filters.page || 1;
+        const limitNum = filters.limit || 10;
         const pagination = response.data.pagination || rawData?.pagination || {
           total: productsList.length,
-          page: 1,
-          limit: 10,
-          totalPages: 1,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: productsList.length < limitNum ? pageNum : pageNum + 1,
         };
 
         return {

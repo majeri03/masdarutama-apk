@@ -14,7 +14,18 @@ export const masterService = {
       );
       if (response.data.success) {
         const rawData = response.data.data;
-        const customersList = Array.isArray(rawData) ? rawData : rawData?.customers || [];
+        let customersList: Customer[] = Array.isArray(rawData) ? rawData : rawData?.customers || [];
+        // QA fix M-32: param `search` memang dikirim, tapi route backend
+        // mengabaikannya (tidak diteruskan ke action getCustomers), jadi
+        // pencarian pelanggan tidak pernah memfilter. Selama backend belum
+        // diperbaiki, filter di sisi klien (nama / kode / telepon).
+        // (Perbaikan permanen tetap di backend: teruskan `search`.)
+        if (search) {
+          const q = search.trim().toLowerCase();
+          customersList = customersList.filter((c) =>
+            [c.name, c.code, c.phone, c.email].some((v) => (v || '').toLowerCase().includes(q))
+          );
+        }
         return {
           ...response.data,
           data: { customers: customersList }
@@ -164,6 +175,13 @@ export const masterService = {
   async getPublicSettings(): Promise<ApiResponse<{ name: string; tagline: string | null; logoUrl: string | null }>> {
     try {
       const response = await api.get<ApiResponse<any>>('/api/settings/public');
+      // QA fix m-18: respons backend berbentuk { success, data: { name, logoUrl } }.
+      // Sebelumnya seluruh body dikembalikan apa adanya, jadi LoginScreen
+      // membaca res.data.logoUrl dari level yang salah (undefined) dan
+      // logo/nama toko tidak pernah tampil. Buka satu level `data`.
+      if (response.data?.success && response.data?.data) {
+        return { ...response.data, data: response.data.data };
+      }
       return response.data;
     } catch (error: any) {
       return { success: false, error: error.response?.data?.error || 'Gagal memuat info logo toko' };

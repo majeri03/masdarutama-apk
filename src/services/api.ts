@@ -5,7 +5,13 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL, SECURE_STORE_KEYS } from '../constants/api';
+import { navigationRef } from '../utils/navigation';
 import type { ApiResponse } from '../types';
+
+// Penjaga re-entry: penanganan 401 memanggil logout(), dan logout() sendiri
+// memanggil API (unregister push token) yang bisa 401 lagi. Tanpa penjaga
+// ini bisa berputar tanpa henti.
+let isHandling401 = false;
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -80,13 +86,34 @@ api.interceptors.response.use(
   },
   async (error: AxiosError<ApiResponse>) => {
     // Handle 401 - session expired — hapus cookie dan paksa re-login
-    if (error.response?.status === 401) {
-      console.warn('[API] 401 Unauthorized — clearing session cookie.');
+    // QA fix M-35: sebelumnya cookie memang dihapus, tapi UI tidak
+    // diberitahu — aplikasi tetap di layar dalam sampai di-restart.
+    // Sekarang: bersihkan state auth dan arahkan ke layar Login.
+    if (error.response?.status === 401 && !isHandling401) {
+      isHandling401 = true;
+      console.warn('[API] 401 Unauthorized — clearing session and going to Login.');
       try {
         await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.AUTH_COOKIE);
         await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.USER_DATA);
       } catch (e) {
         console.warn('[API] Failed to clear stored session:', e);
+      }
+      try {
+        // Dynamic import supaya tidak ada circular import statis
+        // (auth.store mengimpor api ini).
+        const { useAuthStore } = await import('../stores/auth.store');
+        await useAuthStore.getState().logout();
+      } catch (e) {
+        console.warn('[API] Failed to logout on 401:', e);
+      } finally {
+        isHandling401 = false;
+      }
+      try {
+        if (navigationRef.isReady() && navigationRef.getCurrentRoute()?.name !== 'Login') {
+          navigationRef.reset({ index: 0, routes: [{ name: 'Login' }] });
+        }
+      } catch (e) {
+        console.warn('[API] Failed to navigate to Login on 401:', e);
       }
     }
 

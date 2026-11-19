@@ -76,9 +76,31 @@ export const stockService = {
       if (response.data.success && response.data.data) {
         const rawData = response.data.data;
         if (Array.isArray(rawData)) {
+          // QA fix M-26: sama seperti produk — route backend membuang
+          // `pagination` dari action (`successResponse(result.data)`),
+          // jadi layar hanya pernah melihat halaman pertama (15 item).
+          // Sintesis seperti di product.service: halaman penuh berarti
+          // mungkin masih ada halaman berikut.
+          const pageNum = filters.page || 1;
+          const limitNum = filters.limit || 15;
           return {
             success: true,
-            data: rawData,
+            data: {
+              movements: rawData,
+              pagination: {
+                total: rawData.length,
+                page: pageNum,
+                limit: limitNum,
+                totalPages: rawData.length < limitNum ? pageNum : pageNum + 1,
+              },
+            } as StockMovementListResponse,
+          };
+        }
+        // Bentuk { movements, pagination } — teruskan apa adanya.
+        if ((rawData as any).movements) {
+          return {
+            success: true,
+            data: rawData as StockMovementListResponse,
           };
         }
       }

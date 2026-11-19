@@ -140,13 +140,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ allowedPages: res.data.data.allowedPages });
       } else if (res.data?.success && res.data?.allowedPages) {
         set({ allowedPages: res.data.allowedPages });
+      } else if (userRole === 'ADMIN') {
+        // Respons tidak membawa daftar halaman — fallback seperti di catch.
+        set({
+          allowedPages: ['pos', 'products', 'reports_settings', 'stock_opname', 'delivery', 'purchase', 'debt', 'customers'],
+        });
+      } else if (userRole === 'KASIR') {
+        set({
+          allowedPages: ['pos', 'products', 'stock_opname', 'delivery', 'debt', 'customers'],
+        });
       }
     } catch (error) {
       console.warn('Gagal memuat dynamic allowed pages:', error);
-      // Fallback: If ADMIN, give basic access
+      // QA fix M-37: sebelumnya hanya ADMIN yang punya fallback — kalau
+      // /api/page-access gagal, KASIR mendapat allowedPages kosong dan
+      // dashboard-nya kosong total. Beri menu default sesuai role,
+      // sama seperti ADMIN (tanpa users_management / system_settings).
       if (userRole === 'ADMIN') {
         set({
           allowedPages: ['pos', 'products', 'reports_settings', 'stock_opname', 'delivery', 'purchase', 'debt', 'customers'],
+        });
+      } else if (userRole === 'KASIR') {
+        set({
+          allowedPages: ['pos', 'products', 'stock_opname', 'delivery', 'debt', 'customers'],
         });
       }
     }
