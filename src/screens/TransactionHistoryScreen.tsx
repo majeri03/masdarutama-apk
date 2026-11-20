@@ -25,6 +25,7 @@ import { GlassCard, GradientButton } from '../components/ui';
 import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { ProofImageUploader } from '../components/ui/ProofImageUploader';
 import { salesService } from '../services/sales.service';
+import { toLocalDateString } from '../utils/dates';
 import type { Sale, PaymentMethod, SaleStatus } from '../types';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
 import { useRoute, useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -161,8 +162,8 @@ export const TransactionHistoryScreen: React.FC = () => {
           search: filters.search || undefined,
           status: filters.status || undefined,
           paymentMethod: filters.paymentMethod || undefined,
-          dateFrom: filters.dateFrom ? filters.dateFrom.toISOString().split('T')[0] : undefined,
-          dateTo: filters.dateTo ? filters.dateTo.toISOString().split('T')[0] : undefined,
+          dateFrom: filters.dateFrom ? filters.toLocalDateString(dateFrom) : undefined,
+          dateTo: filters.dateTo ? filters.toLocalDateString(dateTo) : undefined,
           sortOrder: filters.sortOrder,
           customerId: activeCustomerId || undefined,
           page: pageNum,

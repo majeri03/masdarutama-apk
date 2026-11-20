@@ -28,6 +28,7 @@ import { salesService } from '../services/sales.service';
 import { uploadService } from '../services/upload.service';
 import { AppToast } from '../utils/toast';
 import { useDebouncedValue } from '../utils/debounce';
+import { toLocalDateString } from '../utils/dates';
 import { generateInvoiceHtml } from '../utils/invoicePdf';
 import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
 import { useAuthStore } from '../stores/auth.store';
@@ -244,8 +245,8 @@ export const DeliveryScreen: React.FC = () => {
         status: statusFilter || undefined,
         // QA fix M-33: param benar adalah dateFrom/dateTo (startDate/endDate
         // diabaikan backend, jadi filter tanggal tidak pernah jalan).
-        dateFrom: startDate ? startDate.toISOString().split('T')[0] : undefined,
-        dateTo: endDate ? endDate.toISOString().split('T')[0] : undefined,
+        dateFrom: startDate ? toLocalDateString(startDate) : undefined,
+        dateTo: endDate ? toLocalDateString(endDate) : undefined,
       });
       if (res.success && res.data) {
         setDeliveryOrders(res.data as DeliveryOrder[]);
@@ -319,8 +320,8 @@ export const DeliveryScreen: React.FC = () => {
       const baseFilters: any = { limit: 30 };
       if (saleSearch.trim()) baseFilters.search = saleSearch.trim();
       if (saleSearchDate) {
-        baseFilters.dateFrom = saleSearchDate.toISOString().split('T')[0];
-        baseFilters.dateTo = saleSearchDate.toISOString().split('T')[0];
+        baseFilters.dateFrom = toLocalDateString(saleSearchDate);
+        baseFilters.dateTo = toLocalDateString(saleSearchDate);
       }
       const [pendingRes, completedRes] = await Promise.all([
         salesService.getSales({ ...baseFilters, status: 'PENDING' }),
@@ -370,7 +371,7 @@ export const DeliveryScreen: React.FC = () => {
       const payload = {
         customerId: selectedCustomerId,
         saleId: selectedSaleId || undefined,
-        deliveryDate: deliveryDate ? deliveryDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        deliveryDate: deliveryDate ? toLocalDateString(deliveryDate) : toLocalDateString(new Date()),
         driver: driver || undefined,
         vehicle: vehicle || undefined,
         notes: notes || undefined,
@@ -492,7 +493,7 @@ export const DeliveryScreen: React.FC = () => {
         id: selectedDO.id,
         driver: editDriver || undefined,
         vehicle: editVehicle || undefined,
-        deliveryDate: editDeliveryDate ? editDeliveryDate.toISOString().split('T')[0] : undefined,
+        deliveryDate: editDeliveryDate ? toLocalDateString(editDeliveryDate) : undefined,
         notes: editNotes || undefined,
         status: editStatus,
         receivedBy: editStatus === 'DELIVERED' ? editReceivedBy : undefined,
@@ -521,7 +522,7 @@ export const DeliveryScreen: React.FC = () => {
           ...selectedDO,
           driver: editDriver || null,
           vehicle: editVehicle || null,
-          deliveryDate: editDeliveryDate ? editDeliveryDate.toISOString().split('T')[0] : selectedDO.deliveryDate,
+          deliveryDate: editDeliveryDate ? toLocalDateString(editDeliveryDate) : selectedDO.deliveryDate,
           notes: editNotes || null,
           status: editStatus,
           receivedBy: editStatus === 'DELIVERED' ? editReceivedBy : null,
@@ -866,8 +867,8 @@ export const DeliveryScreen: React.FC = () => {
                   setSearch('');
                   deliveryService.getDeliveryOrders({
                     status: statusFilter || undefined,
-                    dateFrom: startDate ? startDate.toISOString().split('T')[0] : undefined,
-                    dateTo: endDate ? endDate.toISOString().split('T')[0] : undefined,
+                    dateFrom: startDate ? toLocalDateString(startDate) : undefined,
+                    dateTo: endDate ? toLocalDateString(endDate) : undefined,
                   }).then((res) => {
                     if (res.success && res.data) setDeliveryOrders(res.data as DeliveryOrder[]);
                   }).catch(() => {});

@@ -18,6 +18,7 @@ const TAB_SCREENS = new Set(['Dashboard', 'POS', 'Products', 'History', 'Reports
 // Kategori filter notifikasi
 const CATEGORIES = [
   { key: '', label: 'Semua', icon: 'notifications-outline' as const, color: Colors.primaryStart },
+  { key: 'unread', label: 'Belum dibaca', icon: 'mail-unread-outline' as const, color: Colors.primaryStart },
   { key: 'finance', label: 'Keuangan', icon: 'cash-outline' as const, color: Colors.error },
   { key: 'orders', label: 'Pesanan', icon: 'receipt-outline' as const, color: Colors.warning },
   { key: 'deliveries', label: 'Pengiriman', icon: 'car-outline' as const, color: Colors.info },
@@ -158,7 +159,9 @@ export const NotificationCenterScreen: React.FC = () => {
   };
 
   // Filter notifikasi berdasarkan kategori aktif
-  const filteredNotifications = activeFilter
+  const filteredNotifications = activeFilter === 'unread'
+    ? notifications.filter((n) => !n.isRead)
+    : activeFilter
     ? notifications.filter((n) => getNotifMeta(n).category === activeFilter)
     : notifications;
 

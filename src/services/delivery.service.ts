@@ -63,8 +63,8 @@ export const deliveryService = {
       // dibuang dan filter tanggal pengiriman tidak pernah jalan.
       const dateFrom = filters.dateFrom ?? filters.startDate;
       const dateTo = filters.dateTo ?? filters.endDate;
-      if (dateFrom) params.append('dateFrom', dateFrom);
-      if (dateTo) params.append('dateTo', dateTo);
+      if (dateFrom) params.append('dateFrom', toDayStartISO(dateFrom));
+      if (dateTo) params.append('dateTo', toDayEndISO(dateTo));
 
       const url = `${API_ENDPOINTS.DELIVERY_ORDERS}?${params.toString()}`;
       const response = await api.get<ApiResponse<any[]>>(url);

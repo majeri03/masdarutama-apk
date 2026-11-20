@@ -10,6 +10,8 @@ export interface AppNotification {
   date: string; // ISO string
   isRead: boolean;
   data?: Record<string, unknown>;
+  /** Kunci dedup lintas jalur (push vs polling vs lokal), mis. `sale-<id>`. */
+  dedupKey?: string;
 }
 
 interface NotificationCenterState {
@@ -17,7 +19,7 @@ interface NotificationCenterState {
   isLoading: boolean;
   lastNotificationTimestamp: number;
   triggerRefresh: () => void;
-  addNotification: (notification: Omit<AppNotification, 'id' | 'date' | 'isRead'>) => void;
+  addNotification: (notification: Omit<AppNotification, 'id' | 'date' | 'isRead'> & { id?: string; date?: string }) => void;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   clearReadNotifications: () => Promise<void>;
@@ -37,14 +39,25 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
         set({ lastNotificationTimestamp: Date.now() });
       },
       
+      // DEDUP TERPUSAT (Nov 2026): dulu tiap jalur (push foreground, drain
+      // background, ketuk banner, polling, fetch server) menambah entri sendiri
+      // dengan ID acak — 1 transaksi jadi 11 entri. Sekarang SEMUA jalur lewat
+      // sini dan dicek 3 kunci: ID server, dedupKey, lalu judul+isi (2 menit).
       addNotification: (notif) => {
+        const state = get();
+        const id = notif.id ?? Date.now().toString() + Math.random().toString(36).substring(2, 9);
+        if (state.notifications.some((n) => n.id === id)) return;
+        if (notif.dedupKey && state.notifications.some((n) => n.dedupKey === notif.dedupKey)) return;
+        const now = Date.now();
+        if (state.notifications.some((n) => n.title === notif.title && n.body === notif.body &&
+          (now - new Date(n.date).getTime()) < 2 * 60 * 1000)) return;
         const newNotif: AppNotification = {
           ...notif,
-          id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-          date: new Date().toISOString(),
+          id,
+          date: notif.date ?? new Date().toISOString(),
           isRead: false,
         };
-        
+
         set((state) => ({
           notifications: [newNotif, ...state.notifications],
           lastNotificationTimestamp: Date.now(),
@@ -57,7 +70,9 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
             n.id === id ? { ...n, isRead: true } : n
           ),
         }));
-        api.patch('/api/notifications', { id }).catch(() => {});
+        // Hanya kirim ke server untuk ID server asli — ID lokal (awalan
+        // "local-") tidak ada di DB, dulu PATCH-nya gagal diam-diam.
+        if (!id.startsWith('local-')) api.patch('/api/notifications', { id }).catch(() => {});
       },
       
       markAllAsRead: () => {
@@ -104,10 +119,13 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
                 },
               }));
 
-            // Merge with local notifications (dedup by ID)
+            // Merge dengan notifikasi lokal: dedup by ID, LALU by judul+isi —
+            // salinan lokal (ID acak) dari kejadian yang sama dengan baris server
+            // harus dibuang, dulu keduanya tampil berdua.
             const local = get().notifications.filter((n) => (now - new Date(n.date).getTime()) < THREE_DAYS_MS);
             const existingIds = new Set(remoteItems.map((n) => n.id));
-            const merged = [...remoteItems, ...local.filter((n) => !existingIds.has(n.id))];
+            const remoteKeys = new Set(remoteItems.map((n) => `${n.title}||${n.body}`));
+            const merged = [...remoteItems, ...local.filter((n) => !existingIds.has(n.id) && !remoteKeys.has(`${n.title}||${n.body}`))];
 
             merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             set({ notifications: merged, isLoading: false });

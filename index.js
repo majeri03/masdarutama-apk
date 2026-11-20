@@ -41,7 +41,9 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }) => 
     const raw = await AsyncStorage.getItem(PENDING_NOTIF_KEY);
     const existing = raw ? JSON.parse(raw) : [];
     existing.unshift({
-      id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+      // Pakai ID server kalau ada (dari payload backend) supaya drain nanti
+      // bisa dedup dengan baris server — dulu selalu ID acak baru.
+      id: (notifData && typeof notifData.id === 'string' ? notifData.id : Date.now().toString() + Math.random().toString(36).slice(2, 7)),
       title,
       body,
       data: notifData,

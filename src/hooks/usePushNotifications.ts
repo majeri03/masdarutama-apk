@@ -14,17 +14,23 @@ import { navigationRef } from '../utils/navigation';
 // FIX (Nov 2026): channel sebelumnya dibuat dengan promise mengambang tanpa
 // await di level modul, jadi notifikasi pertama bisa dijadwalkan sebelum
 // channel-nya selesai dibuat. Sekarang setiap penjadwalan menunggu channel.
+// SATU channel suara khas (Nov 2026): dulu ada 5 channel, hanya
+// masdar_channel_v2 yang bersuara khas — dan itu pun hanya dipakai tombol Tes.
+// Semua notifikasi nyata (orders/deliveries/finance) memakai channel lain
+// dengan suara 'default'. Sekarang semua lewat masdar_channel_v3.
+// Channel Android TIDAK BISA diubah suaranya setelah dibuat, makanya ID-nya
+// dinaikkan v2 -> v3 (channel lama dihapus saat startup, lihat bawah).
+export const NOTIF_CHANNEL_ID = 'masdar_channel_v3';
+const LEGACY_CHANNEL_IDS = ['masdar_channel_v2', 'default', 'orders', 'deliveries', 'finance'];
 const CHANNEL_CONFIGS: Record<string, { name: string; description: string; sound: string }> = {
-  masdar_channel_v2: { name: 'TB Masdar Utama (Suara Khas)', description: 'Notifikasi utama sistem dengan suara khas Masdar Utama', sound: 'masdar_utama.mp3' },
-  default: { name: 'Notifikasi Umum', description: 'Notifikasi umum sistem', sound: 'default' },
-  orders: { name: 'Pesanan & Penjualan', description: 'Pesanan POS baru dan orderan WA', sound: 'default' },
-  deliveries: { name: 'Surat Jalan & Pengiriman', description: 'Status pengiriman dan armada', sound: 'default' },
-  finance: { name: 'Keuangan & Piutang', description: 'Pembayaran cicilan dan jatuh tempo', sound: 'default' },
+  masdar_channel_v3: { name: 'TB Masdar Utama (Suara Khas)', description: 'Notifikasi utama sistem dengan suara khas Masdar Utama', sound: 'masdar_utama.mp3' },
 };
 
 async function ensureNotificationChannel(channelId: string): Promise<void> {
   if (Platform.OS !== 'android') return;
-  const cfg = CHANNEL_CONFIGS[channelId] ?? { name: 'Notifikasi Masdar Utama', description: 'Notifikasi sistem', sound: 'default' };
+  // Paksa ke channel suara khas — ID lama (orders/deliveries/...) diarahkan ke v3.
+  channelId = NOTIF_CHANNEL_ID;
+  const cfg = CHANNEL_CONFIGS[channelId] ?? { name: 'TB Masdar Utama (Suara Khas)', description: 'Notifikasi utama sistem dengan suara khas Masdar Utama', sound: 'masdar_utama.mp3' };
   try {
     await Notifications.setNotificationChannelAsync(channelId, {
       name: cfg.name,
@@ -46,17 +52,19 @@ export async function scheduleLocalNotification(
   title: string,
   body: string,
   data?: Record<string, unknown>,
-  channelId = 'default',
+  channelId = NOTIF_CHANNEL_ID,
 ) {
   if (!title || !body || title.trim() === '' || body.trim() === '') return;
   try {
+    // Semua notifikasi lokal lewat channel suara khas v3.
+    channelId = NOTIF_CHANNEL_ID;
     await ensureNotificationChannel(channelId);
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
         data: data ?? {},
-        sound: 'default',
+        sound: 'masdar_utama.mp3',
         ...(Platform.OS === 'android' ? { channelId } : {}),
       },
       trigger: null, // tampil langsung
@@ -92,25 +100,21 @@ Notifications.setNotificationHandler({
 
 
 if (Platform.OS === 'android') {
-  const channels = [
-    { id: 'masdar_channel_v2', name: 'TB Masdar Utama (Suara Khas)', desc: 'Notifikasi utama sistem dengan suara khas Masdar Utama' },
-    { id: 'default', name: 'Notifikasi Umum', desc: 'Notifikasi umum sistem' },
-    { id: 'orders', name: 'Pesanan & Penjualan', desc: 'Pesanan POS baru dan orderan WA' },
-    { id: 'deliveries', name: 'Surat Jalan & Pengiriman', desc: 'Status pengiriman dan armada' },
-    { id: 'finance', name: 'Keuangan & Piutang', desc: 'Pembayaran cicilan dan jatuh tempo' },
-  ];
-  for (const ch of channels) {
-    Notifications.setNotificationChannelAsync(ch.id, {
-      name: ch.name,
-      description: ch.desc,
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#2563EB',
-      enableVibrate: true,
-      showBadge: true,
-      sound: ch.id === 'masdar_channel_v2' ? 'masdar_utama.mp3' : 'default',
-    }).catch(() => {});
+  // Hapus channel lama (suaranya sudah terlanjur 'default' dan tidak bisa
+  // diubah) lalu buat SATU channel suara khas v3.
+  for (const legacyId of LEGACY_CHANNEL_IDS) {
+    Notifications.deleteNotificationChannelAsync(legacyId).catch(() => {});
   }
+  Notifications.setNotificationChannelAsync(NOTIF_CHANNEL_ID, {
+    name: 'TB Masdar Utama (Suara Khas)',
+    description: 'Notifikasi utama sistem dengan suara khas Masdar Utama',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#2563EB',
+    enableVibrate: true,
+    showBadge: true,
+    sound: 'masdar_utama.mp3',
+  }).catch(() => {});
 }
 
 /**
@@ -206,7 +210,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | unde
 
   // Pastikan channel dibuat sebelum meminta izin (Android)
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('masdar_channel_v2', {
+    await Notifications.setNotificationChannelAsync(NOTIF_CHANNEL_ID, {
       name: 'TB Masdar Utama (Suara Khas)',
       description: 'Notifikasi utama sistem dengan suara khas Masdar Utama',
       importance: Notifications.AndroidImportance.MAX,
@@ -277,7 +281,7 @@ export async function sendTestNotification(): Promise<{ ok: boolean; permission:
     '🔔 Tes Notifikasi Masdar Utama',
     'Kalau banner ini muncul, notifikasi lokal HP kamu sudah jalan. Kalau pesanan tetap tidak muncul, masalahnya di server/token push.',
     { screen: 'NotificationCenter' },
-    'masdar_channel_v2',
+    NOTIF_CHANNEL_ID,
   );
   return { ok: true, permission: status };
 }
@@ -344,6 +348,9 @@ export function usePushNotifications() {
 
   // Daftarkan dan sinkronkan token saat mount dan saat status login berubah
   useEffect(() => {
+    // Jangan minta izin notifikasi / kirim token sebelum login (dulu dialog
+    // izin muncul di layar Login dan token dikirim tanpa autentikasi).
+    if (!isAuthenticated) return;
     syncPushTokenToServer().then((token) => {
       if (token) setExpoPushToken(token);
     });
@@ -358,30 +365,22 @@ export function usePushNotifications() {
       // Skip notifikasi dengan konten kosong (mencegah entri blank di notification center)
       if (!title || !body || title.trim() === '' || body.trim() === '') return;
 
-      const notifId = notification.request.identifier;
       const state = useNotificationCenterStore.getState();
 
       // Trigger automatic UI refresh across screens
       state.triggerRefresh();
 
-      // Cek berdasarkan ID terlebih dahulu (lebih reliable)
-      const idExists = state.notifications.some((n) => n.id === notifId);
-      if (idExists) return;
-
-      // Fallback: cegah duplikat konten dalam 2 menit (untuk notif lokal tanpa ID unik)
-      const DEDUP_WINDOW_MS = 2 * 60 * 1000;
-      const contentExists = state.notifications.some(
-        (n) => n.title === (title || '') && n.body === (body || '') &&
-          (Date.now() - new Date(n.date).getTime()) < DEDUP_WINDOW_MS
-      );
-
-      if (!contentExists) {
-        state.addNotification({
-          title: title || 'Notifikasi Baru',
-          body: body || '',
-          data: (data as Record<string, unknown>) || {},
-        });
-      }
+      // Teruskan ID server + dedupKey dari payload backend — dedup terpusat
+      // di addNotification. Dulu di sini dicek notification.request.identifier
+      // (ID push Expo) terhadap ID lokal acak: tidak pernah cocok, jadi dedup gagal.
+      const typedData = (data as Record<string, any>) || {};
+      state.addNotification({
+        id: typeof typedData.id === 'string' ? typedData.id : undefined,
+        dedupKey: typeof typedData.dedupKey === 'string' ? typedData.dedupKey : undefined,
+        title: title || 'Notifikasi Baru',
+        body: body || '',
+        data: (data as Record<string, unknown>) || {},
+      });
     });
 
     // 3. Listener: user mengetuk notifikasi (dari BACKGROUND atau KILLED state)
@@ -411,24 +410,15 @@ export function usePushNotifications() {
       // Simpan ke notification center jika ada konten valid
       if (title && body && title.trim() !== '' && body.trim() !== '') {
         const state = useNotificationCenterStore.getState();
-        const notifId = notif.request.identifier;
-        const idExists = state.notifications.some((n) => n.id === notifId);
-
-        if (!idExists) {
-          // Cek duplikat konten dalam 2 menit
-          const DEDUP_WINDOW_MS = 2 * 60 * 1000;
-          const contentExists = state.notifications.some(
-            (n) => n.title === title && n.body === body &&
-              (Date.now() - new Date(n.date).getTime()) < DEDUP_WINDOW_MS
-          );
-          if (!contentExists) {
-            state.addNotification({
-              title: title || 'Notifikasi Baru',
-              body: body || '',
-              data: typedData || {},
-            });
-          }
-        }
+        state.addNotification({
+          id: typeof typedData?.id === 'string' ? typedData.id : undefined,
+          dedupKey: typeof typedData?.dedupKey === 'string' ? typedData.dedupKey : undefined,
+          title: title || 'Notifikasi Baru',
+          body: body || '',
+          data: typedData || {},
+        });
+        // Ketuk = dibaca (dulu tidak pernah ditandai, badge tidak turun).
+        if (typeof typedData?.id === 'string') state.markAsRead(typedData.id);
       }
 
       // Fungsi navigasi dengan retry saat cold start

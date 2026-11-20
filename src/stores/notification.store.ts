@@ -23,6 +23,7 @@ interface NotificationState {
   // FIX (Nov 2026): pelacak pesanan terbaru untuk polling penjualan baru
   _prevLastSaleId: string;
   _lastSaleNotifAt: number;
+  resetBaselines: () => void;
   startPolling: () => void;
   stopPolling: () => void;
   fetchCounts: () => Promise<void>;
@@ -77,7 +78,7 @@ export const useNotificationStore = create<NotificationState>()(
 
           // 1. Hutang / Piutang Jatuh Tempo
           try {
-            const debtRes = await api.get('/api/debts?overdue=true&limit=50');
+            const debtRes = await api.get('/api/debts/customers?status=OVERDUE&limit=50');
             if (debtRes.data?.success || debtRes.data?.status === 'success') {
               const overdueList = debtRes.data?.data || [];
               const count = Array.isArray(overdueList) ? overdueList.length : 0;
@@ -93,8 +94,8 @@ export const useNotificationStore = create<NotificationState>()(
                 const title = '⚠️ Hutang Jatuh Tempo!';
                 const body = `${count} hutang/piutang jatuh tempo. Total: Rp${totalAmount.toLocaleString('id-ID')}`;
                 if (shouldSendNotif(state._lastDebtNotifAt, title, body)) {
-                  addNotif({ title, body, data: { screen: 'Debt' } });
-                  scheduleLocalNotification(title, body, { screen: 'Debt' }, 'finance');
+                  addNotif({ dedupKey: `debt-overdue-${count}`, title, body, data: { screen: 'Debt' } });
+                  scheduleLocalNotification(title, body, { screen: 'Debt' }, 'masdar_channel_v3');
                   set({ _lastDebtNotifAt: Date.now() });
                 }
               }
@@ -117,8 +118,8 @@ export const useNotificationStore = create<NotificationState>()(
                 const title = '🛒 Purchase Order Pending';
                 const body = `Ada ${count} PO yang belum dikonfirmasi/diterima.`;
                 if (shouldSendNotif(state._lastPoNotifAt, title, body)) {
-                  addNotif({ title, body, data: { screen: 'Purchase' } });
-                  scheduleLocalNotification(title, body, { screen: 'Purchase' }, 'orders');
+                  addNotif({ dedupKey: `po-pending-${count}`, title, body, data: { screen: 'Purchase' } });
+                  scheduleLocalNotification(title, body, { screen: 'Purchase' }, 'masdar_channel_v3');
                   set({ _lastPoNotifAt: Date.now() });
                 }
               }
@@ -145,8 +146,8 @@ export const useNotificationStore = create<NotificationState>()(
                   const title = '🛒 Pesanan Baru Masuk!';
                   const body = `${latest.customer?.name || 'Pelanggan'} — Invoice #${latest.invoiceNumber || ''} (Rp ${Number(latest.grandTotal || 0).toLocaleString('id-ID')})`;
                   if (shouldSendNotif(get()._lastSaleNotifAt, title, body)) {
-                    addNotif({ title, body, data: { screen: 'History' } });
-                    scheduleLocalNotification(title, body, { screen: 'History' }, 'orders');
+                    addNotif({ id: `local-sale-${latest.id}`, dedupKey: `sale-${latest.id}`, title, body, data: { screen: 'History', params: { invoiceNumber: latest.invoiceNumber } } });
+                    scheduleLocalNotification(title, body, { screen: 'History', params: { invoiceNumber: latest.invoiceNumber } }, 'masdar_channel_v3');
                     set({ _lastSaleNotifAt: Date.now() });
                   }
                 }
@@ -159,7 +160,7 @@ export const useNotificationStore = create<NotificationState>()(
           try {
             const stockRes = await api.get('/api/products?lowStock=true&limit=50');
             if (stockRes.data?.success || stockRes.data?.status === 'success') {
-              const stockList = stockRes.data?.data?.products || stockRes.data?.products || [];
+              const stockList = Array.isArray(stockRes.data?.data) ? stockRes.data.data : (stockRes.data?.data?.products || stockRes.data?.products || []);
               const count = Array.isArray(stockList) ? stockList.length : 0;
               if (count > 0) {
                 const title = '📉 Stok Rendah!';
@@ -167,8 +168,8 @@ export const useNotificationStore = create<NotificationState>()(
                 // Cooldown 1 hari untuk stok rendah (tidak perlu tiap 5 menit)
                 const timeSinceLast = Date.now() - get()._lastStockNotifAt;
                 if (timeSinceLast > 24 * 60 * 60 * 1000 && shouldSendNotif(get()._lastStockNotifAt, title, body)) {
-                  addNotif({ title, body, data: { screen: 'Products' } });
-                  scheduleLocalNotification(title, body, { screen: 'Products' }, 'default');
+                  addNotif({ dedupKey: `low-stock-${count}`, title, body, data: { screen: 'Products' } });
+                  scheduleLocalNotification(title, body, { screen: 'Products' }, 'masdar_channel_v3');
                   set({ _lastStockNotifAt: Date.now() });
                 }
               }
@@ -179,6 +180,10 @@ export const useNotificationStore = create<NotificationState>()(
         } catch (error) {
           console.warn('[Notification Store] Failed to fetch counts', error);
         }
+      },
+
+      resetBaselines: () => {
+        set({ _prevLastSaleId: '', _prevOverdueDebts: -1, _prevPendingPurchases: -1, _lastSaleNotifAt: 0, _lastDebtNotifAt: 0, _lastPoNotifAt: 0, _lastStockNotifAt: 0 });
       },
 
       startPolling: () => {

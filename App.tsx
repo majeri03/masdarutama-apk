@@ -314,7 +314,14 @@ export default function App() {
             const { addNotification } = useNotificationCenterStore.getState();
             // Masukkan dari yang terlama ke terbaru agar urutan benar di center
             [...pending].reverse().forEach((n) => {
-              addNotification({ title: n.title, body: n.body, data: n.data || {} });
+              // Teruskan ID server + tanggal asli — dulu dibuang dan diganti
+              // ID acak + "sekarang", jadi duplikat dan meloncat ke atas.
+              addNotification({
+                id: typeof (n as any).id === 'string' ? (n as any).id : undefined,
+                dedupKey: (n.data as any)?.dedupKey,
+                date: n.date,
+                title: n.title, body: n.body, data: n.data || {},
+              });
             });
             await AsyncStorage.removeItem(PENDING_NOTIF_KEY);
             console.log(`[App] Drain ${pending.length} notifikasi pending dari background.`);

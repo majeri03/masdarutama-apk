@@ -106,6 +106,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await unregisterPushTokenFromServer();
     } catch {}
     await authService.logout();
+    // Reset baseline polling supaya setelah login ulang tidak muncul
+    // notifikasi "Pesanan Baru" palsu untuk penjualan lama.
+    try {
+      const { useNotificationStore } = await import('../stores/notification.store');
+      useNotificationStore.getState().resetBaselines();
+    } catch {}
     set({ user: null, isAuthenticated: false, isLoading: false, allowedPages: [] });
   },
 

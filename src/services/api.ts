@@ -72,9 +72,17 @@ api.interceptors.response.use(
         }
 
         if (cookieString) {
+          // Gabung per nama cookie: respons yang hanya membawa satu cookie
+          // (mis. csrf-token) tidak boleh menghapus authjs.session-token.
+          const prev = (await SecureStore.getItemAsync(SECURE_STORE_KEYS.AUTH_COOKIE)) || '';
+          const merged = new Map<string, string>();
+          for (const part of `${prev}; ${cookieString}`.split(';')) {
+            const eq = part.indexOf('=');
+            if (eq > 0) merged.set(part.slice(0, eq).trim(), part.trim());
+          }
           await SecureStore.setItemAsync(
             SECURE_STORE_KEYS.AUTH_COOKIE,
-            cookieString
+            [...merged.values()].join('; ')
           );
           console.log('[API] Session cookie updated.');
         }

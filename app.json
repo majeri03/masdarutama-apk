@@ -62,7 +62,7 @@
       [
         "expo-notifications",
         {
-          "defaultChannel": "masdar_channel_v2",
+          "defaultChannel": "masdar_channel_v3",
           "mode": "production",
           "androidMode": "default",
           "androidCollapsedTitle": "TB Masdar Utama",

@@ -25,6 +25,7 @@ import { masterService } from '../services/master.service';
 import { productService } from '../services/product.service';
 import { useAuthStore } from '../stores/auth.store';
 import { useDebouncedValue } from '../utils/debounce';
+import { toLocalDateString } from '../utils/dates';
 import { AppToast } from '../utils/toast';
 import type { Supplier, Product } from '../types';
 
@@ -332,7 +333,7 @@ export const PurchaseScreen: React.FC = () => {
     try {
       const payload = {
         supplierId: selectedSupplierId,
-        purchaseDate: purchaseDate ? purchaseDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        purchaseDate: purchaseDate ? toLocalDateString(purchaseDate) : toLocalDateString(new Date()),
         discount: discountAmount,
         tax: taxAmount,
         paidAmount: Number(paidAmount || 0),
