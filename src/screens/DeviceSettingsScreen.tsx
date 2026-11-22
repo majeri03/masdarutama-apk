@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Component, ErrorInfo, ReactNode } from 'react';
 import {
   View,
   Text,
@@ -7,16 +7,15 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  PermissionsAndroid,
   Platform,
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { GlassCard } from '../components/ui';
-import { printerService, PrinterType } from '../services/printer.service';
+import { printerService, PrinterType, BleNotEnabledError, BlePermissionError } from '../services/printer.service';
 import { AppToast } from '../utils/toast';
 import * as IntentLauncher from 'expo-intent-launcher';
 
@@ -90,43 +89,38 @@ const DeviceSettingsContent: React.FC = () => {
     requestPermissionsAndInit();
   }, []);
 
-  const requestPermissionsAndInit = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        if ((Platform.Version as number) >= 31) {
-          const granted = await PermissionsAndroid.requestMultiple([
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-          ]);
-          const allGranted =
-            granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] === PermissionsAndroid.RESULTS.GRANTED &&
-            granted[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] === PermissionsAndroid.RESULTS.GRANTED;
-
-          if (!allGranted) {
-            if (isMounted.current) {
-              setPermGranted(false);
-            }
-          } else {
-            if (isMounted.current) setPermGranted(true);
-          }
-        } else {
-          const granted = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-          );
-          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-            if (isMounted.current) {
-              setPermGranted(false);
-            }
-          } else {
-            if (isMounted.current) setPermGranted(true);
-          }
+  // Kembali dari Pengaturan Bluetooth sistem (atau Pengaturan Aplikasi) —
+  // muat ulang daftar perangkat otomatis, pengguna tidak perlu tekan refresh.
+  // Lewati pemanggilan pertama (sudah ditangani effect mount di atas).
+  const focusCountRef = useRef(0);
+  useFocusEffect(
+    useCallback(() => {
+      focusCountRef.current += 1;
+      if (focusCountRef.current <= 1) return;
+      (async () => {
+        const granted = await printerService.hasBlePermission();
+        if (granted) {
+          if (!permGranted) setPermGranted(true);
+          scanDevices();
+        } else if (permGranted) {
+          setPermGranted(false);
         }
-      } catch (err) {
-        console.warn('[DeviceSettings] Permission error (non-blocking):', err);
-      }
+      })();
+    }, [permGranted])
+  );
+
+  const requestPermissionsAndInit = async () => {
+    // FIX (Nov 2026): JANGAN lanjut scan kalau izin ditolak. Dulu kode
+    // sengaja "selalu lanjutkan init meski izin ditolak" — di Android 12+
+    // getBondedDevices() tanpa BLUETOOTH_CONNECT melempar SecurityException
+    // native yang tidak bisa ditangkap JS, runtime mati, layar jadi abu-abu.
+    const granted = await printerService.requestBlePermission();
+    if (isMounted.current) setPermGranted(granted);
+    if (!granted) {
+      // Berhenti di sini: kotak izin di bawah yang tampil, bukan scan.
+      return;
     }
 
-    // Selalu lanjutkan init meski izin ditolak — screen tidak boleh blank
     await initAndScan();
   };
 
@@ -170,6 +164,15 @@ const DeviceSettingsContent: React.FC = () => {
 
   const scanDevices = async () => {
     if (!isMounted.current) return;
+    // Gerbang izin: jangan sentuh modul BLE native tanpa izin.
+    if (!(await printerService.hasBlePermission())) {
+      if (isMounted.current) {
+        setPermGranted(false);
+        setBleDevices([]);
+        setScanning(false);
+      }
+      return;
+    }
     setScanning(true);
     setBleError(null);
     setBluetoothEnabled(null); // reset saat scan ulang
@@ -189,8 +192,10 @@ const DeviceSettingsContent: React.FC = () => {
         }
       } else {
         const errMsg = String(bles.reason?.message || '');
-        // Deteksi Bluetooth mati
-        const isBtOff = errMsg.toLowerCase().includes('disabled') ||
+        // Deteksi Bluetooth mati — termasuk error bertipe dari service
+        const isBtOff =
+          bles.reason instanceof BleNotEnabledError ||
+          errMsg.toLowerCase().includes('disabled') ||
           errMsg.toLowerCase().includes('off') ||
           errMsg.toLowerCase().includes('not enabled') ||
           errMsg.toLowerCase().includes('bluetooth is off');
@@ -198,7 +203,11 @@ const DeviceSettingsContent: React.FC = () => {
         setBleDevices([]);
         setBluetoothEnabled(false);
 
-        if (isBtOff || !permGranted) {
+        if (bles.reason instanceof BlePermissionError) {
+          // Izin dicabut dari Pengaturan Aplikasi selagi layar terbuka.
+          setPermGranted(false);
+          setBleError(null);
+        } else if (isBtOff || !permGranted) {
           setBleError('BLUETOOTH_OFF');
         } else {
           setBleError('Bluetooth tidak tersedia atau gagal diakses di perangkat ini.');
@@ -304,6 +313,12 @@ const DeviceSettingsContent: React.FC = () => {
           <Text style={styles.permWarningText}>
             Izin Bluetooth ditolak. Fitur pencarian printer tidak tersedia.
           </Text>
+          <TouchableOpacity
+            style={styles.permSettingsBtn}
+            onPress={() => Linking.openSettings()}
+          >
+            <Text style={styles.permSettingsBtnText}>Buka Pengaturan Aplikasi</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -394,8 +409,8 @@ const DeviceSettingsContent: React.FC = () => {
               <TouchableOpacity
                 style={[styles.openSettingsBtn, { backgroundColor: Colors.primaryStart, marginTop: 8 }]}
                 onPress={() => {
-                  setPermGranted(true);
-                  scanDevices();
+                  // Minta ulang izin sungguhan — jangan pura-pura izin sudah ada.
+                  requestPermissionsAndInit();
                 }}
               >
                 <Ionicons name="refresh-outline" size={16} color="#FFFFFF" />
@@ -548,6 +563,17 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.warning,
     fontWeight: FontWeight.medium,
+  },
+  permSettingsBtn: {
+    backgroundColor: Colors.warning,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+  },
+  permSettingsBtnText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   content: { padding: Spacing.lg },
   card: { marginBottom: Spacing.lg },

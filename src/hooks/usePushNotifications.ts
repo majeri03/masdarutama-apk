@@ -407,6 +407,11 @@ export function usePushNotifications() {
         screen = route.type === 'tab' ? route.tabName : route.stackName;
       }
 
+      // Log sementara (Nov 2026): pastikan params DO sampai ke listener.
+      // Kalau log ini tidak pernah muncul / params kosong, masalahnya ada di
+      // payload push (FCM), bukan di layar. Hapus setelah terkonfirmasi.
+      console.log('[PushTap]', JSON.stringify({ screen, type: notifType, params }));
+
       // Simpan ke notification center jika ada konten valid
       if (title && body && title.trim() !== '' && body.trim() !== '') {
         const state = useNotificationCenterStore.getState();
@@ -424,6 +429,23 @@ export function usePushNotifications() {
       // Fungsi navigasi dengan retry saat cold start
       const doNavigate = (targetScreen: string | undefined, attemptsLeft: number) => {
         if (!navigationRef.isReady()) {
+          if (attemptsLeft > 0) {
+            setTimeout(() => doNavigate(targetScreen, attemptsLeft - 1), 300);
+          }
+          return;
+        }
+
+        // FIX (Nov 2026): jangan hitung mundur selagi sesi login belum dicek.
+        // Dulu retry 6 detik bisa habis sebelum checkSession selesai, sehingga
+        // navigate('Delivery') dipanggil saat stack hanya berisi Login —
+        // route tidak ada, navigasi gagal diam-diam, layar tertutup splash abu-abu.
+        const { isAuthenticated, isLoading } = useAuthStore.getState();
+        if (isLoading) {
+          setTimeout(() => doNavigate(targetScreen, attemptsLeft), 300);
+          return;
+        }
+        if (!isAuthenticated) {
+          // Belum login (atau baru logout): beri kesempatan login dulu.
           if (attemptsLeft > 0) {
             setTimeout(() => doNavigate(targetScreen, attemptsLeft - 1), 300);
           }

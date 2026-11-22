@@ -70,7 +70,7 @@ export const AppUpdateScreen: React.FC = () => {
 
     const apkPath = await downloadApk(manifest.apkUrl, (progress) => {
       setState({ status: 'downloading', progress });
-    });
+    }, manifest.sha256);
 
     if (apkPath) {
       setState({ status: 'downloaded', apkPath, manifest });

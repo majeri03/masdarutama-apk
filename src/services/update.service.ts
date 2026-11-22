@@ -13,17 +13,38 @@
  *      "versionCode": 2,
  *      "releaseNotes": "- Perbaikan bug printer\n- Tambah fitur laporan",
  *      "apkUrl": "https://drive.google.com/uc?export=download&id=<APK_FILE_ID>",
+ *      "sha256": "<hash SHA-256 file APK, 64 huruf hex>",
  *      "minAndroidSdk": 26,
  *      "mandatory": false
  *    }
+ *    CARA MENGISI sha256 (di Windows, setelah EAS build selesai):
+ *      certutil -hashfile masdar-utama-v1.2.0.apk SHA256
+ *    atau di PowerShell:
+ *      (Get-FileHash masdar-utama-v1.2.0.apk -Algorithm SHA256).Hash
+ *    Salin hasilnya (64 karakter hex) ke field "sha256" di manifest.
  * ─────────────────────────────────────────────────────────────────────────
  * PENTING: Ganti UPDATE_MANIFEST_URL dan CURRENT_VERSION sesuai project Anda.
+ * PERINGATAN: Sejak Nov 2026, update DITOLAK kalau manifest tidak punya
+ * sha256 yang valid (REQUIRE_MANIFEST_HASH di bawah). Jadi SETELAH patch ini
+ * rilis, JANGAN LUPA menambahkan sha256 ke manifest — kalau tidak, tombol
+ * "Cek Pembaruan" akan selalu gagal sampai hash-nya diisi.
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
 import { Platform, Alert, PermissionsAndroid } from 'react-native';
+import { sha256FileAsync } from '../utils/sha256';
+
+/**
+ * Pengaman update (Nov 2026): kalau true, manifest WAJIB membawa field
+ * "sha256" yang valid dan hash APK hasil download HARUS cocok — kalau tidak,
+ * update ditolak dan APK tidak dipasang. Ini mencegah file Drive yang
+ * diganti/diutak-atik orang lain terpasang sebagai update.
+ * Ubah ke false HANYA sementara (mis. darurat saat manifest lama belum sempat
+ * diisi hash-nya) — dan kembalikan ke true segera setelahnya.
+ */
+export const REQUIRE_MANIFEST_HASH = true;
 
 export const CURRENT_VERSION = '1.1.1';       // Versi app saat ini
 export const CURRENT_VERSION_CODE = 3;        // Build number saat ini
@@ -43,6 +64,8 @@ export interface UpdateManifest {
   versionCode: number;
   releaseNotes: string;
   apkUrl: string;
+  /** Hash SHA-256 file APK (64 huruf hex, huruf kecil/besar bebas). Wajib sejak Nov 2026. */
+  sha256?: string;
   minAndroidSdk?: number;
   mandatory?: boolean;
 }
@@ -58,6 +81,7 @@ export type DownloadProgress = {
  * Mengembalikan null jika gagal atau tidak ada pembaruan.
  */
 export async function checkForUpdate(): Promise<UpdateManifest | null> {
+  let manifest: UpdateManifest;
   try {
     // Tambahkan timestamp untuk hindari caching
     const url = `${UPDATE_MANIFEST_URL}&t=${Date.now()}`;
@@ -69,23 +93,35 @@ export async function checkForUpdate(): Promise<UpdateManifest | null> {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const manifest: UpdateManifest = await response.json();
+    manifest = await response.json();
 
     // Validasi minimal field yang wajib ada
     if (!manifest.version || !manifest.apkUrl) {
       throw new Error('Manifest tidak valid: field version atau apkUrl tidak ada.');
     }
-
-    // Bandingkan versionCode (lebih reliable daripada string comparison)
-    if (manifest.versionCode > CURRENT_VERSION_CODE) {
-      return manifest;
-    }
-
-    return null; // Tidak ada pembaruan
   } catch (e: any) {
     console.warn('[UpdateService] Gagal cek update:', e?.message);
     return null;
   }
+
+  // Validasi hash — SENGAJA di luar try/catch di atas supaya penolakan ini
+  // TIDAK ditelan menjadi "tidak ada pembaruan". Kalau hash tidak ada/tidak
+  // valid, lempar error supaya layar update menampilkan pesan yang jelas.
+  if (REQUIRE_MANIFEST_HASH) {
+    const hash = (manifest.sha256 || '').trim();
+    if (!/^[a-fA-F0-9]{64}$/.test(hash)) {
+      throw new Error(
+        'Manifest update tidak memiliki hash SHA-256 yang valid. Update ditolak demi keamanan — minta developer menambahkan field "sha256" ke manifest (lihat petunjuk di update.service.ts).',
+      );
+    }
+  }
+
+  // Bandingkan versionCode (lebih reliable daripada string comparison)
+  if (manifest.versionCode > CURRENT_VERSION_CODE) {
+    return manifest;
+  }
+
+  return null; // Tidak ada pembaruan
 }
 
 /**
@@ -94,6 +130,9 @@ export async function checkForUpdate(): Promise<UpdateManifest | null> {
  *
  * @param apkUrl - URL direct download APK dari Google Drive
  * @param onProgress - callback progress download (0.0 - 1.0)
+ * @param expectedSha256 - hash SHA-256 dari manifest; kalau diisi, file hasil
+ *   download DIVERIFIKASI dulu — hash tidak cocok = file dihapus, return null.
+ *   Kalau REQUIRE_MANIFEST_HASH true dan hash tidak diisi, download ditolak.
  */
 /**
  * Google Drive large file direct download resolver.
@@ -155,9 +194,20 @@ export async function resolveDirectDownloadUrl(url: string): Promise<string> {
 export async function downloadApk(
   apkUrl: string,
   onProgress?: (progress: DownloadProgress) => void,
+  expectedSha256?: string,
 ): Promise<string | null> {
   if (Platform.OS !== 'android') {
     Alert.alert('Tidak Didukung', 'Pembaruan manual APK hanya tersedia di Android.');
+    return null;
+  }
+
+  // Kalau hash wajib tapi tidak diberikan, tolak sebelum download — jangan
+  // sampai ada APK tanpa verifikasi yang bisa dipasang.
+  if (REQUIRE_MANIFEST_HASH && !(expectedSha256 || '').trim()) {
+    Alert.alert(
+      'Update Ditolak',
+      'Manifest tidak menyertakan hash SHA-256. Update tidak bisa diverifikasi keamanannya — minta developer menambahkan hash ke manifest.',
+    );
     return null;
   }
 
@@ -203,6 +253,31 @@ export async function downloadApk(
           'File APK yang diunduh tidak valid. Pastikan link Google Drive diset publik dan coba lagi.',
         );
         return null;
+      }
+      // Verifikasi SHA-256 (Nov 2026): hash tidak cocok = file BUKAN APK yang
+      // dimaksud manifest (rusak / diganti orang lain) — hapus dan tolak.
+      if ((expectedSha256 || '').trim()) {
+        try {
+          const actualHash = await sha256FileAsync(result.uri);
+          if (actualHash.toLowerCase() !== expectedSha256!.trim().toLowerCase()) {
+            console.error('[UpdateService] Hash SHA-256 TIDAK COCOK. Manifest:', expectedSha256, 'File:', actualHash);
+            Alert.alert(
+              'Update Ditolak',
+              'File APK yang diunduh tidak cocok dengan hash di manifest (kemungkinan file rusak atau sudah diganti). File dihapus dan update dibatalkan.',
+            );
+            await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
+            return null;
+          }
+          console.log('[UpdateService] Hash SHA-256 cocok, APK terverifikasi.');
+        } catch (hashErr: any) {
+          console.error('[UpdateService] Gagal verifikasi hash:', hashErr?.message);
+          Alert.alert(
+            'Update Ditolak',
+            'Hash APK tidak bisa diverifikasi. Update dibatalkan demi keamanan.',
+          );
+          await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
+          return null;
+        }
       }
       return result.uri;
     }

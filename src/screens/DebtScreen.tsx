@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -93,6 +93,103 @@ export const DebtScreen: React.FC = () => {
   const [totalPaidSummary, setTotalPaidSummary] = useState(0);
   const [totalRemainingSummary, setTotalRemainingSummary] = useState(0);
 
+  // ── Paging daftar hutang (Nov 2026) ───────────────────────────────────
+  // Sama seperti daftar DO: backend saat ini MENGABAIKAN page/limit, jadi
+  // hybrid — kirim page+limit; kalau halaman 1 mengembalikan LEBIH dari
+  // limit, berarti backend mengabaikan paging: simpan semua di ref dan iris
+  // client-side lewat onEndReached.
+  const DEBT_PAGE_SIZE = 30;
+  const [debtHasMore, setDebtHasMore] = useState(false);
+  const [debtLoadingMore, setDebtLoadingMore] = useState(false);
+  const debtPageRef = useRef(1);
+  const debtServerPagedRef = useRef<boolean | null>(null);
+  const debtAllRef = useRef<any[]>([]);
+
+  /** Filter tanggal (client-side, seperti sebelumnya) + hitung total ringkasan. */
+  const applyDebtFilterAndTotals = (list: any[]) => {
+    let finalData = list;
+    if (startDate || endDate) {
+      finalData = finalData.filter((d: any) => {
+        const txDate = new Date(d.createdAt);
+        if (startDate && txDate < startDate) return false;
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          if (txDate > end) return false;
+        }
+        return true;
+      });
+    }
+    let totalDebt = 0;
+    let totalPaid = 0;
+    let totalRemaining = 0;
+    finalData.forEach((d: any) => {
+      totalDebt += Number(d.totalDebt || 0);
+      totalPaid += Number(d.paidAmount || 0);
+      totalRemaining += Number(d.remainingDebt || 0);
+    });
+    setTotalDebtSummary(totalDebt);
+    setTotalPaidSummary(totalPaid);
+    setTotalRemainingSummary(totalRemaining);
+    return finalData;
+  };
+
+  /** Terapkan hasil fetch halaman 1 ke state paging. */
+  const applyDebtFirstPage = (items: any[]) => {
+    debtPageRef.current = 1;
+    if (items.length > DEBT_PAGE_SIZE) {
+      // Backend mengabaikan page/limit — mode client-side.
+      debtServerPagedRef.current = false;
+      debtAllRef.current = items;
+      const filtered = applyDebtFilterAndTotals(items);
+      setDebts(filtered.slice(0, DEBT_PAGE_SIZE));
+      setDebtHasMore(filtered.length > DEBT_PAGE_SIZE);
+    } else {
+      debtServerPagedRef.current = true;
+      debtAllRef.current = [];
+      const filtered = applyDebtFilterAndTotals(items);
+      setDebts(filtered);
+      setDebtHasMore(filtered.length === DEBT_PAGE_SIZE);
+    }
+  };
+
+  /** Muat halaman berikut (dipanggil FlatList onEndReached). */
+  const loadMoreDebts = async () => {
+    if (loading || debtLoadingMore || !debtHasMore) return;
+    if (debtServerPagedRef.current === false) {
+      // Mode client-side: iris dari data yang sudah di-fetch semua.
+      const nextPage = debtPageRef.current + 1;
+      const filtered = applyDebtFilterAndTotals(debtAllRef.current);
+      setDebts(filtered.slice(0, nextPage * DEBT_PAGE_SIZE));
+      debtPageRef.current = nextPage;
+      setDebtHasMore(filtered.length > nextPage * DEBT_PAGE_SIZE);
+      return;
+    }
+    setDebtLoadingMore(true);
+    try {
+      const fetcher = activeTab === 'customer'
+        ? debtService.getCustomerDebts
+        : debtService.getSupplierDebts;
+      const res = await fetcher({
+        search: debouncedSearch || undefined,
+        status: statusFilter || undefined,
+        page: debtPageRef.current + 1,
+        limit: DEBT_PAGE_SIZE,
+      });
+      if (res.success && res.data) {
+        const items = res.data as any[];
+        const accumulated = [...debts, ...items];
+        setDebts(applyDebtFilterAndTotals(accumulated));
+        debtPageRef.current += 1;
+        setDebtHasMore(items.length === DEBT_PAGE_SIZE);
+      }
+    } catch (e) {
+      console.warn('[DEBT] Error loading more debts:', e);
+    } finally {
+      setDebtLoadingMore(false);
+    }
+  };
+
   const fetchDebts = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     try {
@@ -101,48 +198,22 @@ export const DebtScreen: React.FC = () => {
         res = await debtService.getCustomerDebts({
           search: debouncedSearch || undefined,
           status: statusFilter || undefined,
+          page: 1,
+          limit: DEBT_PAGE_SIZE,
         });
       } else {
         res = await debtService.getSupplierDebts({
           search: debouncedSearch || undefined,
           status: statusFilter || undefined,
+          page: 1,
+          limit: DEBT_PAGE_SIZE,
         });
       }
 
       if (res.success && res.data) {
-        setDebts(res.data);
-        
-        // Calculate totals based on filtered results
-        let totalDebt = 0;
-        let totalPaid = 0;
-        let totalRemaining = 0;
-        
-        let finalData = res.data;
-
-        // Client-side date filter if service doesn't support it directly
-        if (startDate || endDate) {
-          finalData = finalData.filter((d: any) => {
-            const txDate = new Date(d.createdAt);
-            if (startDate && txDate < startDate) return false;
-            if (endDate) {
-              const end = new Date(endDate);
-              end.setHours(23, 59, 59, 999);
-              if (txDate > end) return false;
-            }
-            return true;
-          });
-          setDebts(finalData);
-        }
-
-        finalData.forEach((d: any) => {
-          totalDebt += Number(d.totalDebt || 0);
-          totalPaid += Number(d.paidAmount || 0);
-          totalRemaining += Number(d.remainingDebt || 0);
-        });
-
-        setTotalDebtSummary(totalDebt);
-        setTotalPaidSummary(totalPaid);
-        setTotalRemainingSummary(totalRemaining);
+        // Paging hybrid (Nov 2026): applyDebtFirstPage mendeteksi apakah
+        // backend mem-page server-side atau mengabaikan page/limit.
+        applyDebtFirstPage(res.data as any[]);
       }
     } catch (e) {
       console.warn('[DEBT] Error loading debts:', e);
@@ -435,6 +506,15 @@ export const DebtScreen: React.FC = () => {
           keyExtractor={(item) => item.id}
           renderItem={renderDebtCard}
           contentContainerStyle={styles.listContent}
+          onEndReached={loadMoreDebts}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            debtLoadingMore ? (
+              <View style={{ paddingVertical: Spacing.md, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={Colors.primaryStart} />
+              </View>
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

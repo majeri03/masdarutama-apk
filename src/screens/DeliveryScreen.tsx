@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -78,6 +78,82 @@ export const DeliveryScreen: React.FC = () => {
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
   const [search, setSearch] = useState('');
 
+  // ── Satu sumber kebenaran pencarian (Nov 2026) ───────────────────────
+  // Dulu loadData() membaca `search` dari closure state: saat ketuk notifikasi
+  // DO, effect params memuat daftar terfilter, tapi useFocusEffect +
+  // lastNotificationTimestamp memanggil loadData() dengan search='' yang basi
+  // dan menimpa hasilnya. Sekarang semua pemuatan membaca searchRef
+  // (disinkronkan di setiap setSearch) atau argumen eksplisit, dan respons
+  // basi dibuang lewat nomor urut request.
+  const searchRef = useRef('');
+  const loadSeqRef = useRef(0);
+  const firstLoadDoneRef = useRef(false);
+
+  // ── Paging daftar DO (Nov 2026) ──────────────────────────────────────
+  // Backend saat ini MENGABAIKAN page/limit (getAllDeliveryOrders tanpa
+  // take/skip), jadi layar ini hybrid: kirim page+limit ke server, lalu
+  // deteksi dari hasil — kalau halaman 1 mengembalikan LEBIH dari limit,
+  // berarti backend mengabaikan paging: simpan semua di ref dan iris
+  // client-side. Kalau backend suatu hari mem-page server-side, alur
+  // bawah (fetch halaman berikut) yang jalan. Dua-duanya lewat onEndReached.
+  const DO_PAGE_SIZE = 30;
+  const [doHasMore, setDoHasMore] = useState(false);
+  const [doLoadingMore, setDoLoadingMore] = useState(false);
+  const doPageRef = useRef(1);
+  const doServerPagedRef = useRef<boolean | null>(null);
+  const doAllRef = useRef<DeliveryOrder[]>([]);
+
+  /** Terapkan hasil fetch halaman 1 ke state paging. */
+  const applyDoFirstPage = (items: DeliveryOrder[]) => {
+    doPageRef.current = 1;
+    if (items.length > DO_PAGE_SIZE) {
+      // Backend mengabaikan page/limit — mode client-side.
+      doServerPagedRef.current = false;
+      doAllRef.current = items;
+      setDeliveryOrders(items.slice(0, DO_PAGE_SIZE));
+      setDoHasMore(true);
+    } else {
+      doServerPagedRef.current = true;
+      doAllRef.current = [];
+      setDeliveryOrders(items);
+      setDoHasMore(items.length === DO_PAGE_SIZE);
+    }
+  };
+
+  /** Muat halaman berikut (dipanggil FlatList onEndReached). */
+  const loadMoreDOs = async () => {
+    if (loading || doLoadingMore || !doHasMore) return;
+    if (doServerPagedRef.current === false) {
+      // Mode client-side: iris dari data yang sudah di-fetch semua.
+      const nextPage = doPageRef.current + 1;
+      setDeliveryOrders(doAllRef.current.slice(0, nextPage * DO_PAGE_SIZE));
+      doPageRef.current = nextPage;
+      setDoHasMore(doAllRef.current.length > nextPage * DO_PAGE_SIZE);
+      return;
+    }
+    setDoLoadingMore(true);
+    try {
+      const res = await deliveryService.getDeliveryOrders({
+        search: search || undefined,
+        status: statusFilter || undefined,
+        dateFrom: startDate ? toLocalDateString(startDate) : undefined,
+        dateTo: endDate ? toLocalDateString(endDate) : undefined,
+        page: doPageRef.current + 1,
+        limit: DO_PAGE_SIZE,
+      });
+      if (res.success && res.data) {
+        const items = res.data as DeliveryOrder[];
+        setDeliveryOrders((prev) => [...prev, ...items]);
+        doPageRef.current += 1;
+        setDoHasMore(items.length === DO_PAGE_SIZE);
+      }
+    } catch (e) {
+      console.warn('[DELIVERY] Error loading more DOs:', e);
+    } finally {
+      setDoLoadingMore(false);
+    }
+  };
+
   // Tangkap parameter pencarian dari notifikasi (misal: Surat Jalan #DO-xxx)
   useEffect(() => {
     const rawSearch = route.params?.search || route.params?.doNumber;
@@ -85,12 +161,10 @@ export const DeliveryScreen: React.FC = () => {
       // Bersihkan karakter awalan seperti '#' jika ada
       const cleaned = String(rawSearch).replace(/^#/, '').trim();
       setSearch(cleaned);
-      // Langsung fetch data dengan query pencarian spesifik
-      deliveryService.getDeliveryOrders({ search: cleaned }).then((res) => {
-        if (res.success && res.data) {
-          setDeliveryOrders(res.data as DeliveryOrder[]);
-        }
-      }).catch(() => {});
+      searchRef.current = cleaned;
+      // Muat lewat jalur yang sama dengan semua pemuatan lain (nomor urut
+      // request membuang respons basi) — jangan fetch langsung di sini.
+      loadData(cleaned);
     }
   }, [route.params?.search, route.params?.doNumber]);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -238,27 +312,40 @@ export const DeliveryScreen: React.FC = () => {
     }
   }, [debouncedSearchProductQuery]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (searchOverride?: string) => {
+    // Nomor urut: hanya respons dari request TERAKHIR yang boleh mengubah daftar.
+    const mySeq = ++loadSeqRef.current;
+    // Jangan tampilkan spinner layar penuh kalau daftar sudah ada isinya —
+    // dulu setiap notifikasi masuk membuat layar jadi abu-abu kosong.
+    const showFullSpinner = !firstLoadDoneRef.current;
+    if (showFullSpinner) setLoading(true);
+    else setRefreshing(true);
     try {
       const res = await deliveryService.getDeliveryOrders({
-        search: search || undefined,
+        search: (searchOverride ?? searchRef.current) || undefined,
         status: statusFilter || undefined,
         // QA fix M-33: param benar adalah dateFrom/dateTo (startDate/endDate
         // diabaikan backend, jadi filter tanggal tidak pernah jalan).
         dateFrom: startDate ? toLocalDateString(startDate) : undefined,
         dateTo: endDate ? toLocalDateString(endDate) : undefined,
+        page: 1,
+        limit: DO_PAGE_SIZE,
       });
+      // Respons basi (sudah ada request lebih baru) — buang, jangan timpa daftar.
+      if (mySeq !== loadSeqRef.current) return;
       if (res.success && res.data) {
-        setDeliveryOrders(res.data as DeliveryOrder[]);
+        applyDoFirstPage(res.data as DeliveryOrder[]);
       }
     } catch (e) {
       console.warn('[DELIVERY] Error loading DOs:', e);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (mySeq === loadSeqRef.current) {
+        firstLoadDoneRef.current = true;
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [search, statusFilter, startDate, endDate]);
+  }, [statusFilter, startDate, endDate]);
 
   const lastNotificationTimestamp = useNotificationCenterStore((s) => s.lastNotificationTimestamp);
 
@@ -281,9 +368,12 @@ export const DeliveryScreen: React.FC = () => {
 
   const loadMasterData = async () => {
     try {
-      const [custRes, prodRes, fleetRes] = await Promise.all([
+      // FIX (Nov 2026): dulu memuat 100 produk sekaligus saat modal dibuka —
+      // boros dan tidak perlu, karena dropdown produk sudah memakai pencarian
+      // server (loadSearchProducts, limit 10). Produk hanya diisi dari hasil
+      // cari; di sini products sengaja dikosongkan.
+      const [custRes, fleetRes] = await Promise.all([
         masterService.getCustomers(),
-        productService.getProducts({ limit: 100, isActive: true }),
         masterService.getFleetVehicles(),
       ]);
       if (custRes.success && custRes.data?.customers) {
@@ -294,9 +384,7 @@ export const DeliveryScreen: React.FC = () => {
           setSelectedCustomerId(defaultCust.id);
         }
       }
-      if (prodRes.success && prodRes.data?.products) {
-        setProducts(prodRes.data.products);
-      }
+      setProducts([]);
       setSalesList([]); // Jangan load semua otomatis, user cari manual
       if (fleetRes.success && fleetRes.data) {
         setFleetList(fleetRes.data);
@@ -319,6 +407,11 @@ export const DeliveryScreen: React.FC = () => {
 
   const debouncedSaleSearch = useDebouncedValue(saleSearch, 400);
 
+  // Penjaga balapan (race guard): tiap pencarian menaikkan nomor urut; hanya
+  // respons dari pencarian TERAKHIR yang dipakai. Tanpa ini, respons lambat
+  // dari ketikan lama bisa menimpa hasil ketikan terbaru.
+  const saleSearchSeqRef = useRef(0);
+
   const searchSales = async (query?: string, date?: Date | null) => {
     const q = (query ?? saleSearch).trim();
     const d = date !== undefined ? date : saleSearchDate;
@@ -326,6 +419,7 @@ export const DeliveryScreen: React.FC = () => {
       AppToast.info('Info', 'Masukkan nomor ref/nama pelanggan atau pilih tanggal untuk mencari transaksi.');
       return;
     }
+    const seq = ++saleSearchSeqRef.current;
     setIsLoadingSales(true);
     try {
       const baseFilters: any = { limit: 30 };
@@ -335,6 +429,8 @@ export const DeliveryScreen: React.FC = () => {
         baseFilters.dateTo = toLocalDateStr(d);
       }
       const res = await salesService.getSales(baseFilters);
+      // Respons basi (sudah ada pencarian baru sesudahnya) — abaikan.
+      if (seq !== saleSearchSeqRef.current) return;
       if (!res.success) {
         AppToast.error('Gagal', res.error || 'Gagal mencari transaksi.');
         return;
@@ -350,9 +446,10 @@ export const DeliveryScreen: React.FC = () => {
         AppToast.info('Tidak Ditemukan', 'Tidak ada transaksi yang cocok.');
       }
     } catch (e) {
+      if (seq !== saleSearchSeqRef.current) return;
       AppToast.error('Error', 'Gagal mencari transaksi.');
     } finally {
-      setIsLoadingSales(false);
+      if (seq === saleSearchSeqRef.current) setIsLoadingSales(false);
     }
   };
 
@@ -371,6 +468,66 @@ export const DeliveryScreen: React.FC = () => {
       setSearchProductQuery('');
     }
   }, [showCreateModal]);
+
+  // ── FIX C1 (Nov 2026) ────────────────────────────────────────────────
+  // Tiga fungsi ini DIPANGGIL di layar (hasil cari sale, tombol "Tanpa POS",
+  // tombol Batal, dan setelah DO berhasil dibuat) tapi DEFINISINYA HILANG
+  // dari patch DO kemarin — akibatnya aplikasi crash (ReferenceError) dan
+  // `tsc` gagal. Definisi lengkapnya ada di sini.
+
+  /** Pilih sale dari hasil pencarian: kunci pelanggan + isi item dari invoice. */
+  const selectSale = (sale: any) => {
+    if (!sale) return;
+    setSelectedSaleId(sale.id);
+    // Pelanggan mengikuti transaksi yang dipilih.
+    const custId = sale.customerId || sale.customer?.id || '';
+    if (custId) setSelectedCustomerId(custId);
+    // Isi item dari invoice — lewati item tanpa produk atau qty <= 0.
+    const items = ((sale.saleItems || []) as any[])
+      .filter((it: any) => it && it.productId && it.product && Number(it.quantity) > 0)
+      .map((it: any) => ({
+        productId: it.productId,
+        productName: it.product?.name || '',
+        productCode: it.product?.code || '',
+        unitId: it.unitId,
+        unitName: it.unit?.name || 'Unit',
+        quantity: Number(it.quantity),
+      }));
+    setDoItems(items);
+    if (items.length === 0) {
+      AppToast.info('Info', 'Transaksi ini tidak punya item yang bisa dikirim.');
+    }
+  };
+
+  /** Kembali ke DO Manual: lepas sale + item-nya, pelanggan kembali ke UMUM. */
+  const resetToManual = () => {
+    setSelectedSaleId('');
+    setDoItems([]);
+    const umum = customers.find((c: any) => c.type === 'UMUM') || customers[0];
+    if (umum) setSelectedCustomerId(umum.id);
+  };
+
+  /** Reset SELURUH form buat DO (dipakai tombol Batal + setelah DO tersimpan). */
+  const resetCreateModal = () => {
+    setSelectedCustomerId('');
+    setSelectedSaleId('');
+    setSaleSearch('');
+    setSaleSearchDate(null);
+    setSalesList([]);
+    setCustomerSearch('');
+    setDoItems([]);
+    setDriver('');
+    setDriverSearchQuery('');
+    setVehicle('');
+    setNotes('');
+    setCreateDoPhotoUrl(null);
+    setDeliveryDate(new Date());
+    setSearchProductQuery('');
+    setSelectedProduct(null);
+    setSelectedUnitId('');
+    setQuantity('1');
+    setShowCreateModal(false);
+  };
 
   const handleCreateDO = async () => {
     if (isCreatingDO) return;
@@ -636,11 +793,11 @@ export const DeliveryScreen: React.FC = () => {
         notes: doItem.notes,
         status: 'PENDING',
         customer: {
-          id: doItem.customer.id,
-          code: doItem.customer.code,
-          name: doItem.customer.name,
-          phone: doItem.customer.phone,
-          address: doItem.customer.address,
+          id: doItem.customer?.id ?? '',
+          code: doItem.customer?.code ?? '',
+          name: doItem.customer?.name ?? '-',
+          phone: doItem.customer?.phone ?? null,
+          address: doItem.customer?.address ?? null,
           type: 'REGULER',
         },
         cashier: { id: doItem.createdBy.id, name: doItem.createdBy.name, email: '' },
@@ -700,11 +857,11 @@ export const DeliveryScreen: React.FC = () => {
         notes: doItem.notes,
         status: 'PENDING',
         customer: {
-          id: doItem.customer.id,
-          code: doItem.customer.code,
-          name: doItem.customer.name,
-          phone: doItem.customer.phone,
-          address: doItem.customer.address,
+          id: doItem.customer?.id ?? '',
+          code: doItem.customer?.code ?? '',
+          name: doItem.customer?.name ?? '-',
+          phone: doItem.customer?.phone ?? null,
+          address: doItem.customer?.address ?? null,
           type: 'REGULER',
         },
         cashier: { id: doItem.createdBy.id, name: doItem.createdBy.name, email: '' },
@@ -751,6 +908,14 @@ export const DeliveryScreen: React.FC = () => {
       AppToast.error('Peringatan', 'Silakan pilih produk, satuan, dan masukkan kuantitas.');
       return;
     }
+    // FIX (Nov 2026): dulu quantity langsung Number(...) tanpa validasi —
+    // ketikan "abc"/"0"/"-2" lolos sebagai NaN/0 dan merusak item DO.
+    // Parse sekali, tolak yang bukan angka atau <= 0, pakai hasil parse-nya.
+    const qtyNum = Number(quantity);
+    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+      AppToast.error('Peringatan', 'Kuantitas harus angka lebih dari 0.');
+      return;
+    }
     const product = selectedProduct;
 
     const unit = product.productUnits?.find((pu) => pu.unitId === selectedUnitId);
@@ -762,7 +927,7 @@ export const DeliveryScreen: React.FC = () => {
 
     if (existingIndex >= 0) {
       const updated = [...doItems];
-      updated[existingIndex].quantity += Number(quantity);
+      updated[existingIndex].quantity += qtyNum;
       setDoItems(updated);
     } else {
       setDoItems([
@@ -773,7 +938,7 @@ export const DeliveryScreen: React.FC = () => {
           productCode: product.code,
           unitId: selectedUnitId,
           unitName: unit.unit?.name || 'Unit',
-          quantity: Number(quantity),
+          quantity: qtyNum,
         },
       ]);
     }
@@ -833,7 +998,7 @@ export const DeliveryScreen: React.FC = () => {
             </View>
           </View>
           
-          <Text style={styles.customerName}>{item.customer.name}</Text>
+          <Text style={styles.customerName}>{item.customer?.name ?? '-'}</Text>
           <Text style={styles.deliveryDate}>
             <Ionicons name="calendar-outline" size={12} color={Colors.textTertiary} /> {new Date(item.deliveryDate).toLocaleDateString('id-ID', { timeZone: 'Asia/Makassar', day: '2-digit', month: 'long', year: 'numeric' })}
           </Text>
@@ -845,7 +1010,7 @@ export const DeliveryScreen: React.FC = () => {
               <Text style={styles.driverInfo}>Sopir: {item.driver || '-'}</Text>
               <Text style={styles.driverInfo}>Mobil: {item.vehicle || '-'}</Text>
             </View>
-            <Text style={styles.itemsCount}>{item.deliveryItems.length} Produk</Text>
+            <Text style={styles.itemsCount}>{item.deliveryItems?.length ?? 0} Produk</Text>
           </View>
         </GlassCard>
       </TouchableOpacity>
@@ -879,20 +1044,16 @@ export const DeliveryScreen: React.FC = () => {
               value={search}
               onChangeText={(text) => {
                 setSearch(text);
+                searchRef.current = text;
               }}
-              onSubmitEditing={loadData}
+              onSubmitEditing={() => loadData()}
             />
             {!!search && (
               <TouchableOpacity
                 onPress={() => {
                   setSearch('');
-                  deliveryService.getDeliveryOrders({
-                    status: statusFilter || undefined,
-                    dateFrom: startDate ? toLocalDateString(startDate) : undefined,
-                    dateTo: endDate ? toLocalDateString(endDate) : undefined,
-                  }).then((res) => {
-                    if (res.success && res.data) setDeliveryOrders(res.data as DeliveryOrder[]);
-                  }).catch(() => {});
+                  searchRef.current = '';
+                  loadData('');
                 }}
                 style={{ padding: 4 }}
               >
@@ -919,7 +1080,7 @@ export const DeliveryScreen: React.FC = () => {
         </View>
 
         <View style={{flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4}}>
-           <TouchableOpacity onPress={loadData} style={{backgroundColor: Colors.primaryStart, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8}}>
+           <TouchableOpacity onPress={() => loadData()} style={{backgroundColor: Colors.primaryStart, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8}}>
              <Text style={{color: '#fff', fontSize: 12, fontWeight: 'bold'}}>Terapkan Filter</Text>
            </TouchableOpacity>
         </View>
@@ -966,6 +1127,15 @@ export const DeliveryScreen: React.FC = () => {
             keyExtractor={(item) => item.id}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />}
             contentContainerStyle={{ paddingBottom: Spacing['3xl'] }}
+            onEndReached={loadMoreDOs}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              doLoadingMore ? (
+                <View style={{ paddingVertical: Spacing.md, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={Colors.primaryStart} />
+                </View>
+              ) : null
+            }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Ionicons name="paper-plane-outline" size={48} color={Colors.textTertiary} />
@@ -1007,10 +1177,10 @@ export const DeliveryScreen: React.FC = () => {
                   {/* Pelanggan */}
                   <View style={{ flex: 1.5 }}>
                     <Text style={[styles.tableRowText, { fontSize: 11 }]} numberOfLines={1}>
-                      {item.customer.name}
+                      {item.customer?.name ?? '-'}
                     </Text>
                     <Text style={{ fontSize: 9, color: Colors.textTertiary }} numberOfLines={1}>
-                      {item.deliveryItems.length} produk
+                      {item.deliveryItems?.length ?? 0} produk
                     </Text>
                   </View>
 
@@ -1077,9 +1247,9 @@ export const DeliveryScreen: React.FC = () => {
                 <View style={styles.divider} />
 
                 <Text style={styles.detailsLabel}>PELANGGAN</Text>
-                <Text style={styles.detailsVal}>{selectedDO.customer.name}</Text>
-                {selectedDO.customer.phone && <Text style={styles.detailsSubVal}>Telp: {selectedDO.customer.phone}</Text>}
-                {selectedDO.customer.address && <Text style={styles.detailsSubVal}>Alamat: {selectedDO.customer.address}</Text>}
+                <Text style={styles.detailsVal}>{selectedDO.customer?.name ?? '-'}</Text>
+                {selectedDO.customer?.phone && <Text style={styles.detailsSubVal}>Telp: {selectedDO.customer.phone}</Text>}
+                {selectedDO.customer?.address && <Text style={styles.detailsSubVal}>Alamat: {selectedDO.customer.address}</Text>}
 
                 <View style={styles.divider} />
 
@@ -1340,14 +1510,26 @@ export const DeliveryScreen: React.FC = () => {
                   placeholderTextColor={Colors.textTertiary}
                   value={customerSearch}
                   onChangeText={setCustomerSearch}
+                  editable={!selectedSaleId}
                 />
+                {selectedSaleId ? (
+                  <Text style={{ fontSize: 11, color: Colors.warning, marginBottom: Spacing.sm }}>
+                    Pelanggan terkunci mengikuti transaksi POS yang dipilih. Ketuk "Tanpa POS (DO Manual)" di bawah untuk mengubah pelanggan.
+                  </Text>
+                ) : null}
                 <View style={styles.pickerContainer}>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerScroll}>
                     {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).map((cust) => (
                       <TouchableOpacity
                         key={cust.id}
                         style={[styles.pickerOption, selectedCustomerId === cust.id && styles.pickerOptionActive]}
-                        onPress={() => setSelectedCustomerId(cust.id)}
+                        onPress={() => {
+                          // FIX (Nov 2026): pelanggan terkunci saat sale dipilih —
+                          // ganti pelanggan di tengah jalan akan membuat DO dan
+                          // invoice tidak konsisten.
+                          if (selectedSaleId) return;
+                          setSelectedCustomerId(cust.id);
+                        }}
                       >
                         <Text style={[styles.pickerOptionText, selectedCustomerId === cust.id && styles.pickerOptionTextActive]}>
                           {cust.name}
@@ -1713,7 +1895,7 @@ export const DeliveryScreen: React.FC = () => {
               <GlassCard padding={16} style={styles.createCard}>
                 <View style={styles.rowBetween}>
                   <Text style={styles.detailsDoNum}>{selectedDO.doNumber}</Text>
-                  <Text style={{ fontSize: 12, color: Colors.textSecondary }}>Pelanggan: {selectedDO.customer.name}</Text>
+                  <Text style={{ fontSize: 12, color: Colors.textSecondary }}>Pelanggan: {selectedDO.customer?.name ?? '-'}</Text>
                 </View>
 
                 <View style={styles.divider} />

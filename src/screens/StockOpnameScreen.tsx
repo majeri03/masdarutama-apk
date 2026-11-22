@@ -196,6 +196,13 @@ export const StockOpnameScreen: React.FC = () => {
       AppToast.error('Peringatan', 'Silakan pilih produk terlebih dahulu.');
       return;
     }
+    // FIX (Nov 2026): field kosong DITOLAK — dulu Number('') = 0, jadi
+    // opname yang tidak sengaja kosong tersimpan sebagai stok 0. Angka 0
+    // yang DIKETIK sengaja tetap diizinkan (stok memang kosong).
+    if (!quantityStr.trim()) {
+      AppToast.error('Peringatan', 'Jumlah stok wajib diisi — kosong bukan 0. Ketik 0 kalau stok memang kosong.');
+      return;
+    }
     const qty = Number(quantityStr);
     if (isNaN(qty) || qty < 0) {
       AppToast.error('Peringatan', 'Masukkan jumlah stok valid (minimal 0).');

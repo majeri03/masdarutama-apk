@@ -571,7 +571,7 @@ export const PurchaseScreen: React.FC = () => {
             onChangeText={(text) => {
               setSearch(text);
             }}
-            onSubmitEditing={loadData}
+            onSubmitEditing={() => loadData(1, true)}
           />
         </View>
 

@@ -112,6 +112,15 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
                 body: item.body,
                 date: item.createdAt,
                 isRead: item.isRead,
+                // FIX (Nov 2026): dedupKey dulu DIBUANG saat mapping — salinan
+                // lokal dari kejadian yang sama (mis. push `sale-<id>`) tidak
+                // bisa dikenali sebagai duplikat baris server. Sekarang
+                // dipertahankan supaya dedup lintas jalur (push vs polling
+                // vs server) jalan.
+                // CATATAN: kolom `dedupKey` belum ada di tabel Notification
+                // backend (Nov 2026), jadi nilainya undefined sampai backend
+                // menambah kolom itu — mapping ini tetap aman (forward-compatible).
+                dedupKey: item.dedupKey ?? undefined,
                 data: {
                   screen: item.screen,
                   params: item.params,
@@ -119,13 +128,14 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
                 },
               }));
 
-            // Merge dengan notifikasi lokal: dedup by ID, LALU by judul+isi —
-            // salinan lokal (ID acak) dari kejadian yang sama dengan baris server
-            // harus dibuang, dulu keduanya tampil berdua.
+            // Merge dengan notifikasi lokal: dedup by ID, LALU by dedupKey,
+            // LALU by judul+isi — salinan lokal (ID acak) dari kejadian yang
+            // sama dengan baris server harus dibuang, dulu keduanya tampil berdua.
             const local = get().notifications.filter((n) => (now - new Date(n.date).getTime()) < THREE_DAYS_MS);
             const existingIds = new Set(remoteItems.map((n) => n.id));
+            const remoteDedupKeys = new Set(remoteItems.map((n) => n.dedupKey).filter(Boolean));
             const remoteKeys = new Set(remoteItems.map((n) => `${n.title}||${n.body}`));
-            const merged = [...remoteItems, ...local.filter((n) => !existingIds.has(n.id) && !remoteKeys.has(`${n.title}||${n.body}`))];
+            const merged = [...remoteItems, ...local.filter((n) => !existingIds.has(n.id) && !(n.dedupKey && remoteDedupKeys.has(n.dedupKey)) && !remoteKeys.has(`${n.title}||${n.body}`))];
 
             merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             set({ notifications: merged, isLoading: false });

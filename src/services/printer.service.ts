@@ -1,6 +1,43 @@
 import { BLEPrinter, USBPrinter, NetPrinter } from 'react-native-thermal-receipt-printer-image-qr';
-import { NativeModules } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
+import type { Permission } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+/**
+ * Error bertipe supaya layar bisa membedakan "Bluetooth mati" dari error lain.
+ * PENTING: getBlePrinters() dulu menelan SEMUA error dan mengembalikan [],
+ * sehingga kotak "Bluetooth Tidak Aktif" tidak pernah muncul. Sekarang error
+ * "not enabled" dilempar kembali sebagai BleNotEnabledError.
+ */
+export class BleNotEnabledError extends Error {
+  constructor(message = 'Bluetooth is not enabled') {
+    super(message);
+    this.name = 'BleNotEnabledError';
+  }
+}
+
+/** Dilempar kalau pemindaian diminta tanpa izin Bluetooth (Android 12+). */
+export class BlePermissionError extends Error {
+  constructor(message = 'Izin Bluetooth belum diberikan') {
+    super(message);
+    this.name = 'BlePermissionError';
+  }
+}
+
+/** Pesan error native yang artinya Bluetooth mati / adapter tidak aktif. */
+const BLE_NOT_ENABLED_RE = /not enabled|bluetooth is off|adapter is not enabled|bluetooth.{0,10}disabled/i;
+
+/** Izin Bluetooth yang dibutuhkan untuk membaca daftar perangkat yang sudah di-pairing. */
+function requiredBlePermissions(): Permission[] {
+  if (Platform.OS !== 'android') return [];
+  if ((Platform.Version as number) >= 31) {
+    return [
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+    ];
+  }
+  return [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+}
 
 export type PrinterType = 'BLE' | 'USB' | 'NET' | 'SYSTEM';
 
@@ -113,14 +150,59 @@ class PrinterService {
     return hasRNUSBPrinter;
   }
 
+  /**
+   * Cek izin Bluetooth tanpa meminta. Di Android 12+ (API 31+) membaca daftar
+   * perangkat yang sudah di-pairing (getBondedDevices) WAJIB izin
+   * BLUETOOTH_CONNECT — tanpanya Android melempar SecurityException yang
+   * tidak bisa ditangkap JavaScript dan runtime mati (layar abu-abu).
+   */
+  async hasBlePermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+    try {
+      const perms = requiredBlePermissions();
+      for (const p of perms) {
+        const granted = await PermissionsAndroid.check(p);
+        if (!granted) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Minta izin Bluetooth ke pengguna; true kalau semua diberikan. */
+  async requestBlePermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+    try {
+      const perms = requiredBlePermissions();
+      if (perms.length === 1) {
+        return (await PermissionsAndroid.request(perms[0])) === PermissionsAndroid.RESULTS.GRANTED;
+      }
+      const granted = await PermissionsAndroid.requestMultiple(perms);
+      return perms.every((p) => granted[p] === PermissionsAndroid.RESULTS.GRANTED);
+    } catch {
+      return false;
+    }
+  }
+
   async getBlePrinters() {
     if (!hasRNBLEPrinter) {
       return [];
+    }
+    // JANGAN PERNAH panggil getDeviceList tanpa izin: di Android 12+ itu
+    // memicu SecurityException native yang mematikan runtime (layar abu-abu).
+    if (!(await this.hasBlePermission())) {
+      throw new BlePermissionError();
     }
     try {
       const result = await withTimeout(BLEPrinter.getDeviceList(), 5000, 'getDeviceList');
       return result || [];
     } catch (e: any) {
+      // Bluetooth mati harus terlihat oleh layar (kotak BLUETOOTH_OFF),
+      // jangan ditelan jadi daftar kosong.
+      if (e && BLE_NOT_ENABLED_RE.test(String(e?.message || ''))) {
+        throw new BleNotEnabledError(e.message);
+      }
       console.warn('[PrinterService] Get BLE devices gagal/timeout:', e?.message);
       return [];
     }

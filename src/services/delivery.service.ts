@@ -1,5 +1,6 @@
 import api from './api';
 import { API_ENDPOINTS } from '../constants/api';
+import { toDayStartISO, toDayEndISO } from '../utils/dates';
 import type { ApiResponse } from '../types';
 
 export interface DeliveryItemPayload {
@@ -52,12 +53,16 @@ export const deliveryService = {
     startDate?: string;
     /** @deprecated pakai dateTo — dipertahankan supaya pemanggil lama tidak rusak */
     endDate?: string;
+    page?: number;
+    limit?: number;
   } = {}): Promise<ApiResponse<any[]>> {
     try {
       const params = new URLSearchParams();
       if (filters.search) params.append('search', filters.search);
       if (filters.customerId) params.append('customerId', filters.customerId);
       if (filters.status) params.append('status', filters.status);
+      if (filters.page) params.append('page', String(filters.page));
+      if (filters.limit) params.append('limit', String(filters.limit));
       // QA fix M-33: backend hanya membaca `dateFrom`/`dateTo`
       // (parseSearchParams), jadi `startDate`/`endDate` selama ini diam-diam
       // dibuang dan filter tanggal pengiriman tidak pernah jalan.

@@ -18,6 +18,8 @@ export const debtService = {
     status?: string;
     dateFrom?: string;
     dateTo?: string;
+    page?: number;
+    limit?: number;
   } = {}): Promise<ApiResponse<any[]>> {
     try {
       const params = new URLSearchParams();
@@ -43,6 +45,8 @@ export const debtService = {
     status?: string;
     dateFrom?: string;
     dateTo?: string;
+    page?: number;
+    limit?: number;
   } = {}): Promise<ApiResponse<any[]>> {
     try {
       const params = new URLSearchParams();

@@ -105,12 +105,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { unregisterPushTokenFromServer } = await import('../hooks/usePushNotifications');
       await unregisterPushTokenFromServer();
     } catch {}
+    // Cabut sesi di server (best-effort): endpoint POST /api/auth/logout
+    // BELUM ADA di backend (Nov 2026) — request ini akan 404 dan diabaikan.
+    // Setelah backend menerapkannya (kontrak: menaikkan tokenVersion user
+    // sehingga token mobile lama tidak berlaku lagi), pemanggilan ini yang
+    // membuat logout benar-benar mencabut token, bukan sekadar hapus lokal.
+    try {
+      await api.post('/api/auth/logout');
+    } catch {}
     await authService.logout();
     // Reset baseline polling supaya setelah login ulang tidak muncul
     // notifikasi "Pesanan Baru" palsu untuk penjualan lama.
     try {
       const { useNotificationStore } = await import('../stores/notification.store');
       useNotificationStore.getState().resetBaselines();
+    } catch {}
+    // FIX (Nov 2026): bersihkan pusat notifikasi saat logout — sebelumnya
+    // notifikasi pemilik sebelumnya tetap tampil untuk pengguna berikutnya
+    // di HP yang sama.
+    try {
+      const { useNotificationCenterStore } = await import('../stores/notificationCenter.store');
+      useNotificationCenterStore.getState().clearAll();
     } catch {}
     set({ user: null, isAuthenticated: false, isLoading: false, allowedPages: [] });
   },
