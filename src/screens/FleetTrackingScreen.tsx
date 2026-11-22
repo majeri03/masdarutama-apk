@@ -80,6 +80,8 @@ interface FleetVehicle {
   year?: number;
   driverName: string;
   driverPhone?: string;
+  driverUserId?: string | null; // Akun sopir utama (ditugaskan dari web)
+  coDriverUserId?: string | null; // Akun sopir pendamping (ditugaskan dari web)
   status: 'ACTIVE' | 'IDLE' | 'MAINTENANCE' | 'OFF';
   lastLocation?: {
     latitude: number;
@@ -425,6 +427,7 @@ export const FleetTrackingScreen: React.FC = () => {
 
   const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<FleetVehicle | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -529,13 +532,20 @@ export const FleetTrackingScreen: React.FC = () => {
       const res = await api.get('/api/fleet/vehicles');
       if (res.data?.success && res.data?.data) {
         setVehicles(res.data.data);
+        setLoadError('');
       } else if (res.data?.data?.vehicles) {
         setVehicles(res.data.data.vehicles);
+        setLoadError('');
+      } else {
+        // Respons tidak sesuai harapan: daftar dikosongkan, jangan tampilkan data contoh.
+        setVehicles([]);
+        setLoadError('Gagal memuat data armada. Periksa koneksi/server.');
       }
     } catch (e: any) {
       console.warn('[FleetTracking] Load vehicles error:', e?.message);
-      // Use Makassar mock data as reliable fallback
-      setVehicles(getMockVehicles());
+      // JANGAN pakai data contoh saat API gagal — daftar dibiarkan kosong + tampilkan error.
+      setVehicles([]);
+      setLoadError('Gagal memuat data armada. Periksa koneksi/server.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -881,18 +891,42 @@ export const FleetTrackingScreen: React.FC = () => {
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Ionicons name="car-outline" size={56} color={Colors.textMuted} />
-              <Text style={styles.emptyTitle}>Belum Ada Armada</Text>
-              <Text style={styles.emptyDesc}>
-                {isAdmin
-                  ? 'Tambahkan armada pertama Anda dengan menekan tombol + di atas.'
-                  : 'Belum ada armada yang terdaftar.'}
-              </Text>
+              {loadError ? (
+                <>
+                  <Ionicons name="cloud-offline-outline" size={56} color={Colors.textMuted} />
+                  <Text style={styles.emptyTitle}>Gagal Memuat Armada</Text>
+                  <Text style={styles.emptyDesc}>{loadError}</Text>
+                  <TouchableOpacity
+                    style={styles.retryButton}
+                    onPress={() => {
+                      setLoadError('');
+                      setLoading(true);
+                      loadVehicles();
+                    }}
+                  >
+                    <Text style={styles.retryButtonText}>Coba Lagi</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="car-outline" size={56} color={Colors.textMuted} />
+                  <Text style={styles.emptyTitle}>Belum Ada Armada</Text>
+                  <Text style={styles.emptyDesc}>
+                    {isAdmin
+                      ? 'Tambahkan armada pertama Anda dengan menekan tombol + di atas.'
+                      : 'Belum ada armada yang terdaftar.'}
+                  </Text>
+                </>
+              )}
             </View>
           }
           renderItem={({ item: vehicle }) => {
             const cfg = STATUS_CONFIG[vehicle.status];
             const isTracking = trackingVehicleId === vehicle.id;
+            // GPS hanya boleh dikirim ADMIN atau sopir yang ditugaskan (utama/pendamping) untuk kendaraan ini.
+            const canTrack =
+              isAdmin ||
+              (!!user && (user.id === vehicle.driverUserId || user.id === vehicle.coDriverUserId));
             const typeIcon = VEHICLE_TYPE_ICONS[vehicle.vehicleType] || 'car-outline';
 
             return (
@@ -996,7 +1030,12 @@ export const FleetTrackingScreen: React.FC = () => {
                     {/* Action Buttons */}
                     <View style={styles.actionRow}>
                       <TouchableOpacity
-                        style={[styles.actionBtn, { backgroundColor: Colors.success + '15', borderColor: Colors.success + '40' }]}
+                        disabled={!canTrack}
+                        style={[
+                          styles.actionBtn,
+                          { backgroundColor: Colors.success + '15', borderColor: Colors.success + '40' },
+                          !canTrack && { opacity: 0.45 },
+                        ]}
                         onPress={() => {
                           if (isTracking) {
                             stopTracking();
@@ -1048,6 +1087,12 @@ export const FleetTrackingScreen: React.FC = () => {
                         </TouchableOpacity>
                       )}
                     </View>
+
+                    {!canTrack && (
+                      <Text style={styles.trackHintText}>
+                        Hanya sopir yang ditugaskan / ADMIN yang bisa mengirim GPS kendaraan ini.
+                      </Text>
+                    )}
                   </View>
                 )}
               </GlassCard>
@@ -1067,57 +1112,6 @@ export const FleetTrackingScreen: React.FC = () => {
     </SafeAreaView>
   );
 };
-
-function getMockVehicles(): FleetVehicle[] {
-  return [
-    {
-      id: 'mock-1',
-      plateNumber: 'DD 1234 AB',
-      vehicleType: 'TRUCK',
-      brand: 'Mitsubishi',
-      year: 2021,
-      driverName: 'Budi Santoso',
-      driverPhone: '08123456789',
-      status: 'ACTIVE',
-      lastLocation: {
-        latitude: -5.134,
-        longitude: 119.412,
-        address: 'Jl. Sultan Alauddin, Makassar',
-        updatedAt: new Date().toISOString(),
-      },
-      registeredAt: '2024-01-15T00:00:00Z',
-    },
-    {
-      id: 'mock-2',
-      plateNumber: 'DD 5678 CD',
-      vehicleType: 'PICKUP',
-      brand: 'Isuzu',
-      year: 2020,
-      driverName: 'Ahmad Rahman',
-      driverPhone: '08234567890',
-      status: 'IDLE',
-      lastLocation: {
-        latitude: -5.147,
-        longitude: 119.430,
-        address: 'Jl. Urip Sumoharjo, Makassar',
-        updatedAt: new Date(Date.now() - 1800000).toISOString(),
-      },
-      registeredAt: '2024-03-10T00:00:00Z',
-    },
-    {
-      id: 'mock-3',
-      plateNumber: 'DD 9999 EF',
-      vehicleType: 'MOTOR',
-      brand: 'Honda',
-      year: 2022,
-      driverName: 'Siti Rahma',
-      driverPhone: '08345678901',
-      status: 'MAINTENANCE',
-      lastLocation: undefined,
-      registeredAt: '2024-06-20T00:00:00Z',
-    },
-  ];
-}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
@@ -1403,6 +1397,24 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: Spacing.md,
+    backgroundColor: Colors.primaryStart,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+  },
+  trackHintText: {
+    marginTop: Spacing.sm,
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
