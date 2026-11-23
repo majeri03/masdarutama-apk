@@ -5,12 +5,17 @@
 
 // Development: use your local network IP or ngrok URL
 // Production: use your deployed domain
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://masdarutama.tech';
+// PKG-J (23 Nov 2026, migrasi domain): domain lama masdarutama.tech
+// (gratisan, mau expired) diganti domain baru tbmasdarutama.vercel.app.
+// Nilai ini hanya fallback — saat EAS build, EXPO_PUBLIC_API_URL dari
+// eas.json (preview/production) yang dipakai. .env lokal juga harus
+// diganti (EXPO_PUBLIC_API_URL), lihat README.
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tbmasdarutama.vercel.app';
 
 export const API_ENDPOINTS = {
   // Auth
   AUTH_LOGIN: '/api/auth/login',
-  AUTH_SESSION: '/api/auth/session',
+  AUTH_SESSION: '/api/auth/session-check', // JANGAN pakai '/api/auth/session' — path itu milik endpoint session bawaan NextAuth (lihat pkg-g)
   AUTH_LOGOUT: '/api/auth/callback/credentials', // NextAuth signout
 
   // Products

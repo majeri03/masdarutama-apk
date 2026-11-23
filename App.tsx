@@ -47,6 +47,7 @@ import { Colors, FontWeight, FontSize } from './src/constants/theme';
 import { useNotificationStore } from './src/stores/notification.store';
 import { useNotificationCenterStore } from './src/stores/notificationCenter.store';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
+import { useDeepLinks } from './src/hooks/useDeepLinks';
 
 import { navigationRef } from './src/utils/navigation';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -270,6 +271,7 @@ const MainTabNavigator = () => {
 export default function App() {
   const { isAuthenticated, isLoading, checkSession } = useAuthStore();
   usePushNotifications(); // Hook untuk inisialisasi push notification
+  useDeepLinks(); // Hook untuk tautan aplikasi tbmasdarutama://... (email utang)
 
   const [showSplash, setShowSplash] = useState(true);
   const fadeAnim = React.useRef(new Animated.Value(0)).current;

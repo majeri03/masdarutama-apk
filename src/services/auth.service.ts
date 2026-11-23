@@ -60,7 +60,10 @@ export const authService = {
   },
 
   /**
-   * Check current session validity by calling GET /api/auth/session.
+   * Check current session validity by calling GET /api/auth/session-check.
+   * (Path lama /api/auth/session TIDAK BOLEH dipakai: itu endpoint session
+   * bawaan NextAuth di backend, dan route kustom di sana membayangi
+   * useSession() di web — lihat pkg-g.)
    *
    * QA fix M-36: sebelumnya SEMUA kegagalan (termasuk tidak ada jaringan)
    * mengembalikan null, sehingga membuka aplikasi offline menendang user

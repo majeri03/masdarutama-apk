@@ -16,7 +16,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://masdarutama.tech"
+        "EXPO_PUBLIC_API_URL": "https://tbmasdarutama.vercel.app"
       }
     },
     "production": {
@@ -26,7 +26,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://masdarutama.tech"
+        "EXPO_PUBLIC_API_URL": "https://tbmasdarutama.vercel.app"
       }
     }
   },

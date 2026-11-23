@@ -60,7 +60,18 @@ export const DebtScreen: React.FC = () => {
   const { openSidebar } = useSidebarStore();
   const { isAdmin } = useAuthStore();
 
-  const [activeTab, setActiveTab] = useState<'customer' | 'supplier'>('customer');
+  // Deep link (tbmasdarutama://utang?jenis=supplier|customer) bisa membawa
+  // tab awal lewat route.params.tab.
+  const tabParam = (t: unknown): 'customer' | 'supplier' | undefined =>
+    t === 'customer' || t === 'supplier' ? t : undefined;
+  const [activeTab, setActiveTab] = useState<'customer' | 'supplier'>(() => tabParam(route.params?.tab) ?? 'customer');
+
+  // Kalau layar sudah terbuka lalu deep link lain masuk, params berubah —
+  // pindah tab mengikuti param terbaru.
+  useEffect(() => {
+    const t = tabParam(route.params?.tab);
+    if (t) setActiveTab(t);
+  }, [route.params?.tab]);
   const [debts, setDebts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
