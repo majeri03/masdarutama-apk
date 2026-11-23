@@ -16,7 +16,7 @@ import { useAuthStore } from '../stores/auth.store';
 import { masterService } from '../services/master.service';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight } from '../constants/theme';
-import { GlassCard, GradientButton } from '../components/ui';
+import { GradientButton } from '../components/ui';
 import { AppToast } from '../utils/toast';
 
 export const LoginScreen: React.FC = () => {
@@ -26,6 +26,7 @@ export const LoginScreen: React.FC = () => {
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoFailed, setLogoFailed] = useState(false);
   const [storeName, setStoreName] = useState('TB Masdar Utama');
   const { login, isLoading } = useAuthStore();
 
@@ -117,34 +118,38 @@ export const LoginScreen: React.FC = () => {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={styles.container}>
-        {/* Background Decorative Blobs */}
-        <View style={[styles.blob, styles.blob1]} />
-        <View style={[styles.blob, styles.blob2]} />
-
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
         >
           <View style={styles.content}>
-            {/* Logo and Header text */}
+            {/* Logo — tampil langsung TANPA kotak/warna latar belakang
+                (PKG-D, perbaikan 7 item #5: logo harus jelas, tanpa
+                background). File logonya sendiri sudah transparan; yang
+                dihapus di sini adalah kotak merah (logoBg) di belakangnya.
+                Logo toko dari Pengaturan dipakai kalau ada; kalau gagal
+                dimuat, pakai logo bawaan aplikasi (gambar yang sama). */}
             <View style={styles.header}>
-              <View style={styles.logoBg}>
-                {logoUrl ? (
-                  <Image
-                    source={{ uri: logoUrl }}
-                    style={{ width: '100%', height: '100%', borderRadius: BorderRadius.xl }}
-                    resizeMode="contain"
-                  />
-                ) : (
-                  <Ionicons name="storefront-outline" size={40} color="#FFFFFF" />
-                )}
-              </View>
+              {logoUrl && !logoFailed ? (
+                <Image
+                  source={{ uri: logoUrl }}
+                  style={styles.logo}
+                  resizeMode="contain"
+                  onError={() => setLogoFailed(true)}
+                />
+              ) : (
+                <Image
+                  source={require('../assets/logomasdarutama.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              )}
               <Text style={styles.title}>{storeName}</Text>
               <Text style={styles.subtitle}>Point of Sale & Inventory Management</Text>
             </View>
 
-            {/* Login Card */}
-            <GlassCard padding={24} style={styles.card}>
+            {/* Form Login — kartu polos minimalis (tanpa efek kaca) */}
+            <View style={styles.card}>
               <Text style={styles.cardTitle}>Masuk Kasir</Text>
               <Text style={styles.cardSubtitle}>Silakan masuk untuk memulai transaksi Anda</Text>
 
@@ -216,7 +221,7 @@ export const LoginScreen: React.FC = () => {
                 fullWidth
                 style={styles.button}
               />
-            </GlassCard>
+            </View>
 
             {/* Footer */}
             <Text style={styles.footerText}>
@@ -243,40 +248,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing['2xl'],
     alignItems: 'center',
   },
-  blob: {
-    position: 'absolute',
-    borderRadius: 999,
-    opacity: 0.12,
-  },
-  blob1: {
-    width: 250,
-    height: 250,
-    backgroundColor: Colors.primaryStart,
-    top: '10%',
-    left: '-20%',
-  },
-  blob2: {
-    width: 300,
-    height: 300,
-    backgroundColor: Colors.secondaryStart,
-    bottom: '15%',
-    right: '-30%',
-  },
   header: {
     alignItems: 'center',
     marginBottom: Spacing['2xl'],
   },
-  logoBg: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+  // Logo polos tanpa latar belakang — gambar tampil langsung di atas
+  // warna latar layar. Ukuran 120 supaya logo jelas dibaca.
+  logo: {
+    width: 120,
+    height: 120,
     marginBottom: Spacing.md,
-    // Soft glowing border
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   title: {
     fontSize: FontSize['2xl'],
@@ -290,9 +271,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
+  // Kartu polos minimalis — putih, garis tipis, tanpa efek kaca/blur.
   card: {
     width: '100%',
     maxWidth: 400,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.lg,
+    padding: 24,
   },
   cardTitle: {
     fontSize: FontSize.lg,

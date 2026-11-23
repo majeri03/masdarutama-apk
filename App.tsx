@@ -415,6 +415,11 @@ export default function App() {
         </Animated.View>
       )}
 
+      {/* Splash menutupi seluruh layar sampai animasi selesai — navigator
+          baru dipasang setelah showSplash=false, supaya logo login TIDAK
+          PERNAH tampil bersamaan dengan logo splash saat fade (PKG-D,
+          perbaikan 7 item #5: logo bentrok). */}
+      {!showSplash && (
       <NavigationContainer 
         theme={appNavTheme} 
         ref={navigationRef}
@@ -510,6 +515,7 @@ export default function App() {
           )}
         </Stack.Navigator>
       </NavigationContainer>
+      )}
 
       {isAuthenticated && <FloatingShortcut />}
       <Toast />

@@ -24,7 +24,7 @@ import { masterService } from '../services/master.service';
 import { salesService, CheckoutPayload } from '../services/sales.service';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight } from '../constants/theme';
 import { GlassCard, GradientButton, ProofImageUploader } from '../components/ui';
-import type { Product, Category, Customer, CartItem, PaymentMethod } from '../types';
+import type { Product, Category, Customer, CartItem, PaymentMethod, Salesman } from '../types';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { printInvoice, shareInvoicePdf } from '../utils/invoicePdf';
 import { AppToast } from '../utils/toast';
@@ -55,6 +55,10 @@ export const POSScreen: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  // Salesman untuk transaksi ini (PKG-D, perbaikan 7 item #5) — opsional,
+  // default "Tanpa Sales". Pilihan dipertahankan selama sesi POS.
+  const [salesmen, setSalesmen] = useState<Salesman[]>([]);
+  const [selectedSalesmanId, setSelectedSalesmanId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -138,9 +142,12 @@ export const POSScreen: React.FC = () => {
   );
 
   // Automatically select default customer when list is loaded or selectedCustomerId is cleared
+  // Hanya customer UMUM yang boleh terpilih otomatis — jangan pernah
+  // fallback ke customers[0] (bisa jadi customer REGULAR/GROSIR).
+  // Kalau tidak ada customer UMUM, tidak ada yang terpilih otomatis.
   useEffect(() => {
     if (!selectedCustomerId && customers.length > 0) {
-      const umumCust = customers.find((c) => c.type === 'UMUM' || c.name.toUpperCase() === 'UMUM') || customers[0];
+      const umumCust = customers.find((c) => c.type === 'UMUM' || c.name.toUpperCase() === 'UMUM');
       if (umumCust) {
         setCustomer(umumCust.id);
       }
@@ -150,9 +157,13 @@ export const POSScreen: React.FC = () => {
   // Fetch initial data
   const loadInitialData = async (selectCustomerId?: string) => {
     try {
-      const [catRes, custRes] = await Promise.all([
+      const [catRes, custRes, salesmenRes] = await Promise.all([
         productService.getCategories(),
         masterService.getCustomers(),
+        // Daftar salesman (PKG-D #5) — gagal dimuat tidak apa-apa, POS
+        // tetap jalan dengan pilihan "Tanpa Sales" (mis. backend PKG-A
+        // belum di-deploy).
+        salesService.getSalesmen(),
       ]);
 
       if (catRes.success && catRes.data) {
@@ -164,6 +175,9 @@ export const POSScreen: React.FC = () => {
         if (selectCustomerId) {
           setCustomer(selectCustomerId);
         }
+      }
+      if (salesmenRes.success && salesmenRes.data) {
+        setSalesmen(salesmenRes.data);
       }
     } catch (e) {
       console.warn('[POS] Error loading master data:', e);
@@ -357,6 +371,9 @@ export const POSScreen: React.FC = () => {
     try {
       const payload: CheckoutPayload = {
         customerId: selectedCustomerId,
+        // Salesman yang menangani transaksi ini (PKG-D #5) — dicatat
+        // internal saja, TIDAK PERNAH dicetak di invoice/struk.
+        salesmanId: selectedSalesmanId || undefined,
         items: items.map((item) => ({
           productId: item.productId,
           productUnitId: item.productUnitId, // ← KRITIS: pakai productUnitId dari CartItem
@@ -764,6 +781,55 @@ export const POSScreen: React.FC = () => {
                       ]}
                     >
                       {cust.name} ({cust.type})
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Pemilih Sales — transaksi ini dari sales siapa (PKG-D,
+                perbaikan 7 item #5). Opsional, default "Tanpa Sales".
+                Dicatat internal saja, TIDAK PERNAH dicetak di invoice/struk. */}
+            <View style={{ marginTop: Spacing.sm }}>
+              <Text style={[styles.customerLabel, { marginBottom: Spacing.xs }]}>Sales</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerScroll}>
+                <TouchableOpacity
+                  style={[
+                    styles.pickerOption,
+                    !selectedSalesmanId && styles.pickerOptionActive,
+                  ]}
+                  onPress={() => setSelectedSalesmanId(null)}
+                >
+                  <Text
+                    style={[
+                      styles.pickerOptionText,
+                      !selectedSalesmanId && styles.pickerOptionTextActive,
+                    ]}
+                  >
+                    Tanpa Sales
+                  </Text>
+                </TouchableOpacity>
+                {salesmen.map((s) => (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={[
+                      styles.pickerOption,
+                      selectedSalesmanId === s.id && styles.pickerOptionActive,
+                    ]}
+                    onPress={() => setSelectedSalesmanId(s.id)}
+                  >
+                    <Ionicons
+                      name="person-outline"
+                      size={14}
+                      color={selectedSalesmanId === s.id ? '#FFFFFF' : Colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.pickerOptionText,
+                        selectedSalesmanId === s.id && styles.pickerOptionTextActive,
+                      ]}
+                    >
+                      {s.name}
                     </Text>
                   </TouchableOpacity>
                 ))}

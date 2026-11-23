@@ -4,10 +4,14 @@
 import api from './api';
 import { API_ENDPOINTS } from '../constants/api';
 import { toDayStartISO, toDayEndISO } from '../utils/dates';
-import type { ApiResponse, Sale, PaymentMethod } from '../types';
+import type { ApiResponse, Sale, PaymentMethod, Salesman } from '../types';
 
 export interface CheckoutPayload {
   customerId: string; // wajib, tidak boleh null/undefined untuk schema backend
+  // Salesman yang menangani transaksi ini (PKG-D, perbaikan 7 item #5) —
+  // opsional; kalau tidak dipilih, backend menyimpan null. Dicatat
+  // internal saja, TIDAK PERNAH dicetak di invoice/struk/surat jalan.
+  salesmanId?: string;
   items: {
     productId: string;
     productUnitId: string; // ← KRITIS: ID dari tabel ProductUnit (bukan unitId)
@@ -84,6 +88,26 @@ export const salesService = {
       return response.data;
     } catch (error: any) {
       return { success: false, error: error.response?.data?.error || 'Gagal memuat detail penjualan' };
+    }
+  },
+
+  // Daftar salesman aktif untuk pemilih Sales di POS (PKG-D, perbaikan
+  // 7 item #5). Endpoint disediakan backend setelah PKG-A di-deploy
+  // (GET /api/salesmen). Kalau backend belum di-deploy, kembalikan gagal
+  // secara aman supaya POS tetap jalan dengan pilihan "Tanpa Sales".
+  async getSalesmen(activeOnly = true): Promise<ApiResponse<Salesman[]>> {
+    try {
+      const response = await api.get<any>(
+        `/api/salesmen${activeOnly ? '?activeOnly=true' : ''}`
+      );
+      const body = response.data;
+      if (body && body.success === false) {
+        return { success: false, error: body.error || 'Gagal memuat daftar salesman' };
+      }
+      const list = Array.isArray(body) ? body : body?.data;
+      return { success: true, data: Array.isArray(list) ? list : [] };
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal memuat daftar salesman' };
     }
   },
 

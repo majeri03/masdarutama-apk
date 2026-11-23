@@ -203,10 +203,10 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             <div class="row" style="color: #059669; font-weight: bold;"><div>Kembalian</div><div>Rp ${sale.changeAmount.toLocaleString('id-ID')}</div></div>
           </div>
 
-          ${layout.showPaymentInfo && sale.paymentMethod === 'TRANSFER' ? `
+          ${layout.showPaymentInfo && layout.bankAccount ? `
             <div class="divider"></div>
             <div style="font-size: ${10 * scale}px; background: #F3F4F6; padding: 6px; border-radius: 4px; text-align: center;">
-              <div style="font-weight: bold;">TRANSFER KE:</div>
+              <div style="font-weight: bold;">REKENING BANK:</div>
               <div>${layout.bankName} - ${layout.bankAccount}</div>
               <div style="font-weight: bold;">a/n ${layout.bankHolder}</div>
             </div>
@@ -246,6 +246,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       <html>
       <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Surat Jalan ${sale.invoiceNumber}</title>
         <style>
           @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
@@ -258,6 +259,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             line-height: 1.4;
           }
           .container {
+            width: 100%;
             max-width: 800px;
             margin: 0 auto;
             position: relative;
@@ -454,6 +456,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       <html>
       <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Faktur NCR ${sale.invoiceNumber}</title>
         <style>
           @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
@@ -466,6 +469,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             line-height: 1.4;
           }
           .container {
+            width: 100%;
             max-width: 850px;
             margin: 0 auto;
             background: #ffffff;
@@ -692,9 +696,9 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
                   <b>Terbilang:</b> <i>${terbilangStr}</i>
                 </div>
 
-                ${layout.showPaymentInfo && sale.paymentMethod === 'TRANSFER' ? `
+                ${layout.showPaymentInfo && layout.bankAccount ? `
                   <div class="transfer-box">
-                    <b>TRANSFER VIA:</b><br>
+                    <b>REKENING BANK:</b><br>
                     ${layout.bankName}<br>
                     A/C: <b>${layout.bankAccount}</b><br>
                     A/N: <b>${layout.bankHolder}</b>
@@ -791,6 +795,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       <html>
       <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Invoice A4 ${sale.invoiceNumber}</title>
         <style>
           @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
@@ -803,6 +808,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             line-height: 1.4;
           }
           .container {
+            width: 100%;
             max-width: 850px;
             margin: 0 auto;
             background: #ffffff;
@@ -1035,9 +1041,9 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
                   <b>Terbilang:</b> <i>${terbilangStr}</i>
                 </div>
 
-                ${layout.showPaymentInfo && sale.paymentMethod === 'TRANSFER' ? `
+                ${layout.showPaymentInfo && layout.bankAccount ? `
                   <div class="transfer-box">
-                    <b>TRANSFER VIA:</b><br>
+                    <b>REKENING BANK:</b><br>
                     ${layout.bankName}<br>
                     A/C: <b>${layout.bankAccount}</b><br>
                     A/N: <b>${layout.bankHolder}</b>

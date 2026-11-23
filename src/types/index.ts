@@ -132,6 +132,20 @@ export interface Customer {
   province: string | null;
   type: CustomerType;
   isActive: boolean;
+  // Poin loyalitas (PKG-D, perbaikan 7 item #6) — diisi backend setelah
+  // PKG-A di-deploy; opsional supaya data lama tanpa field ini tetap jalan.
+  points?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Salesman (PKG-D, perbaikan 7 item #5) — dikelola di Pengaturan web
+// (tab "Sales & Poin", SUPER_ADMIN) dan dipilih per transaksi di POS.
+export interface Salesman {
+  id: string;
+  name: string;
+  phone: string | null;
+  isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -183,6 +197,10 @@ export interface Sale {
   invoiceNumber: string;
   customerId: string | null;
   cashierId: string;
+  // Salesman yang menangani transaksi ini (PKG-D, perbaikan 7 item #5) —
+  // tercatat internal saja, TIDAK PERNAH dicetak di invoice/struk/surat jalan.
+  salesmanId?: string | null;
+  salesman?: { id: string; name: string } | null;
   saleDate: string;
   totalAmount: number;
   discount: number;

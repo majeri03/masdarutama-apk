@@ -244,6 +244,16 @@ export const CustomersScreen: React.FC = () => {
                   <Text style={styles.detailLabel}>Alamat</Text>
                   <Text style={styles.detailValue}>{selectedCustomer.address || '-'}</Text>
                 </View>
+                {/* Poin loyalitas (PKG-D, perbaikan 7 item #6) — dari
+                    backend setelah PKG-A di-deploy; customer UMUM tidak
+                    pernah dapat poin. */}
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Poin</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedCustomer.points ?? 0} poin
+                    {selectedCustomer.type === 'UMUM' ? ' (Umum tidak dapat poin)' : ''}
+                  </Text>
+                </View>
 
                 <TouchableOpacity style={styles.editBtn} onPress={() => openEditForm(selectedCustomer)}>
                   <Ionicons name="create-outline" size={16} color={Colors.primaryStart} />
