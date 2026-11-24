@@ -4,7 +4,7 @@
 import api from './api';
 import { API_ENDPOINTS } from '../constants/api';
 import { toDayStartISO, toDayEndISO } from '../utils/dates';
-import type { ApiResponse, Sale, PaymentMethod, Salesman } from '../types';
+import type { ApiResponse, Sale, PaymentMethod, Salesman, SalesmanDetail, SalesmanFeeSetting } from '../types';
 
 export interface CheckoutPayload {
   customerId: string; // wajib, tidak boleh null/undefined untuk schema backend
@@ -162,6 +162,54 @@ export const salesService = {
       return response.data;
     } catch (error: any) {
       return { success: false, error: error.response?.data?.error || 'Gagal menghapus salesman' };
+    }
+  },
+
+  // --- Fee salesman (24 Nov 2026, APK fee) ---
+  // Route REST tipis di backend (patch backend-apk-routes) di atas server
+  // action web yang sama — angka fee dihitung server, APK hanya tampil.
+  // Baca detail + pengaturan: KASIR+. Ubah pengaturan global + override
+  // per invoice: SUPER_ADMIN saja (backend menolak role lain, 403).
+  // Fee TIDAK PERNAH dicetak di invoice/struk/surat jalan (internal saja).
+  async getSalesmanFeeSetting(): Promise<ApiResponse<SalesmanFeeSetting>> {
+    try {
+      const response = await api.get<ApiResponse<SalesmanFeeSetting>>(API_ENDPOINTS.SALESMAN_FEE_SETTING);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal memuat pengaturan fee' };
+    }
+  },
+
+  async updateSalesmanFeeSetting(data: { enabled: boolean; percent: number }): Promise<ApiResponse<SalesmanFeeSetting>> {
+    try {
+      const response = await api.put<ApiResponse<SalesmanFeeSetting>>(API_ENDPOINTS.SALESMAN_FEE_SETTING, data);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal menyimpan pengaturan fee' };
+    }
+  },
+
+  async getSalesmanDetail(id: string): Promise<ApiResponse<SalesmanDetail>> {
+    try {
+      const response = await api.get<ApiResponse<SalesmanDetail>>(API_ENDPOINTS.SALESMAN_DETAIL_VIEW(id));
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal memuat detail salesman' };
+    }
+  },
+
+  // Override fee satu invoice. enabled null = ikut global (hapus
+  // override), percent null = ikut persen global. Field yang tidak
+  // dikirim = tidak diubah. Hanya SUPER_ADMIN (backend menolak yang lain).
+  async updateSaleFeeOverride(
+    saleId: string,
+    data: { enabled?: boolean | null; percent?: number | null }
+  ): Promise<ApiResponse<void>> {
+    try {
+      const response = await api.post<ApiResponse<void>>(API_ENDPOINTS.SALE_FEE(saleId), data);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal menyimpan pengaturan fee invoice' };
     }
   },
 };

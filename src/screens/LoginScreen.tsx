@@ -12,6 +12,7 @@ import {
   Image,
   Alert,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../stores/auth.store';
 import { masterService } from '../services/master.service';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,6 +29,11 @@ export const LoginScreen: React.FC = () => {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [logoFailed, setLogoFailed] = useState(false);
   const [storeName, setStoreName] = useState('TB Masdar Utama');
+  // FIX (24 Nov 2026, APK OTP): true kalau login gagal karena akun belum
+  // terverifikasi (backend mengembalikan code "unverified" — hanya kalau
+  // passwordnya BENAR). Tampilkan kotak kuning + tombol ke layar OTP.
+  const [isUnverified, setIsUnverified] = useState(false);
+  const navigation = useNavigation<any>();
   const { login, isLoading } = useAuthStore();
 
   const loadLogoAndSettings = async () => {
@@ -89,6 +95,7 @@ export const LoginScreen: React.FC = () => {
         if (targetEmail && targetPassword) {
           const loginResult = await login(targetEmail, targetPassword);
           if (!loginResult.success) {
+            if (loginResult.code === 'unverified') setIsUnverified(true);
             AppToast.error('Login Gagal', loginResult.error || 'Terjadi kesalahan saat masuk.');
           }
         }
@@ -104,6 +111,7 @@ export const LoginScreen: React.FC = () => {
       return;
     }
 
+    setIsUnverified(false);
     const result = await login(email, password);
     if (result.success) {
       const SecureStore = require('expo-secure-store');
@@ -111,7 +119,16 @@ export const LoginScreen: React.FC = () => {
       await SecureStore.setItemAsync('saved_password', password);
       await SecureStore.setItemAsync('saved_remember', 'true');
     } else {
-      AppToast.error('Login Gagal', result.error || 'Terjadi kesalahan saat masuk.');
+      // FIX (24 Nov 2026, APK OTP): kode "unverified" dari backend
+      // (POST /api/auth/login, 403) berarti password BENAR tapi akun
+      // belum terverifikasi — arahkan ke layar verifikasi OTP, bukan
+      // sekadar "email atau password salah".
+      if (result.code === 'unverified') {
+        setIsUnverified(true);
+        AppToast.error('Login Gagal', 'Akun belum terverifikasi. Masukkan kode OTP 6 digit yang dikirim ke email Anda.');
+      } else {
+        AppToast.error('Login Gagal', result.error || 'Terjadi kesalahan saat masuk.');
+      }
     }
   };
 
@@ -212,6 +229,25 @@ export const LoginScreen: React.FC = () => {
                 </View>
               )}
 
+              {/* FIX (24 Nov 2026, APK OTP): akun belum terverifikasi —
+                  tunjukkan JELAS ke mana memasukkan kode OTP (email sudah
+                  terisi di layar verifikasi). */}
+              {isUnverified && (
+                <View style={styles.unverifiedBox}>
+                  <Text style={styles.unverifiedTitle}>Akun Anda belum terverifikasi</Text>
+                  <Text style={styles.unverifiedText}>
+                    Kode 6 digit sudah dikirim ke email Anda. Masukkan kodenya untuk mengaktifkan akun, lalu login kembali.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.unverifiedBtn}
+                    onPress={() => navigation.navigate('VerifyOtp', { email: email.trim() })}
+                  >
+                    <Ionicons name="key-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.unverifiedBtnText}>Masukkan Kode OTP</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {/* Login Button */}
               <GradientButton
                 title="Masuk Sekarang"
@@ -222,6 +258,16 @@ export const LoginScreen: React.FC = () => {
                 style={styles.button}
               />
             </View>
+
+            {/* Link verifikasi OTP — selalu tersedia untuk pemilik akun
+                baru yang belum menerima / belum memasukkan kodenya. */}
+            <TouchableOpacity
+              style={styles.verifyLink}
+              onPress={() => navigation.navigate('VerifyOtp', { email: email.trim() })}
+            >
+              <Ionicons name="mail-outline" size={16} color={Colors.primaryStart} />
+              <Text style={styles.verifyLinkText}>Belum terima kode? Verifikasi email / masukkan kode OTP</Text>
+            </TouchableOpacity>
 
             {/* Footer */}
             <Text style={styles.footerText}>
@@ -322,6 +368,25 @@ const styles = StyleSheet.create({
   button: {
     marginTop: Spacing.md,
   },
+  unverifiedBox: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: BorderRadius.md,
+    padding: 16,
+    marginTop: Spacing.md,
+    alignItems: 'center',
+  },
+  unverifiedTitle: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: '#92400E', textAlign: 'center' },
+  unverifiedText: { fontSize: FontSize.sm, color: '#92400E', textAlign: 'center', marginTop: 4, marginBottom: 12 },
+  unverifiedBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#D97706', borderRadius: BorderRadius.md,
+    paddingHorizontal: 16, paddingVertical: 10,
+  },
+  unverifiedBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: '#FFFFFF' },
+  verifyLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: Spacing.lg, justifyContent: 'center' },
+  verifyLinkText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.primaryStart, textAlign: 'center' },
   footerText: {
     fontSize: FontSize.xs,
     color: Colors.textTertiary,

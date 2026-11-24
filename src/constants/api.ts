@@ -15,6 +15,12 @@ export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tbmasdar
 export const API_ENDPOINTS = {
   // Auth
   AUTH_LOGIN: '/api/auth/login',
+  // Verifikasi OTP email (24 Nov 2026, APK OTP) — route REST publik di
+  // atas server action web (patch backend-apk-routes). Dipakai SEBELUM
+  // login, jadi tanpa token: kode 6 digit, hash SHA-256, 15 menit,
+  // maks 5x salah, rate limit — sama seperti halaman web /verify-email.
+  AUTH_VERIFY_EMAIL: '/api/auth/verify-email',
+  AUTH_RESEND_OTP: '/api/auth/resend-otp',
   AUTH_SESSION: '/api/auth/session-check', // JANGAN pakai '/api/auth/session' — path itu milik endpoint session bawaan NextAuth (lihat pkg-g)
   AUTH_LOGOUT: '/api/auth/callback/credentials', // NextAuth signout
 
@@ -46,6 +52,13 @@ export const API_ENDPOINTS = {
   // POST/PUT/DELETE: SUPER_ADMIN (dicek backend).
   SALESMEN: '/api/salesmen',
   SALESMAN_DETAIL: (id: string) => `/api/salesmen/${id}`,
+
+  // Fee salesman (24 Nov 2026, APK fee) — route REST tipis di atas server
+  // action web (patch backend-apk-routes). Detail: GET KASIR+; ubah
+  // pengaturan global + override per invoice: SUPER_ADMIN saja.
+  SALESMAN_FEE_SETTING: '/api/salesmen/fee-setting',
+  SALESMAN_DETAIL_VIEW: (id: string) => `/api/salesmen/${id}/detail`,
+  SALE_FEE: (id: string) => `/api/sales/${id}/fee`,
 
   // Poin loyalitas (24 Nov 2026) — penyesuaian manual, SUPER_ADMIN saja.
   CUSTOMER_POINTS: (id: string) => `/api/customers/${id}/points`,

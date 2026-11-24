@@ -60,6 +60,48 @@ export const authService = {
   },
 
   /**
+   * Verifikasi kode OTP 6 digit (akun baru yang belum terverifikasi).
+   * Route publik POST /api/auth/verify-email — tanpa login/token.
+   * Sukses: akun aktif, APK bisa login. Gagal (kode salah/kedaluwarsa/
+   * percobaan habis): pesan error dari server (sengaja generik).
+   */
+  async verifyEmail(email: string, otp: string): Promise<ApiResponse<void>> {
+    try {
+      const response = await api.post<ApiResponse<void>>(API_ENDPOINTS.AUTH_VERIFY_EMAIL, { email, otp });
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.data) {
+        return error.response.data as ApiResponse<void>;
+      }
+      return {
+        success: false,
+        error: 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.',
+      };
+    }
+  },
+
+  /**
+   * Kirim ulang kode OTP 6 digit ke email akun yang belum terverifikasi.
+   * Route publik POST /api/auth/resend-otp. Rate limit di server
+   * (1x/menit, 5x/jam per email); jawaban sukses sengaja generik supaya
+   * tidak membocorkan email mana yang punya akun.
+   */
+  async resendOtp(email: string): Promise<ApiResponse<void>> {
+    try {
+      const response = await api.post<ApiResponse<void>>(API_ENDPOINTS.AUTH_RESEND_OTP, { email });
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.data) {
+        return error.response.data as ApiResponse<void>;
+      }
+      return {
+        success: false,
+        error: 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.',
+      };
+    }
+  },
+
+  /**
    * Check current session validity by calling GET /api/auth/session-check.
    * (Path lama /api/auth/session TIDAK BOLEH dipakai: itu endpoint session
    * bawaan NextAuth di backend, dan route kustom di sana membayangi

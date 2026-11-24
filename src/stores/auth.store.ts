@@ -13,7 +13,10 @@ interface AuthState {
   allowedPages: string[];
 
   // Actions
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+    // code: kode mesin backend kalau login gagal — "unverified" berarti
+  // password benar tapi akun belum terverifikasi (24 Nov 2026, APK OTP);
+  // LoginScreen memakai ini untuk menampilkan tombol verifikasi OTP.
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; code?: string }>;
   checkSession: () => Promise<boolean>;
   logout: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
@@ -67,7 +70,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     set({ isLoading: false });
-    return { success: false, error: result.error || 'Login gagal' };
+    return { success: false, error: result.error || 'Login gagal', code: result.code };
   },
 
   checkSession: async () => {

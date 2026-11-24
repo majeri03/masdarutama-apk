@@ -19,6 +19,7 @@ import { useSidebarStore } from './src/stores/sidebar.store';
 
 // Import Screens
 import { LoginScreen } from './src/screens/LoginScreen';
+import { VerifyOtpScreen } from './src/screens/VerifyOtpScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { POSScreen } from './src/screens/POSScreen';
 import { ProductsScreen } from './src/screens/ProductsScreen';
@@ -434,7 +435,14 @@ export default function App() {
       >
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {!isAuthenticated ? (
-            <Stack.Screen name="Login" component={LoginScreen} />
+            <>
+              <Stack.Screen name="Login" component={LoginScreen} />
+              {/* OTP (24 Nov 2026): layar verifikasi email — HARUS di cabang
+                  belum-login, karena akun yang belum terverifikasi memang
+                  belum bisa login. LoginScreen mengarah ke sini kalau
+                  backend mengembalikan code "unverified". */}
+              <Stack.Screen name="VerifyOtp" component={VerifyOtpScreen} />
+            </>
           ) : (
             <>
               <Stack.Screen name="Main" component={MainTabNavigator} />

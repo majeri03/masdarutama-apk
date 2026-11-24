@@ -18,6 +18,10 @@ export interface ApiResponse<T = unknown> {
   data?: T;
   message?: string;
   error?: string;
+  // Kode mesin dari backend (mis. "unverified" dari POST /api/auth/login
+  // kalau password benar tapi akun belum terverifikasi — 24 Nov 2026,
+  // APK OTP). Dipakai UI untuk memilih pesan/tombol yang tepat.
+  code?: string;
   pagination?: {
     total: number;
     page: number;
@@ -150,6 +154,39 @@ export interface Salesman {
   salesCount?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+// Fee salesman (24 Nov 2026, APK fee) — sama dengan tipe web
+// (SalesmanFeeSetting / SalesmanDetail di salesman.actions.ts).
+// Angka fee dihitung di SERVER (GET /api/salesmen/[id]/detail), APK
+// hanya menampilkan — jadi total APK = total web. Aturan: fee global
+// MATI = fee Rp0 semua invoice; fee = floor(grandTotal x persen / 100).
+export interface SalesmanFeeSetting {
+  enabled: boolean;
+  percent: number;
+}
+
+export interface SalesmanDetailSaleRow {
+  id: string;
+  invoiceNumber: string;
+  saleDate: string;
+  customerName: string;
+  grandTotal: number;
+  status: string;
+  feeEnabledOverride: boolean | null;
+  feePercentOverride: number | null;
+  feeEnabled: boolean;
+  feePercent: number;
+  feeAmount: number;
+}
+
+export interface SalesmanDetail {
+  salesman: { id: string; name: string; phone: string | null; isActive: boolean };
+  feeSetting: SalesmanFeeSetting;
+  sales: SalesmanDetailSaleRow[];
+  totalSales: number;
+  totalFee: number;
+  salesCount: number;
 }
 
 export interface CartItem {
