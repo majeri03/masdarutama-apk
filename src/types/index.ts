@@ -146,6 +146,8 @@ export interface Salesman {
   name: string;
   phone: string | null;
   isActive: boolean;
+  // Jumlah transaksi yang mencatat salesman ini (dikirim backend).
+  salesCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -390,4 +392,8 @@ export interface StoreSetting {
   bankName: string | null;
   bankAccount: string | null;
   bankHolder: string | null;
+  // Poin loyalitas (24 Nov 2026, halaman Poin) — dikirim backend
+  // (GET /api/settings); opsional supaya data lama tetap jalan.
+  pointsEnabled?: boolean;
+  pointsRupiahPerPoint?: number;
 }

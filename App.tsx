@@ -37,6 +37,8 @@ import { NotificationCenterScreen } from './src/screens/NotificationCenterScreen
 import { FleetTrackingScreen } from './src/screens/FleetTrackingScreen';
 import AppUpdateScreen from './src/screens/AppUpdateScreen';
 import { StorageManagerScreen } from './src/screens/StorageManagerScreen';
+import { SalesmenScreen } from './src/screens/SalesmenScreen';
+import { PointsScreen } from './src/screens/PointsScreen';
 
 // Import Sidebar Drawer
 import { SidebarDrawer } from './src/components/ui/SidebarDrawer';
@@ -511,6 +513,16 @@ export default function App() {
               <Stack.Screen
                 name="StorageManager"
                 component={StorageManagerScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Salesmen"
+                component={SalesmenScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Points"
+                component={PointsScreen}
                 options={{ headerShown: false }}
               />
             </>

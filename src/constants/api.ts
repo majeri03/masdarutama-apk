@@ -42,6 +42,14 @@ export const API_ENDPOINTS = {
   SALES: '/api/sales',
   SALE_DETAIL: (id: string) => `/api/sales/${id}`,
 
+  // Salesmen (24 Nov 2026, pisah Sales & Poin) — GET: KASIR+,
+  // POST/PUT/DELETE: SUPER_ADMIN (dicek backend).
+  SALESMEN: '/api/salesmen',
+  SALESMAN_DETAIL: (id: string) => `/api/salesmen/${id}`,
+
+  // Poin loyalitas (24 Nov 2026) — penyesuaian manual, SUPER_ADMIN saja.
+  CUSTOMER_POINTS: (id: string) => `/api/customers/${id}/points`,
+
   // Purchases
   PURCHASES: '/api/purchases',
   PURCHASE_DETAIL: (id: string) => `/api/purchases/${id}`,

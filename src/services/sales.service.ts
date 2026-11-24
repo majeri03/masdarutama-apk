@@ -122,5 +122,47 @@ export const salesService = {
       return { success: false, error: error.response?.data?.error || 'Gagal memperbarui bukti pembayaran' };
     }
   },
+
+  // --- Manajemen salesman (24 Nov 2026, pisah Sales & Poin) ---
+  // Dipakai layar Salesmen. Baca: KASIR+ (GET /api/salesmen). Tulis:
+  // SUPER_ADMIN saja — backend menolak role lain (403). UI juga hanya
+  // menampilkan tombol tulis untuk SUPER_ADMIN, tapi server yang memutuskan.
+  async createSalesman(data: { name: string; phone?: string | null }): Promise<ApiResponse<Salesman>> {
+    try {
+      const response = await api.post<ApiResponse<Salesman>>(API_ENDPOINTS.SALESMEN, data);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal menambahkan salesman' };
+    }
+  },
+
+  async updateSalesman(id: string, data: { name: string; phone?: string | null; isActive?: boolean }): Promise<ApiResponse<Salesman>> {
+    try {
+      const response = await api.put<ApiResponse<Salesman>>(API_ENDPOINTS.SALESMAN_DETAIL(id), data);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal memperbarui salesman' };
+    }
+  },
+
+  // Nonaktifkan/aktifkan: PUT dengan nama + no HP yang sama dan isActive
+  // dibalik — backend tidak punya endpoint toggle khusus (toggle di web
+  // memakai server action, bukan API), jadi PUT penuh adalah jalurnya.
+  async toggleSalesmanStatus(salesman: Salesman): Promise<ApiResponse<Salesman>> {
+    return this.updateSalesman(salesman.id, {
+      name: salesman.name,
+      phone: salesman.phone,
+      isActive: !salesman.isActive,
+    });
+  },
+
+  async deleteSalesman(id: string): Promise<ApiResponse<void>> {
+    try {
+      const response = await api.delete<ApiResponse<void>>(API_ENDPOINTS.SALESMAN_DETAIL(id));
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal menghapus salesman' };
+    }
+  },
 };
 

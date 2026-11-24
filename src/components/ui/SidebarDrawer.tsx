@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSidebarStore } from '../../stores/sidebar.store';
 import { useAuthStore } from '../../stores/auth.store';
+import type { Role } from '../../types';
 import { useNotificationStore } from '../../stores/notification.store';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight, Shadow } from '../../constants/theme';
 import { BlurView } from 'expo-blur';
@@ -74,6 +75,7 @@ export const SidebarDrawer: React.FC = () => {
   }, [isOpen]);
 
   const allowedPages = useAuthStore((state) => state.allowedPages);
+  const hasMinRole = useAuthStore((state) => state.hasMinRole);
 
   const handleNavigate = (routeName: string) => {
     closeSidebar();
@@ -101,6 +103,11 @@ export const SidebarDrawer: React.FC = () => {
 
   interface MenuRouteWithKey extends MenuRoute {
     pageKey?: string;
+    // Peran minimum (hierarki SUPER_ADMIN 3 > ADMIN 2 > KASIR 1).
+    // Dipakai Salesman & Poin: aturannya KASIR+ boleh baca — kalau memakai
+    // pageKey, menu akan hilang untuk KASIR karena matriks Akses Halaman
+    // default-nya nonaktif untuk ADMIN/KASIR. Jangan tambah pageKey di sini.
+    minRole?: Role;
   }
 
   const routes: MenuRouteWithKey[] = [
@@ -112,11 +119,19 @@ export const SidebarDrawer: React.FC = () => {
     { name: 'InvoiceLayout', label: 'Desain & Layout Invoice', icon: 'color-palette-outline', pageKey: 'invoice_layout' },
     { name: 'DeviceSettings', label: 'Pengaturan Perangkat & Printer', icon: 'print-outline' },
     { name: 'Customers', label: 'Pelanggan', icon: 'people-outline' },
+    // Pisah Sales & Poin (24 Nov 2026): dulunya hanya tab di Pengaturan web.
+    // KASIR+ boleh baca; tulis tetap SUPER_ADMIN saja (dicek di layar +
+    // server). Tanpa pageKey — lihat komentar minRole di atas.
+    { name: 'Salesmen', label: 'Salesman', icon: 'people-outline', minRole: 'KASIR' },
+    { name: 'Points', label: 'Poin Loyalitas', icon: 'star-outline', minRole: 'KASIR' },
   ];
 
   const filteredRoutes = routes.filter((route) => {
     const role = (user?.role || '').toUpperCase();
     if (role === 'SUPER_ADMIN') return true;
+    if (route.minRole) {
+      return hasMinRole(route.minRole);
+    }
     if (route.pageKey) {
       return allowedPages.includes(route.pageKey);
     }

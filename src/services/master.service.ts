@@ -64,6 +64,20 @@ export const masterService = {
     }
   },
 
+  // Penyesuaian manual poin (24 Nov 2026, layar Poin). Endpoint
+  // POST /api/customers/[id]/points disediakan backend bersama patch web
+  // ini — sebelumnya hanya ada sebagai server action web. SUPER_ADMIN
+  // saja (backend menolak role lain); delta positif = tambah, negatif =
+  // kurang; customer UMUM ditolak, saldo tidak pernah di bawah 0.
+  async adjustCustomerPoints(customerId: string, delta: number): Promise<ApiResponse<Customer>> {
+    try {
+      const response = await api.post<ApiResponse<Customer>>(API_ENDPOINTS.CUSTOMER_POINTS(customerId), { delta });
+      return response.data;
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Gagal menyesuaikan poin' };
+    }
+  },
+
   async getSuppliers(search?: string): Promise<ApiResponse<{ suppliers: Supplier[] }>> {
     try {
       const params = search ? `?search=${encodeURIComponent(search)}` : '';

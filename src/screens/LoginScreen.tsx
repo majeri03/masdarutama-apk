@@ -139,7 +139,7 @@ export const LoginScreen: React.FC = () => {
                 />
               ) : (
                 <Image
-                  source={require('../assets/logomasdarutama.png')}
+                  source={require('../../assets/logomasdarutama.png')}
                   style={styles.logo}
                   resizeMode="contain"
                 />

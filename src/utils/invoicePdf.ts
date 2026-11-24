@@ -422,27 +422,27 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       const discountPercent = item.discount > 0 ? Math.round((item.discount / gross) * 100) : 0;
       return `
         <tr style="font-size: ${12 * scale}px;">
-          <td style="padding: 10px 8px; text-align: center;">${index + 1}</td>
-          <td style="padding: 10px 8px;">
+          <td style="padding: 5px 8px; text-align: center;">${index + 1}</td>
+          <td style="padding: 5px 8px;">
             <div style="font-weight: bold; color: #000000;">${item.product.name}</div>
             <div style="font-size: 10px; color: #4B5563; font-family: monospace;">${item.product.code}</div>
           </td>
-          <td style="padding: 10px 8px; text-align: center;">
+          <td style="padding: 5px 8px; text-align: center;">
             ${item.quantity} ${item.unit?.name || 'Unit'}
           </td>
-          <td style="padding: 10px 8px; text-align: right;">
+          <td style="padding: 5px 8px; text-align: right;">
             Rp ${item.unitPrice.toLocaleString('id-ID')}
           </td>
-          <td style="padding: 10px 8px; text-align: right;">
+          <td style="padding: 5px 8px; text-align: right;">
             Rp ${gross.toLocaleString('id-ID')}
           </td>
-          <td style="padding: 10px 8px; text-align: center;">
+          <td style="padding: 5px 8px; text-align: center;">
             ${discountPercent}%
           </td>
-          <td style="padding: 10px 8px; text-align: right; color: #DC2626;">
+          <td style="padding: 5px 8px; text-align: right; color: #DC2626;">
             ${item.discount > 0 ? `Rp ${item.discount.toLocaleString('id-ID')}` : 'Rp 0'}
           </td>
-          <td style="padding: 10px 8px; text-align: right; font-weight: bold;">
+          <td style="padding: 5px 8px; text-align: right; font-weight: bold;">
             Rp ${item.subtotal.toLocaleString('id-ID')}
           </td>
         </tr>
@@ -464,7 +464,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #000000;
             margin: 0;
-            padding: 30px;
+            padding: 24px;
             font-size: ${12 * scale}px;
             line-height: 1.4;
           }
@@ -519,8 +519,8 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           }
           .card-box {
             border: 1px solid #000000;
-            padding: 12px;
-            margin-bottom: 20px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
           }
           .card-box-title {
             font-weight: bold;
@@ -533,12 +533,11 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           .data-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
           }
           .data-table th {
-            border-bottom: 2px solid #000000;
-            border-top: 2px solid #000000;
-            padding: 8px;
+            border-bottom: 1.5px solid #000000;
+            padding: 5px 8px;
             background: transparent;
             font-weight: bold;
             text-transform: uppercase;
@@ -547,7 +546,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           .bottom-container {
             display: flex;
             justify-content: space-between;
-            margin-top: 20px;
+            margin-top: 14px;
             gap: 20px;
           }
           .bottom-left {
@@ -591,7 +590,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             border: 1px solid #000000;
           }
           .totals-table td {
-            padding: 8px;
+            padding: 5px 8px;
             border: none;
           }
           .totals-label {
@@ -604,7 +603,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           }
           .footer-terms {
             text-align: center;
-            margin-top: 30px;
+            margin-top: 20px;
             border-top: 2px solid #000000;
             padding-top: 8px;
             font-size: ${9 * scale}px;
@@ -761,27 +760,27 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       const discountPercent = item.discount > 0 ? Math.round((item.discount / gross) * 100) : 0;
       return `
         <tr style="font-size: ${12 * scale}px;">
-          <td style="padding: 10px 8px; border: 1px solid #000000; text-align: center;">${index + 1}</td>
-          <td style="padding: 10px 8px; border: 1px solid #000000;">
+          <td style="padding: 5px 8px; text-align: center;">${index + 1}</td>
+          <td style="padding: 5px 8px;">
             <div style="font-weight: bold; color: #000000;">${item.product.name}</div>
             <div style="font-size: 10px; color: #4B5563; font-family: monospace;">${item.product.code}</div>
           </td>
-          <td style="padding: 10px 8px; border: 1px solid #000000; text-align: center;">
+          <td style="padding: 5px 8px; text-align: center;">
             ${item.quantity} ${item.unit?.name || 'Unit'}
           </td>
-          <td style="padding: 10px 8px; border: 1px solid #000000; text-align: right;">
+          <td style="padding: 5px 8px; text-align: right;">
             Rp ${item.unitPrice.toLocaleString('id-ID')}
           </td>
-          <td style="padding: 10px 8px; border: 1px solid #000000; text-align: right;">
+          <td style="padding: 5px 8px; text-align: right;">
             Rp ${gross.toLocaleString('id-ID')}
           </td>
-          <td style="padding: 10px 8px; border: 1px solid #000000; text-align: center;">
+          <td style="padding: 5px 8px; text-align: center;">
             ${discountPercent}%
           </td>
-          <td style="padding: 10px 8px; border: 1px solid #000000; text-align: right; color: #DC2626;">
+          <td style="padding: 5px 8px; text-align: right; color: #DC2626;">
             ${item.discount > 0 ? `Rp ${item.discount.toLocaleString('id-ID')}` : 'Rp 0'}
           </td>
-          <td style="padding: 10px 8px; border: 1px solid #000000; text-align: right; font-weight: bold;">
+          <td style="padding: 5px 8px; text-align: right; font-weight: bold;">
             Rp ${item.subtotal.toLocaleString('id-ID')}
           </td>
         </tr>
@@ -803,7 +802,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #000000;
             margin: 0;
-            padding: 30px;
+            padding: 24px;
             font-size: ${12 * scale}px;
             line-height: 1.4;
           }
@@ -858,8 +857,8 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           }
           .card-box {
             border: 1px solid #000000;
-            padding: 12px;
-            margin-bottom: 20px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
           }
           .card-box-title {
             font-weight: bold;
@@ -872,12 +871,12 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           .data-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
           }
           .data-table th {
-            border: 1px solid #000000;
-            padding: 8px;
-            background: #E5E7EB;
+            border-bottom: 1.5px solid #000000;
+            padding: 5px 8px;
+            background: transparent;
             font-weight: bold;
             text-transform: uppercase;
             font-size: ${11 * scale}px;
@@ -885,7 +884,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           .bottom-container {
             display: flex;
             justify-content: space-between;
-            margin-top: 20px;
+            margin-top: 14px;
             gap: 20px;
           }
           .bottom-left {
@@ -929,20 +928,21 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             border: 1px solid #000000;
           }
           .totals-table td {
-            padding: 8px;
-            border: 1px solid #000000;
+            padding: 5px 8px;
+            border: none;
           }
           .totals-label {
             font-weight: bold;
           }
           .grand-total-row {
-            background: #E5E7EB;
+            border-top: 1.5px solid #000000;
+            background: transparent;
             font-weight: bold;
             font-size: ${13 * scale}px;
           }
           .footer-terms {
             text-align: center;
-            margin-top: 30px;
+            margin-top: 20px;
             border-top: 2px solid #000000;
             padding-top: 8px;
             font-size: ${9 * scale}px;
@@ -959,6 +959,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           </div>
           ` : ''}
           <!-- ─── HEADER ─── -->
+          ${layout.showHeader ? `
           <div class="header-box" style="align-items: center;">
             <div class="store-info" style="display: flex; align-items: center; gap: 15px;">
               ${layout.showLogo && logoUrl ? `
@@ -998,6 +999,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
               </table>
             </div>
           </div>
+          ` : ''}
 
           <!-- ─── CUSTOMER INFO ─── -->
           ${layout.showCustomerInfo ? `
