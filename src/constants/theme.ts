@@ -5,7 +5,7 @@
  */
 
 export const Colors = {
-  background: '#F0F4F8',           // very light blue-grey (not pure white)
+  background: '#F5F5F4',           // abu terang netral (bukan biru-abu) — WS-9
   backgroundSecondary: '#FFFFFF',  // white for cards / bars
   surface: '#FFFFFF',
   surfaceLight: '#F8FAFC',
@@ -20,15 +20,15 @@ export const Colors = {
   textInverse: '#FFFFFF',          // white (for coloured badges)
   textMuted: '#9CA3AF',            // light grey placeholder text
 
-  primaryStart: '#2563EB',         // blue-600
-  primaryEnd: '#7C3AED',           // violet-700
-  primary: '#2563EB',              // main blue
+  primaryStart: '#991B1B',         // merah merek (red-800) — WS-9
+  primaryEnd: '#7F1D1D',           // merah gelap merek — WS-9
+  primary: '#7F1D1D',              // merah gelap merek — WS-9
 
-  secondaryStart: '#DB2777',       // pink-600
-  secondaryEnd: '#E11D48',         // rose-600
+  secondaryStart: '#DC2626',       // merah (red-600) — WS-9
+  secondaryEnd: '#7F1D1D',         // merah gelap merek — WS-9
 
-  accentStart: '#0891B2',          // cyan-600
-  accentEnd: '#1D4ED8',            // blue-700
+  accentStart: '#B91C1C',          // merah (red-700) — WS-9
+  accentEnd: '#7F1D1D',            // merah gelap merek — WS-9
 
   success: '#059669',
   successLight: 'rgba(5, 150, 105, 0.10)',
@@ -42,8 +42,8 @@ export const Colors = {
   cash: '#059669',
   transfer: '#2563EB',
   credit: '#D97706',
-  debitCard: '#7C3AED',
-  qris: '#DB2777',
+  debitCard: '#7F1D1D',  // merah gelap merek — WS-9
+  qris: '#B91C1C',  // merah (red-700) — WS-9
 
   border: 'rgba(0, 0, 0, 0.08)',
   borderLight: 'rgba(0, 0, 0, 0.04)',
@@ -56,7 +56,7 @@ export const Gradients = {
   primary: [Colors.primaryStart, Colors.primaryEnd] as const,
   secondary: [Colors.secondaryStart, Colors.secondaryEnd] as const,
   accent: [Colors.accentStart, Colors.accentEnd] as const,
-  light: ['#FFFFFF', '#F0F4F8'] as const,
+  light: ['#FFFFFF', '#F5F5F4'] as const,  // WS-9: samakan dengan Colors.background
   surface: ['rgba(255, 255, 255, 0.85)', 'rgba(248, 250, 252, 0.70)'] as const,
   card: ['rgba(255, 255, 255, 0.80)', 'rgba(255, 255, 255, 0.50)'] as const,
 } as const;

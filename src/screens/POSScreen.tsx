@@ -1333,7 +1333,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     gap: Spacing.md,
     // shadow iOS
-    shadowColor: '#6C63FF',
+    shadowColor: '#64748B',  // WS-9: abu netral, dulu ungu #6C63FF
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -1399,7 +1399,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(108, 99, 255, 0.12)',  // ungu lavender lembut
+    backgroundColor: Colors.primary + '14',  // WS-9: merah merek lembut, dulu ungu lavender
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1457,7 +1457,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
-    shadowColor: '#6C63FF',
+    shadowColor: '#64748B',  // WS-9: abu netral, dulu ungu #6C63FF
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.12,
     shadowRadius: 16,
@@ -1586,7 +1586,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: Colors.border,
     paddingHorizontal: Spacing.lg,
-    shadowColor: '#6C63FF',
+    shadowColor: '#64748B',  // WS-9: abu netral, dulu ungu #6C63FF
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -1717,7 +1717,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: BorderRadius.full,
-    backgroundColor: 'rgba(108, 99, 255, 0.12)',
+    backgroundColor: Colors.primary + '14',  // WS-9: merah merek lembut, dulu ungu lavender
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1756,7 +1756,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
-    shadowColor: '#6C63FF',
+    shadowColor: '#64748B',  // WS-9: abu netral, dulu ungu #6C63FF
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -1952,7 +1952,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderTopWidth: 1,
     borderColor: Colors.border,
-    shadowColor: '#6C63FF',
+    shadowColor: '#64748B',  // WS-9: abu netral, dulu ungu #6C63FF
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,

@@ -35,6 +35,8 @@ import {
   TouchableWithoutFeedback,
   TouchableOpacity,
   Keyboard,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -60,6 +62,13 @@ export const VerifyOtpScreen: React.FC = () => {
   const [cooldown, setCooldown] = useState(0);
   const [infoMessage, setInfoMessage] = useState('');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // FIX (25 Nov 2026, WS-5 logo OTP login): ikon mail (logo layar OTP)
+  // responsif — 18% lebar layar, dibatasi 56–72, ikon di dalamnya 55%
+  // dari kotaknya. Sebelumnya iconBox 72x72 tetap di luar card.
+  const { width: screenWidth } = useWindowDimensions();
+  const iconBoxSize = Math.round(Math.min(72, Math.max(56, screenWidth * 0.18)));
+  const iconSize = Math.round(iconBoxSize * 0.55);
 
   useEffect(() => {
     return () => {
@@ -141,84 +150,99 @@ export const VerifyOtpScreen: React.FC = () => {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
         >
-          <View style={styles.content}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.navigate('Login')}>
-              <Ionicons name="arrow-back-outline" size={20} color={Colors.primaryStart} />
-              <Text style={styles.backText}>Kembali ke Login</Text>
-            </TouchableOpacity>
-
-            <View style={styles.iconBox}>
-              <Ionicons name="mail-open-outline" size={40} color={Colors.primaryStart} />
-            </View>
-            <Text style={styles.title}>Verifikasi Email</Text>
-            <Text style={styles.subtitle}>
-              Masukkan kode 6 digit yang dikirim ke email Anda. Kode berlaku 15 menit.
-            </Text>
-
-            <View style={styles.card}>
-              <Text style={styles.label}>Email</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="mail-outline" size={20} color={Colors.textTertiary} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Masukkan email Anda"
-                  placeholderTextColor={Colors.textTertiary}
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoComplete="email"
-                />
-              </View>
-
-              <Text style={styles.label}>Kode OTP (6 digit)</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="key-outline" size={20} color={Colors.textTertiary} />
-                <TextInput
-                  style={[styles.input, styles.codeInput]}
-                  placeholder="123456"
-                  placeholderTextColor={Colors.textTertiary}
-                  value={code}
-                  onChangeText={(t) => setCode(t.replace(/[^0-9]/g, '').slice(0, 6))}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  autoComplete="one-time-code"
-                />
-              </View>
-
-              {infoMessage ? (
-                <Text style={styles.infoText}>{infoMessage}</Text>
-              ) : null}
-
-              <GradientButton
-                title={verifying ? 'Memverifikasi…' : 'Verifikasi Kode'}
-                onPress={handleVerify}
-                loading={verifying}
-                variant="primary"
-                fullWidth
-                style={styles.button}
-              />
-
-              <TouchableOpacity
-                style={[styles.resendBtn, (cooldown > 0 || resending) && styles.resendBtnDisabled]}
-                onPress={handleResend}
-                disabled={cooldown > 0 || resending}
-              >
-                <Text style={styles.resendText}>
-                  {resending
-                    ? 'Mengirim…'
-                    : cooldown > 0
-                      ? `Kirim ulang kode (${cooldown} detik)`
-                      : 'Belum terima kode? Kirim ulang'}
-                </Text>
+          {/* FIX (25 Nov 2026, WS-5): ScrollView supaya seluruh isi layar
+              bisa di-scroll di ponsel kecil / saat keyboard terbuka.
+              Sebelumnya konten di-center tanpa ScrollView, jadi kalau
+              tingginya melebihi layar, bagian atas terpotong. */}
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.content}>
+              <TouchableOpacity style={styles.backBtn} onPress={() => navigation.navigate('Login')}>
+                <Ionicons name="arrow-back-outline" size={20} color={Colors.primaryStart} />
+                <Text style={styles.backText}>Kembali ke Login</Text>
               </TouchableOpacity>
 
-              <Text style={styles.note}>
-                Kode salah 5 kali berturut-turut membuat kode hangus — minta kirim ulang kode baru.
-                Akun hanya bisa aktif lewat kode OTP ini.
-              </Text>
+              <View style={styles.card}>
+                {/* FIX (25 Nov 2026, WS-5): ikon mail + judul + penjelasan
+                    PINDAH ke DALAM card (sebelumnya iconBox 72x72, judul,
+                    dan subtitle berada di luar/atas card). Laporan tes
+                    25 Nov: logo OTP email posisinya keluar dari card. */}
+                <View style={[styles.iconBox, { width: iconBoxSize, height: iconBoxSize, borderRadius: iconBoxSize / 2 }]}>
+                  <Ionicons name="mail-open-outline" size={iconSize} color={Colors.primaryStart} />
+                </View>
+                <Text style={styles.title}>Verifikasi Email</Text>
+                <Text style={styles.subtitle}>
+                  Masukkan kode 6 digit yang dikirim ke email Anda. Kode berlaku 15 menit.
+                </Text>
+
+                <Text style={styles.label}>Email</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="mail-outline" size={20} color={Colors.textTertiary} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Masukkan email Anda"
+                    placeholderTextColor={Colors.textTertiary}
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    autoComplete="email"
+                  />
+                </View>
+
+                <Text style={styles.label}>Kode OTP (6 digit)</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="key-outline" size={20} color={Colors.textTertiary} />
+                  <TextInput
+                    style={[styles.input, styles.codeInput]}
+                    placeholder="123456"
+                    placeholderTextColor={Colors.textTertiary}
+                    value={code}
+                    onChangeText={(t) => setCode(t.replace(/[^0-9]/g, '').slice(0, 6))}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    autoComplete="one-time-code"
+                  />
+                </View>
+
+                {infoMessage ? (
+                  <Text style={styles.infoText}>{infoMessage}</Text>
+                ) : null}
+
+                <GradientButton
+                  title={verifying ? 'Memverifikasi…' : 'Verifikasi Kode'}
+                  onPress={handleVerify}
+                  loading={verifying}
+                  variant="primary"
+                  fullWidth
+                  style={styles.button}
+                />
+
+                <TouchableOpacity
+                  style={[styles.resendBtn, (cooldown > 0 || resending) && styles.resendBtnDisabled]}
+                  onPress={handleResend}
+                  disabled={cooldown > 0 || resending}
+                >
+                  <Text style={styles.resendText}>
+                    {resending
+                      ? 'Mengirim…'
+                      : cooldown > 0
+                        ? `Kirim ulang kode (${cooldown} detik)`
+                        : 'Belum terima kode? Kirim ulang'}
+                  </Text>
+                </TouchableOpacity>
+
+                <Text style={styles.note}>
+                  Kode salah 5 kali berturut-turut membuat kode hangus — minta kirim ulang kode baru.
+                  Akun hanya bisa aktif lewat kode OTP ini.
+                </Text>
+              </View>
             </View>
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </TouchableWithoutFeedback>
@@ -228,18 +252,28 @@ export const VerifyOtpScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
   keyboardView: { flex: 1, justifyContent: 'center' },
+  scrollView: { flex: 1 },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: Spacing.xl },
   content: { paddingHorizontal: Spacing['2xl'], alignItems: 'center' },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: Spacing.lg },
   backText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.primaryStart },
+  // Ukuran responsif (iconBoxSize, 56–72) — lebar/tinggi/borderRadius
+  // diisi dari useWindowDimensions, BUKAN 72 tetap seperti sebelumnya.
+  // alignSelf 'center' karena card tidak memakai alignItems 'center'
+  // (isi form rata kiri) — ikon harus tetap di tengah card.
   iconBox: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.primaryStart + '15',
+    backgroundColor: Colors.primaryStart + '15',
     alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.md,
+    alignSelf: 'center',
   },
-  title: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  title: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary, textAlign: 'center' },
   subtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 4, textAlign: 'center', marginBottom: Spacing.xl },
+  // overflow 'hidden' supaya isi tidak bisa keluar dari sudut card
+  // yang membulat di Android.
   card: {
     width: '100%', maxWidth: 400, backgroundColor: '#FFFFFF',
     borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.lg, padding: 24,
+    overflow: 'hidden',
   },
   label: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.textSecondary, marginBottom: Spacing.xs, marginTop: Spacing.md },
   inputWrapper: {

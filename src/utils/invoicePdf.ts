@@ -16,20 +16,37 @@ const PAYMENT_LABEL: Record<string, string> = {
   QRIS: 'QRIS',
 };
 
+// WS-6: teks dari database (nama toko/produk/pelanggan) tidak boleh ditempel
+// mentah ke HTML invoice — sama seperti web (src/lib/utils/invoice-printer.ts).
+const escapeHtml = (s: unknown): string =>
+  String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]);
+
 export const getStoreSettings = async () => {
   try {
     const res = await api.get(API_ENDPOINTS.STORE_SETTINGS);
     if (res.data?.success && res.data?.data) {
+      // WS-6: sekali ambil pengaturan toko, sekalian sinkronkan layout +
+      // rekening dari server (sumber yang sama dengan web) supaya invoice
+      // APK sama dengan web. Tanpa internet, layout lokal terakhir tetap dipakai.
+      useInvoiceLayoutStore.getState().syncFromServer(res.data.data);
       return res.data.data;
     }
   } catch (e) {
     console.warn('[INVOICE_PDF] Error getting store settings:', e);
   }
+  // WS-6: kalau server tidak bisa dihubungi / belum ada data toko, JANGAN
+  // isi data toko rekaan (nama/alamat/telp/tagline palsu). Generator di bawah
+  // menampilkan "Data toko belum diisi" seperti web, dan blok rekening
+  // disembunyikan bila nomor rekening kosong.
   return {
-    name: 'TB Masdar Utama',
-    phone: '6285398346677',
-    address: 'Jl. Poros Maros - Pangkep, Maccini Baji, Kec. Lau, Kabupaten Maros, Sulawesi Selatan',
-    tagline: 'Distributor Bahan Bangunan Terpercaya',
+    name: '',
+    phone: '',
+    address: '',
+    tagline: '',
+    logoUrl: null,
+    bankName: '',
+    bankAccount: '',
+    bankHolder: '',
   };
 };
 
@@ -57,9 +74,31 @@ export const getTerbilangRupiah = (num: number): string => {
   }
 };
 
-export const generateInvoiceHtml = (sale: Sale, store: any) => {
-  const layout = useInvoiceLayoutStore.getState();
+/**
+ * WS-6: `overrides` hanya menimpa layout untuk SATU render ini (mis. Surat
+ * Jalan dari DeliveryScreen) TANPA mengubah store tersimpan — sebelumnya
+ * DeliveryScreen memanggil updateLayout({ layoutType: 'SURAT_JALAN' }) yang
+ * mengubah layout permanen, sehingga semua invoice berikutnya ikut menjadi
+ * Surat Jalan sampai diubah manual.
+ */
+// WS-6: info toko siap tampil — dipakai generateInvoiceHtml DAN
+// generateThermalReceiptString. Nama kosong = "Data toko belum diisi"
+// (seperti web), bukan nama rekaan.
+const getStoreDisplay = (store: any) => ({
+  storeName: (store.name || '').trim() || 'Data toko belum diisi',
+  storeAddress: (store.address || '').trim(),
+  storePhone: (store.phone || '').trim(),
+  storeTagline: (store.tagline || '').trim(),
+});
+
+export const generateInvoiceHtml = (
+  sale: Sale,
+  store: any,
+  overrides?: Partial<Pick<ReturnType<typeof useInvoiceLayoutStore.getState>, 'layoutType' | 'showHeader' | 'showLogo' | 'showCustomerInfo' | 'showPaymentInfo' | 'showSignature' | 'showFooter' | 'bankName' | 'bankAccount' | 'bankHolder' | 'footerTerms' | 'fontSizeScale' | 'paperSize' | 'invoicePaperSize'>>
+) => {
+  const layout = { ...useInvoiceLayoutStore.getState(), ...(overrides || {}) };
   const scale = layout.fontSizeScale || 1.0;
+  const { storeName, storeAddress, storePhone, storeTagline } = getStoreDisplay(store);
   const logoUrl = store.logoUrl
     ? (store.logoUrl.startsWith('http') ? store.logoUrl : `${API_BASE_URL}${store.logoUrl}`)
     : null;
@@ -68,14 +107,6 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
     timeZone: 'Asia/Makassar',
     day: '2-digit',
     month: '2-digit',
-    year: 'numeric',
-  });
-
-  const fullDateStr = new Date(sale.createdAt || sale.saleDate).toLocaleDateString('id-ID', {
-    timeZone: 'Asia/Makassar',
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
@@ -95,9 +126,9 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
     // 1. TEMPLATE STRUK KECIL (THERMAL 58mm/80mm)
     const itemsHtml = items.map((item) => `
       <div style="margin-bottom: 8px; font-size: ${12 * scale}px;">
-        <div style="font-weight: bold;">${item.product.name}</div>
+        <div style="font-weight: bold;">${escapeHtml(item.product.name)}</div>
         <div style="display: flex; justify-content: space-between; font-size: ${11 * scale}px; color: #4B5563; margin-top: 2px;">
-          <div>${item.quantity} ${item.unit?.name || 'Unit'} x Rp ${item.unitPrice.toLocaleString('id-ID')}</div>
+          <div>${item.quantity} ${escapeHtml(item.unit?.symbol || item.unit?.name) || 'Unit'} x Rp ${item.unitPrice.toLocaleString('id-ID')}</div>
           <div style="font-weight: bold; color: #111827;">Rp ${item.subtotal.toLocaleString('id-ID')}</div>
         </div>
         ${item.discount > 0 ? `
@@ -161,22 +192,21 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           ` : ''}
           ${layout.showHeader ? `
             <div class="center">
-              <div style="font-size: ${16 * scale}px; font-weight: bold;">${store.name}</div>
-              ${store.tagline ? `<div style="font-size: ${10 * scale}px; font-style: italic;">${store.tagline}</div>` : ''}
+              <div style="font-size: ${16 * scale}px; font-weight: bold;">${escapeHtml(storeName)}</div>
+              ${storeTagline ? `<div style="font-size: ${10 * scale}px; font-style: italic;">${escapeHtml(storeTagline)}</div>` : ''}
               <div style="font-size: ${10 * scale}px; color: #4B5563; margin-top: 4px;">
-                ${store.address || ''}<br>
-                Telp: ${store.phone || ''}
+                ${storeAddress ? `${escapeHtml(storeAddress)}<br>` : ''}${storePhone ? `Telp: ${escapeHtml(storePhone)}` : ''}
               </div>
             </div>
             <div class="divider"></div>
           ` : ''}
 
           <div style="font-size: ${11 * scale}px; color: #374151;">
-            <div class="row"><div>No. Invoice</div><div class="bold">#${sale.invoiceNumber}</div></div>
+            <div class="row"><div>No. Invoice</div><div class="bold">#${escapeHtml(sale.invoiceNumber)}</div></div>
             <div class="row"><div>Tanggal</div><div>${dateStr}</div></div>
-            <div class="row"><div>Kasir</div><div>${sale.cashier?.name || '-'}</div></div>
+            <div class="row"><div>Kasir</div><div>${escapeHtml(sale.cashier?.name) || '-'}</div></div>
             ${layout.showCustomerInfo && sale.customer ? `
-              <div class="row"><div>Pelanggan</div><div class="bold">${sale.customer.name}</div></div>
+              <div class="row"><div>Pelanggan</div><div class="bold">${escapeHtml(sale.customer.name)}</div></div>
             ` : ''}
           </div>
 
@@ -198,7 +228,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
               <div>Rp ${sale.grandTotal.toLocaleString('id-ID')}</div>
             </div>
             <div class="divider"></div>
-            <div class="row"><div>Metode Bayar</div><div class="bold">${PAYMENT_LABEL[sale.paymentMethod] || sale.paymentMethod}</div></div>
+            <div class="row"><div>Metode Bayar</div><div class="bold">${PAYMENT_LABEL[sale.paymentMethod] || escapeHtml(sale.paymentMethod)}</div></div>
             <div class="row"><div>Bayar</div><div>Rp ${sale.paidAmount.toLocaleString('id-ID')}</div></div>
             <div class="row" style="color: #059669; font-weight: bold;"><div>Kembalian</div><div>Rp ${sale.changeAmount.toLocaleString('id-ID')}</div></div>
           </div>
@@ -207,8 +237,8 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             <div class="divider"></div>
             <div style="font-size: ${10 * scale}px; background: #F3F4F6; padding: 6px; border-radius: 4px; text-align: center;">
               <div style="font-weight: bold;">REKENING BANK:</div>
-              <div>${layout.bankName} - ${layout.bankAccount}</div>
-              <div style="font-weight: bold;">a/n ${layout.bankHolder}</div>
+              <div>${escapeHtml(layout.bankName)} - ${escapeHtml(layout.bankAccount)}</div>
+              <div style="font-weight: bold;">a/n ${escapeHtml(layout.bankHolder)}</div>
             </div>
           ` : ''}
 
@@ -216,7 +246,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             <div class="divider"></div>
             <div class="center" style="font-size: ${9 * scale}px; color: #6B7280;">
               <div style="font-weight: bold; margin-bottom: 4px;">TERIMA KASIH</div>
-              <div>${layout.footerTerms}</div>
+              <div>${escapeHtml(layout.footerTerms)}</div>
             </div>
           ` : ''}
         </div>
@@ -229,11 +259,11 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       <tr style="font-size: ${12 * scale}px;">
         <td style="padding: 10px 8px; border: 1px solid #000000; text-align: center;">${index + 1}</td>
         <td style="padding: 10px 8px; border: 1px solid #000000;">
-          <div style="font-weight: bold;">${item.product.name}</div>
-          <div style="font-size: 10px; color: #4B5563;">${item.product.code}</div>
+          <div style="font-weight: bold;">${escapeHtml(item.product.name)}</div>
+          <div style="font-size: 10px; color: #4B5563;">${escapeHtml(item.product.code)}</div>
         </td>
         <td style="padding: 10px 8px; border: 1px solid #000000; text-align: center; font-weight: bold;">
-          ${item.quantity} ${item.unit?.name || 'Unit'}
+          ${item.quantity} ${escapeHtml(item.unit?.symbol || item.unit?.name) || 'Unit'}
         </td>
         <td style="padding: 10px 8px; border: 1px solid #000000; font-style: italic; color: #4B5563;">
           -
@@ -247,7 +277,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Surat Jalan ${sale.invoiceNumber}</title>
+        <title>Surat Jalan ${escapeHtml(sale.invoiceNumber)}</title>
         <style>
           @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
           body {
@@ -268,8 +298,8 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           .header-box {
             display: flex;
             justify-content: space-between;
-            border: 2px solid #000000;
-            padding: 15px;
+            border-bottom: 2px solid #000000;
+            padding-bottom: 15px;
             margin-bottom: 20px;
           }
           .store-title {
@@ -343,17 +373,16 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           ` : ''}
           <div class="header-box">
             <div>
-              <div class="store-title">${store.name}</div>
+              <div class="store-title">${escapeHtml(storeName)}</div>
               <div style="font-size: 11px;">
-                ${store.address}<br>
-                No. Telp: ${store.phone}
+                ${storeAddress ? `${escapeHtml(storeAddress)}<br>` : ''}${storePhone ? `No. Telp: ${escapeHtml(storePhone)}` : ''}
               </div>
             </div>
             <div>
               <div class="do-title">SURAT JALAN</div>
               <table style="font-size: 11px; margin-top: 5px;">
-                <tr><td>No. Dokumen</td><td>: <b>DO-${sale.invoiceNumber}</b></td></tr>
-                <tr><td>No. Ref POS</td><td>: #${sale.invoiceNumber}</td></tr>
+                <tr><td>No. Dokumen</td><td>: <b>DO-${escapeHtml(sale.invoiceNumber)}</b></td></tr>
+                <tr><td>No. Ref POS</td><td>: #${escapeHtml(sale.invoiceNumber)}</td></tr>
                 <tr><td>Tanggal</td><td>: ${dateStr}</td></tr>
               </table>
             </div>
@@ -364,16 +393,16 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             <table style="width: 100%;">
               <tr>
                 <td style="width: 15%; font-weight: bold;">Nama Penerima</td>
-                <td style="width: 85%;">: ${sale.customer?.name || 'Umum'}</td>
+                <td style="width: 85%;">: ${escapeHtml(sale.customer?.name) || 'Umum'}</td>
               </tr>
               <tr>
                 <td style="font-weight: bold; vertical-align: top;">Alamat Kirim</td>
-                <td>: ${sale.customer?.address || '-'}</td>
+                <td>: ${escapeHtml(sale.customer?.address) || '-'}</td>
               </tr>
               ${sale.customer?.phone ? `
                 <tr>
                   <td style="font-weight: bold;">No. Telepon</td>
-                  <td>: ${sale.customer.phone}</td>
+                  <td>: ${escapeHtml(sale.customer.phone)}</td>
                 </tr>
               ` : ''}
             </table>
@@ -408,7 +437,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             </div>
             <div class="signature-box">
               <div>Hormat Kami,</div>
-              <div class="signature-line">( ${sale.cashier?.name || 'Authorized'} )</div>
+              <div class="signature-line">( ${escapeHtml(sale.cashier?.name) || 'Authorized'} )</div>
             </div>
           </div>
         </div>
@@ -422,13 +451,361 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       const discountPercent = item.discount > 0 ? Math.round((item.discount / gross) * 100) : 0;
       return `
         <tr style="font-size: ${12 * scale}px;">
+          <td style="padding: 2px 8px; text-align: center;">${index + 1}</td>
+          <td style="padding: 2px 8px;">
+            <div style="font-weight: bold; color: #000000;">${escapeHtml(item.product.name)}</div>
+            <div style="font-size: 10px; color: #4B5563; font-family: monospace;">${escapeHtml(item.product.code)}</div>
+          </td>
+          <td style="padding: 2px 8px; text-align: center;">
+            ${item.quantity} ${escapeHtml(item.unit?.symbol || item.unit?.name) || 'Unit'}
+          </td>
+          <td style="padding: 2px 8px; text-align: right;">
+            Rp ${item.unitPrice.toLocaleString('id-ID')}
+          </td>
+          <td style="padding: 2px 8px; text-align: right;">
+            Rp ${gross.toLocaleString('id-ID')}
+          </td>
+          <td style="padding: 2px 8px; text-align: center;">
+            ${discountPercent}%
+          </td>
+          <td style="padding: 2px 8px; text-align: right; color: #DC2626;">
+            ${item.discount > 0 ? `Rp ${item.discount.toLocaleString('id-ID')}` : '-'}
+          </td>
+          <td style="padding: 2px 8px; text-align: right; font-weight: bold;">
+            Rp ${item.subtotal.toLocaleString('id-ID')}
+          </td>
+        </tr>
+      `;
+    }).join('') || '';
+
+    const terbilangStr = getTerbilangRupiah(sale.grandTotal);
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Faktur NCR ${escapeHtml(sale.invoiceNumber)}</title>
+        <style>
+          @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
+          body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: #000000;
+            margin: 0;
+            padding: 24px;
+            font-size: ${12 * scale}px;
+            line-height: 1.4;
+          }
+          .container {
+            width: 100%;
+            max-width: 850px;
+            margin: 0 auto;
+            background: #ffffff;
+            position: relative;
+            overflow: hidden;
+          }
+          .header-box {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 2px solid #000000;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+          }
+          .store-info {
+            flex: 1.5;
+          }
+          .store-name {
+            font-size: ${18 * scale}px;
+            font-weight: bold;
+            color: #000000;
+            margin: 0 0 4px 0;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+          }
+          .invoice-title-col {
+            flex: 1;
+            text-align: right;
+          }
+          .invoice-title {
+            font-size: ${24 * scale}px;
+            font-weight: bold;
+            color: #000000;
+            margin: 0 0 10px 0;
+            letter-spacing: 1px;
+          }
+          .meta-table {
+            float: right;
+            border-collapse: collapse;
+            font-size: ${11 * scale}px;
+          }
+          .meta-table td {
+            padding: 3px 6px;
+          }
+          .meta-label {
+            font-weight: bold;
+            color: #000000;
+          }
+          .card-box {
+            /* WS-6 Faktur NCR web: tanpa kotak/border, lebar 50% */
+            border: none;
+            padding: 0;
+            margin-bottom: 12px;
+            width: 50%;
+          }
+          .card-box-title {
+            font-weight: bold;
+            text-transform: uppercase;
+            border-bottom: none;
+            padding-bottom: 4px;
+            margin-bottom: 8px;
+            font-size: ${11 * scale}px;
+          }
+          .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 12px;
+          }
+          .data-table th {
+            border-bottom: 1.5px solid #000000;
+            padding: 3px 8px;
+            background: transparent;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: ${11 * scale}px;
+          }
+          .bottom-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 14px;
+            gap: 20px;
+          }
+          .bottom-left {
+            flex: 1.4;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+          }
+          .terbilang-box {
+            border: none;
+            padding: 0;
+            font-size: ${11 * scale}px;
+            margin-bottom: 12px;
+            background: transparent;
+          }
+          .transfer-box {
+            border: none;
+            padding: 0;
+            display: inline-block;
+            font-size: ${11 * scale}px;
+            background: transparent;
+          }
+          .signature-box {
+            text-align: center;
+            margin-top: auto;
+            align-self: flex-end;
+            padding-right: 30px;
+            font-size: ${11 * scale}px;
+          }
+          .signature-line {
+            width: 120px;
+            border-top: 1px solid #000000;
+            margin-top: 60px;
+            font-weight: bold;
+          }
+          .bottom-right {
+            flex: 1;
+          }
+          .totals-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: none;
+          }
+          .totals-table td {
+            padding: 5px 8px;
+            border: none;
+          }
+          .totals-label {
+            font-weight: bold;
+          }
+          .grand-total-row {
+            border-top: 1px solid #000000;
+            font-weight: bold;
+            font-size: ${13 * scale}px;
+          }
+          .footer-terms {
+            text-align: center;
+            margin-top: 20px;
+            border-top: 2px solid #000000;
+            padding-top: 8px;
+            font-size: ${9 * scale}px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          ${showWatermark ? `
+          <div style="position: absolute; top: 35%; left: 0; right: 0; text-align: center; opacity: 0.08; transform: rotate(-30deg); font-size: 110px; font-weight: 900; z-index: 1000; color: ${watermarkColor}; pointer-events: none; white-space: nowrap; font-family: sans-serif; letter-spacing: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+            ${watermarkText}
+          </div>
+          ` : ''}
+          <!-- ─── HEADER ─── -->
+          ${layout.showHeader ? `
+          <div class="header-box" style="align-items: center;">
+            <div class="store-info">
+              <div class="store-name" style="margin: 0; font-size: ${18 * scale}px; font-weight: bold; text-transform: uppercase;">${escapeHtml(storeName)}</div>
+              <div style="font-size: 11px; margin-top: 4px;">
+                ${storeAddress ? `${escapeHtml(storeAddress)}<br>` : ''}${storePhone ? `Phone: ${escapeHtml(storePhone)}` : ''}
+              </div>
+            </div>
+            <div class="invoice-title-col">
+              <div class="invoice-title">FAKTUR</div>
+              <table class="meta-table">
+                <tr>
+                  <td class="meta-label">Number</td>
+                  <td>: ${escapeHtml(sale.invoiceNumber)}</td>
+                </tr>
+                <tr>
+                  <td class="meta-label">Date</td>
+                  <td>: ${dateStr}</td>
+                </tr>
+                <tr>
+                  <td class="meta-label">Payment</td>
+                  <td>: ${PAYMENT_LABEL[sale.paymentMethod] || escapeHtml(sale.paymentMethod)}</td>
+                </tr>
+                <tr>
+                  <td class="meta-label">Cashier</td>
+                  <td>: ${escapeHtml(sale.cashier?.name) || '-'}</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+          ` : ''}
+
+          <!-- ─── CUSTOMER INFO ─── -->
+          ${layout.showCustomerInfo ? `
+            <div class="card-box">
+              <div class="card-box-title">Customer Info</div>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="width: 12%; font-weight: bold;">Customer</td>
+                  <td>: <b>${escapeHtml(sale.customer?.name) || 'Umum'}</b></td>
+                </tr>
+                ${sale.customer?.phone ? `<tr><td style="font-weight: bold;">Phone</td><td>: ${escapeHtml(sale.customer.phone)}</td></tr>` : ''}
+                ${sale.customer?.address ? `<tr><td style="font-weight: bold;">Address</td><td>: ${escapeHtml(sale.customer.address)}</td></tr>` : ''}
+              </table>
+            </div>
+          ` : ''}
+
+          <!-- ─── PRODUCTS TABLE ─── -->
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 5%; text-align: center;">No</th>
+                <th style="width: 40%; text-align: left;">Description</th>
+                <th style="width: 12%; text-align: center;">Qty</th>
+                <th style="width: 12%; text-align: right;">Price</th>
+                <th style="width: 12%; text-align: right;">Gross</th>
+                <th style="width: 5%; text-align: center;">%</th>
+                <th style="width: 12%; text-align: right;">Disc</th>
+                <th style="width: 12%; text-align: right;">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+
+          <!-- ─── BOTTOM BLOCK ─── -->
+          <div class="bottom-container">
+            <div class="bottom-left">
+              <div>
+                <div class="terbilang-box">
+                  <b>Terbilang:</b> <i>${terbilangStr}</i>
+                </div>
+
+                ${layout.showPaymentInfo && layout.bankAccount ? `
+                  <div class="transfer-box">
+                    <b>REKENING BANK:</b><br>
+                    ${escapeHtml(layout.bankName)}<br>
+                    A/C: <b>${escapeHtml(layout.bankAccount)}</b><br>
+                    A/N: <b>${escapeHtml(layout.bankHolder)}</b>
+                  </div>
+                ` : ''}
+              </div>
+
+              ${layout.showSignature ? `
+                <div style="display: flex; justify-content: space-between; margin-top: 30px; text-align: center;">
+                  <div style="width: 30%;">
+                    <p>Penerima,</p>
+                    <br><br><br>
+                    <p style="border-top: 1px solid #000000; display: inline-block; width: 80%;">(${escapeHtml(sale.customer?.name) || 'Customer'})</p>
+                  </div>
+                  <div style="width: 30%;">
+                    <p>Hormat Kami,</p>
+                    <br><br><br>
+                    <p style="border-top: 1px solid #000000; display: inline-block; width: 80%;">(${escapeHtml(sale.cashier?.name) || 'Admin'})</p>
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+
+            <div class="bottom-right">
+              <table class="totals-table">
+                <tr>
+                  <td class="totals-label">Gross Total</td>
+                  <td style="text-align: right; font-weight: bold;">Rp ${sale.totalAmount.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr>
+                  <td class="totals-label">Discount</td>
+                  <td style="text-align: right; color: #DC2626;">(Rp ${sale.discount.toLocaleString('id-ID')})</td>
+                </tr>
+                <tr>
+                  <td class="totals-label">Tax</td>
+                  <td style="text-align: right;">Rp ${sale.tax.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr class="grand-total-row">
+                  <td>Grand Total</td>
+                  <td style="text-align: right; font-weight: bold;">Rp ${sale.grandTotal.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr>
+                  <td class="totals-label">Paid</td>
+                  <td style="text-align: right;">Rp ${sale.paidAmount.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr>
+                  <td class="totals-label">Change</td>
+                  <td style="text-align: right; font-weight: bold; color: #059669;">Rp ${sale.changeAmount.toLocaleString('id-ID')}</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+
+          <!-- ─── TERMS / FOOTER ─── -->
+          ${layout.showFooter ? `
+            <div class="footer-terms">
+              ${escapeHtml(layout.footerTerms)}
+            </div>
+          ` : ''}
+        </div>
+      </body>
+      </html>
+    `;
+  } else {
+    // 4. TEMPLATE INVOICE BESAR (A4 STYLE - EXACTLY LIKE INVOICE PICTURE!)
+    const itemsHtml = items.map((item, index) => {
+      const gross = item.quantity * item.unitPrice;
+      const discountPercent = item.discount > 0 ? Math.round((item.discount / gross) * 100) : 0;
+      return `
+        <tr style="font-size: ${12 * scale}px;">
           <td style="padding: 5px 8px; text-align: center;">${index + 1}</td>
           <td style="padding: 5px 8px;">
-            <div style="font-weight: bold; color: #000000;">${item.product.name}</div>
-            <div style="font-size: 10px; color: #4B5563; font-family: monospace;">${item.product.code}</div>
+            <div style="font-weight: bold; color: #000000;">${escapeHtml(item.product.name)}</div>
+            <div style="font-size: 10px; color: #4B5563; font-family: monospace;">${escapeHtml(item.product.code)}</div>
           </td>
           <td style="padding: 5px 8px; text-align: center;">
-            ${item.quantity} ${item.unit?.name || 'Unit'}
+            ${item.quantity} ${escapeHtml(item.unit?.symbol || item.unit?.name) || 'Unit'}
           </td>
           <td style="padding: 5px 8px; text-align: right;">
             Rp ${item.unitPrice.toLocaleString('id-ID')}
@@ -440,7 +817,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             ${discountPercent}%
           </td>
           <td style="padding: 5px 8px; text-align: right; color: #DC2626;">
-            ${item.discount > 0 ? `Rp ${item.discount.toLocaleString('id-ID')}` : 'Rp 0'}
+            ${item.discount > 0 ? `Rp ${item.discount.toLocaleString('id-ID')}` : '-'}
           </td>
           <td style="padding: 5px 8px; text-align: right; font-weight: bold;">
             Rp ${item.subtotal.toLocaleString('id-ID')}
@@ -457,7 +834,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Faktur NCR ${sale.invoiceNumber}</title>
+        <title>Invoice A4 ${escapeHtml(sale.invoiceNumber)}</title>
         <style>
           @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
           body {
@@ -521,344 +898,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
             border: 1px solid #000000;
             padding: 10px 12px;
             margin-bottom: 14px;
-          }
-          .card-box-title {
-            font-weight: bold;
-            text-transform: uppercase;
-            border-bottom: 1px solid #000000;
-            padding-bottom: 4px;
-            margin-bottom: 8px;
-            font-size: ${11 * scale}px;
-          }
-          .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 12px;
-          }
-          .data-table th {
-            border-bottom: 1.5px solid #000000;
-            padding: 5px 8px;
-            background: transparent;
-            font-weight: bold;
-            text-transform: uppercase;
-            font-size: ${11 * scale}px;
-          }
-          .bottom-container {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 14px;
-            gap: 20px;
-          }
-          .bottom-left {
-            flex: 1.4;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-          }
-          .terbilang-box {
-            border: 1px solid #000000;
-            padding: 10px;
-            font-size: ${11 * scale}px;
-            margin-bottom: 12px;
-            background: transparent;
-          }
-          .transfer-box {
-            border: 1px solid #000000;
-            padding: 10px;
-            font-size: ${11 * scale}px;
-            background: transparent;
-          }
-          .signature-box {
-            text-align: center;
-            margin-top: auto;
-            align-self: flex-end;
-            padding-right: 30px;
-            font-size: ${11 * scale}px;
-          }
-          .signature-line {
-            width: 120px;
-            border-top: 1px solid #000000;
-            margin-top: 60px;
-            font-weight: bold;
-          }
-          .bottom-right {
-            flex: 1;
-          }
-          .totals-table {
-            width: 100%;
-            border-collapse: collapse;
-            border: 1px solid #000000;
-          }
-          .totals-table td {
-            padding: 5px 8px;
-            border: none;
-          }
-          .totals-label {
-            font-weight: bold;
-          }
-          .grand-total-row {
-            border-top: 1px solid #000000;
-            font-weight: bold;
-            font-size: ${13 * scale}px;
-          }
-          .footer-terms {
-            text-align: center;
-            margin-top: 20px;
-            border-top: 2px solid #000000;
-            padding-top: 8px;
-            font-size: ${9 * scale}px;
-            font-weight: bold;
-            letter-spacing: 0.5px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          ${showWatermark ? `
-          <div style="position: absolute; top: 35%; left: 0; right: 0; text-align: center; opacity: 0.08; transform: rotate(-30deg); font-size: 110px; font-weight: 900; z-index: 1000; color: ${watermarkColor}; pointer-events: none; white-space: nowrap; font-family: sans-serif; letter-spacing: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
-            ${watermarkText}
-          </div>
-          ` : ''}
-          <!-- ─── HEADER ─── -->
-          ${layout.showHeader ? `
-          <div class="header-box" style="align-items: center;">
-            <div class="store-info">
-              <div class="store-name" style="margin: 0; font-size: ${18 * scale}px; font-weight: bold; text-transform: uppercase;">${store.name}</div>
-              <div style="font-size: 11px; margin-top: 4px;">
-                ${store.address}<br>
-                Phone: ${store.phone}
-              </div>
-            </div>
-            <div class="invoice-title-col">
-              <div class="invoice-title">FAKTUR</div>
-              <table class="meta-table">
-                <tr>
-                  <td class="meta-label">Number</td>
-                  <td>: ${sale.invoiceNumber}</td>
-                </tr>
-                <tr>
-                  <td class="meta-label">Date</td>
-                  <td>: ${dateStr}</td>
-                </tr>
-                <tr>
-                  <td class="meta-label">Payment</td>
-                  <td>: ${PAYMENT_LABEL[sale.paymentMethod] || sale.paymentMethod}</td>
-                </tr>
-                <tr>
-                  <td class="meta-label">Cashier</td>
-                  <td>: ${sale.cashier?.name || '-'}</td>
-                </tr>
-              </table>
-            </div>
-          </div>
-          ` : ''}
-
-          <!-- ─── CUSTOMER INFO ─── -->
-          ${layout.showCustomerInfo ? `
-            <div class="card-box">
-              <div class="card-box-title">Customer Info</div>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="width: 12%; font-weight: bold;">Customer</td>
-                  <td>: <b>${sale.customer?.name || 'Umum'}</b></td>
-                </tr>
-                ${sale.customer?.phone ? `<tr><td style="font-weight: bold;">Phone</td><td>: ${sale.customer.phone}</td></tr>` : ''}
-                ${sale.customer?.address ? `<tr><td style="font-weight: bold;">Address</td><td>: ${sale.customer.address}</td></tr>` : ''}
-              </table>
-            </div>
-          ` : ''}
-
-          <!-- ─── PRODUCTS TABLE ─── -->
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width: 5%; text-align: center;">No</th>
-                <th style="width: 40%; text-align: left;">Description</th>
-                <th style="width: 12%; text-align: center;">Qty</th>
-                <th style="width: 12%; text-align: right;">Price</th>
-                <th style="width: 12%; text-align: right;">Gross</th>
-                <th style="width: 5%; text-align: center;">%</th>
-                <th style="width: 12%; text-align: right;">Disc</th>
-                <th style="width: 12%; text-align: right;">Net</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-
-          <!-- ─── BOTTOM BLOCK ─── -->
-          <div class="bottom-container">
-            <div class="bottom-left">
-              <div>
-                <div class="terbilang-box">
-                  <b>Terbilang:</b> <i>${terbilangStr}</i>
-                </div>
-
-                ${layout.showPaymentInfo && layout.bankAccount ? `
-                  <div class="transfer-box">
-                    <b>REKENING BANK:</b><br>
-                    ${layout.bankName}<br>
-                    A/C: <b>${layout.bankAccount}</b><br>
-                    A/N: <b>${layout.bankHolder}</b>
-                  </div>
-                ` : ''}
-              </div>
-
-              ${layout.showSignature ? `
-                <div class="signature-box">
-                  <div style="font-weight: bold; text-decoration: underline;">${sale.cashier?.name || 'Authorized'}</div>
-                  <div style="font-size: 9px; color: #4B5563; margin-top: 2px;">Authorized Signature</div>
-                </div>
-              ` : ''}
-            </div>
-
-            <div class="bottom-right">
-              <table class="totals-table">
-                <tr>
-                  <td class="totals-label">Gross Total</td>
-                  <td style="text-align: right; font-weight: bold;">Rp ${sale.totalAmount.toLocaleString('id-ID')}</td>
-                </tr>
-                <tr>
-                  <td class="totals-label">Discount</td>
-                  <td style="text-align: right; color: #DC2626;">(Rp ${sale.discount.toLocaleString('id-ID')})</td>
-                </tr>
-                <tr>
-                  <td class="totals-label">Tax</td>
-                  <td style="text-align: right;">Rp ${sale.tax.toLocaleString('id-ID')}</td>
-                </tr>
-                <tr class="grand-total-row">
-                  <td>Grand Total</td>
-                  <td style="text-align: right; font-weight: bold;">Rp ${sale.grandTotal.toLocaleString('id-ID')}</td>
-                </tr>
-                <tr>
-                  <td class="totals-label">Paid</td>
-                  <td style="text-align: right;">Rp ${sale.paidAmount.toLocaleString('id-ID')}</td>
-                </tr>
-                <tr>
-                  <td class="totals-label">Change</td>
-                  <td style="text-align: right; font-weight: bold; color: #059669;">Rp ${sale.changeAmount.toLocaleString('id-ID')}</td>
-                </tr>
-              </table>
-            </div>
-          </div>
-
-          <!-- ─── TERMS / FOOTER ─── -->
-          ${layout.showFooter ? `
-            <div class="footer-terms">
-              ${layout.footerTerms}
-            </div>
-          ` : ''}
-        </div>
-      </body>
-      </html>
-    `;
-  } else {
-    // 4. TEMPLATE INVOICE BESAR (A4 STYLE - EXACTLY LIKE INVOICE PICTURE!)
-    const itemsHtml = items.map((item, index) => {
-      const gross = item.quantity * item.unitPrice;
-      const discountPercent = item.discount > 0 ? Math.round((item.discount / gross) * 100) : 0;
-      return `
-        <tr style="font-size: ${12 * scale}px;">
-          <td style="padding: 5px 8px; text-align: center;">${index + 1}</td>
-          <td style="padding: 5px 8px;">
-            <div style="font-weight: bold; color: #000000;">${item.product.name}</div>
-            <div style="font-size: 10px; color: #4B5563; font-family: monospace;">${item.product.code}</div>
-          </td>
-          <td style="padding: 5px 8px; text-align: center;">
-            ${item.quantity} ${item.unit?.name || 'Unit'}
-          </td>
-          <td style="padding: 5px 8px; text-align: right;">
-            Rp ${item.unitPrice.toLocaleString('id-ID')}
-          </td>
-          <td style="padding: 5px 8px; text-align: right;">
-            Rp ${gross.toLocaleString('id-ID')}
-          </td>
-          <td style="padding: 5px 8px; text-align: center;">
-            ${discountPercent}%
-          </td>
-          <td style="padding: 5px 8px; text-align: right; color: #DC2626;">
-            ${item.discount > 0 ? `Rp ${item.discount.toLocaleString('id-ID')}` : 'Rp 0'}
-          </td>
-          <td style="padding: 5px 8px; text-align: right; font-weight: bold;">
-            Rp ${item.subtotal.toLocaleString('id-ID')}
-          </td>
-        </tr>
-      `;
-    }).join('') || '';
-
-    const terbilangStr = getTerbilangRupiah(sale.grandTotal);
-
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Invoice A4 ${sale.invoiceNumber}</title>
-        <style>
-          @page { size: ${layout.invoicePaperSize || 'A4'}; margin: 10mm; }
-          body {
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            color: #000000;
-            margin: 0;
-            padding: 24px;
-            font-size: ${12 * scale}px;
-            line-height: 1.4;
-          }
-          .container {
-            width: 100%;
-            max-width: 850px;
-            margin: 0 auto;
-            background: #ffffff;
-            position: relative;
-            overflow: hidden;
-          }
-          .header-box {
-            display: flex;
-            justify-content: space-between;
-            border: 2px solid #000000;
-            padding: 15px;
-            margin-bottom: 20px;
-          }
-          .store-info {
-            flex: 1.5;
-          }
-          .store-name {
-            font-size: ${18 * scale}px;
-            font-weight: bold;
-            color: #000000;
-            margin: 0 0 4px 0;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-          }
-          .invoice-title-col {
-            flex: 1;
-            text-align: right;
-          }
-          .invoice-title {
-            font-size: ${24 * scale}px;
-            font-weight: bold;
-            color: #000000;
-            margin: 0 0 10px 0;
-            letter-spacing: 1px;
-          }
-          .meta-table {
-            float: right;
-            border-collapse: collapse;
-            font-size: ${11 * scale}px;
-          }
-          .meta-table td {
-            padding: 3px 6px;
-          }
-          .meta-label {
-            font-weight: bold;
-            color: #000000;
-          }
-          .card-box {
-            border: 1px solid #000000;
-            padding: 10px 12px;
-            margin-bottom: 14px;
+            width: 50%;
           }
           .card-box-title {
             font-weight: bold;
@@ -965,15 +1005,12 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
               ${layout.showLogo && logoUrl ? `
                 <img src="${logoUrl}" style="width: 64px; height: 64px; object-fit: contain;" />
               ` : layout.showLogo ? `
-                <div style="width: 48px; height: 48px; background-color: #DC2626; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); display: flex; align-items: center; justify-content: center; position: relative; border-radius: 4px; overflow: hidden;">
-                  <div style="width: 20px; height: 20px; background-color: #FFFFFF; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); position: absolute; bottom: 0; left: 14px; margin-bottom: 2px;"></div>
-                </div>
+                <div style="width: 36px; height: 36px; background-color: #DC2626; display: flex; align-items: center; justify-content: center; margin-right: 10px; color: white; font-weight: bold;">MU</div>
               ` : ''}
               <div>
-                <div class="store-name" style="margin: 0; font-size: ${18 * scale}px; font-weight: bold; text-transform: uppercase;">${store.name}</div>
+                <div class="store-name" style="margin: 0; font-size: ${18 * scale}px; font-weight: bold; text-transform: uppercase;">${escapeHtml(storeName)}</div>
                 <div style="font-size: 11px; margin-top: 4px;">
-                  ${store.address}<br>
-                  Phone: ${store.phone}
+                  ${storeAddress ? `${escapeHtml(storeAddress)}<br>` : ''}${storePhone ? `Phone: ${escapeHtml(storePhone)}` : ''}
                 </div>
               </div>
             </div>
@@ -982,7 +1019,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
               <table class="meta-table">
                 <tr>
                   <td class="meta-label">Number</td>
-                  <td>: ${sale.invoiceNumber}</td>
+                  <td>: ${escapeHtml(sale.invoiceNumber)}</td>
                 </tr>
                 <tr>
                   <td class="meta-label">Date</td>
@@ -990,11 +1027,11 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
                 </tr>
                 <tr>
                   <td class="meta-label">Payment</td>
-                  <td>: ${PAYMENT_LABEL[sale.paymentMethod] || sale.paymentMethod}</td>
+                  <td>: ${PAYMENT_LABEL[sale.paymentMethod] || escapeHtml(sale.paymentMethod)}</td>
                 </tr>
                 <tr>
                   <td class="meta-label">Cashier</td>
-                  <td>: ${sale.cashier?.name || '-'}</td>
+                  <td>: ${escapeHtml(sale.cashier?.name) || '-'}</td>
                 </tr>
               </table>
             </div>
@@ -1008,10 +1045,10 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                   <td style="width: 12%; font-weight: bold;">Customer</td>
-                  <td>: <b>${sale.customer?.name || 'Umum'}</b></td>
+                  <td>: <b>${escapeHtml(sale.customer?.name) || 'Umum'}</b></td>
                 </tr>
-                ${sale.customer?.phone ? `<tr><td style="font-weight: bold;">Phone</td><td>: ${sale.customer.phone}</td></tr>` : ''}
-                ${sale.customer?.address ? `<tr><td style="font-weight: bold;">Address</td><td>: ${sale.customer.address}</td></tr>` : ''}
+                ${sale.customer?.phone ? `<tr><td style="font-weight: bold;">Phone</td><td>: ${escapeHtml(sale.customer.phone)}</td></tr>` : ''}
+                ${sale.customer?.address ? `<tr><td style="font-weight: bold;">Address</td><td>: ${escapeHtml(sale.customer.address)}</td></tr>` : ''}
               </table>
             </div>
           ` : ''}
@@ -1046,17 +1083,25 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
                 ${layout.showPaymentInfo && layout.bankAccount ? `
                   <div class="transfer-box">
                     <b>REKENING BANK:</b><br>
-                    ${layout.bankName}<br>
-                    A/C: <b>${layout.bankAccount}</b><br>
-                    A/N: <b>${layout.bankHolder}</b>
+                    ${escapeHtml(layout.bankName)}<br>
+                    A/C: <b>${escapeHtml(layout.bankAccount)}</b><br>
+                    A/N: <b>${escapeHtml(layout.bankHolder)}</b>
                   </div>
                 ` : ''}
               </div>
 
               ${layout.showSignature ? `
-                <div class="signature-box">
-                  <div style="font-weight: bold; text-decoration: underline;">${sale.cashier?.name || 'Authorized'}</div>
-                  <div style="font-size: 9px; color: #4B5563; margin-top: 2px;">Authorized Signature</div>
+                <div style="display: flex; justify-content: space-between; margin-top: 30px; text-align: center;">
+                  <div style="width: 30%;">
+                    <p>Penerima,</p>
+                    <br><br><br>
+                    <p style="border-top: 1px solid #000000; display: inline-block; width: 80%;">(${escapeHtml(sale.customer?.name) || 'Customer'})</p>
+                  </div>
+                  <div style="width: 30%;">
+                    <p>Hormat Kami,</p>
+                    <br><br><br>
+                    <p style="border-top: 1px solid #000000; display: inline-block; width: 80%;">(${escapeHtml(sale.cashier?.name) || 'Admin'})</p>
+                  </div>
                 </div>
               ` : ''}
             </div>
@@ -1094,7 +1139,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
           <!-- ─── TERMS / FOOTER ─── -->
           ${layout.showFooter ? `
             <div class="footer-terms">
-              ${layout.footerTerms}
+              ${escapeHtml(layout.footerTerms)}
             </div>
           ` : ''}
         </div>
@@ -1106,6 +1151,7 @@ export const generateInvoiceHtml = (sale: Sale, store: any) => {
 
 export const generateThermalReceiptString = (sale: Sale, store: any): string => {
   const layout = useInvoiceLayoutStore.getState();
+  const { storeName, storeAddress, storePhone, storeTagline } = getStoreDisplay(store);
   const dateStr = new Date(sale.createdAt || sale.saleDate).toLocaleDateString('id-ID', {
     day: '2-digit', month: '2-digit', year: 'numeric',
   });
@@ -1123,19 +1169,19 @@ export const generateThermalReceiptString = (sale: Sale, store: any): string => 
   
   // Header
   if (layout.showHeader) {
-    receipt += `[C]<b>${store.name || 'TB Masdar Utama'}</b>\n`;
-    if (store.tagline) receipt += `[C]${store.tagline}\n`;
-    receipt += `[C]${store.address || ''}\n`;
-    receipt += `[C]Telp: ${store.phone || ''}\n`;
+    receipt += `[C]<b>${escapeHtml(storeName)}</b>\n`;
+    if (storeTagline) receipt += `[C]${escapeHtml(storeTagline)}\n`;
+    if (storeAddress) receipt += `[C]${escapeHtml(storeAddress)}\n`;
+    if (storePhone) receipt += `[C]Telp: ${escapeHtml(storePhone)}\n`;
     receipt += `[C]${separator}\n`;
   }
 
   // Meta
-  receipt += `[L]No. INV: ${sale.invoiceNumber}\n`;
+  receipt += `[L]No. INV: ${escapeHtml(sale.invoiceNumber)}\n`;
   receipt += `[L]Tanggal: ${dateStr}\n`;
-  receipt += `[L]Kasir  : ${sale.cashier?.name || '-'}\n`;
+  receipt += `[L]Kasir  : ${escapeHtml(sale.cashier?.name) || '-'}\n`;
   if (layout.showCustomerInfo && sale.customer) {
-    receipt += `[L]Plgn   : ${sale.customer.name}\n`;
+    receipt += `[L]Plgn   : ${escapeHtml(sale.customer.name)}\n`;
   }
   receipt += `[C]${doubleSeparator}\n`;
   receipt += `[L]<b>DAFTAR BARANG</b>\n`;
@@ -1143,8 +1189,8 @@ export const generateThermalReceiptString = (sale: Sale, store: any): string => 
   // Items
   const items = sale.saleItems || [];
   items.forEach((item) => {
-    receipt += `[L]<b>${item.product.name}</b>\n`;
-    receipt += `[L]${item.quantity} ${item.unit?.name || 'Unit'} x Rp ${item.unitPrice.toLocaleString('id-ID')}\n`;
+    receipt += `[L]<b>${escapeHtml(item.product.name)}</b>\n`;
+    receipt += `[L]${item.quantity} ${escapeHtml(item.unit?.symbol || item.unit?.name) || 'Unit'} x Rp ${item.unitPrice.toLocaleString('id-ID')}\n`;
     if (item.discount > 0) {
       receipt += `[L]Diskon: -Rp ${item.discount.toLocaleString('id-ID')}\n`;
     }
@@ -1159,14 +1205,14 @@ export const generateThermalReceiptString = (sale: Sale, store: any): string => 
   if (sale.tax > 0) receipt += `[L]Pajak[R]Rp ${sale.tax.toLocaleString('id-ID')}\n`;
   receipt += `[L]<b>GRAND TOTAL</b>[R]<b>Rp ${sale.grandTotal.toLocaleString('id-ID')}</b>\n`;
   receipt += `[C]${separator}\n`;
-  receipt += `[L]Bayar (${PAYMENT_LABEL[sale.paymentMethod] || sale.paymentMethod})[R]Rp ${sale.paidAmount.toLocaleString('id-ID')}\n`;
+  receipt += `[L]Bayar (${PAYMENT_LABEL[sale.paymentMethod] || escapeHtml(sale.paymentMethod)})[R]Rp ${sale.paidAmount.toLocaleString('id-ID')}\n`;
   receipt += `[L]Kembalian[R]Rp ${sale.changeAmount.toLocaleString('id-ID')}\n`;
   
   // Footer
   if (layout.showFooter) {
     receipt += `[C]${separator}\n`;
     receipt += `[C]<b>TERIMA KASIH</b>\n`;
-    receipt += `[C]${layout.footerTerms || 'Barang yang sudah dibeli tidak dapat ditukar atau dikembalikan'}\n`;
+    receipt += `[C]${escapeHtml(layout.footerTerms) || 'Barang yang sudah dibeli tidak dapat ditukar atau dikembalikan'}\n`;
   }
   
   return receipt;

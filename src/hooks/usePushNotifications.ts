@@ -8,6 +8,11 @@ import api from '../services/api';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
 import { useAuthStore } from '../stores/auth.store';
 import { navigationRef } from '../utils/navigation';
+import {
+  normalizeNotificationData,
+  deriveDedupKey,
+  humanizeNotificationBody,
+} from '../utils/notificationText';
 
 
 // ── Pastikan channel Android sudah dibuat sebelum menjadwalkan ────────────
@@ -37,7 +42,7 @@ async function ensureNotificationChannel(channelId: string): Promise<void> {
       description: cfg.description,
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#2563EB',
+      lightColor: '#7F1D1D',  // WS-9: merah merek, dulu biru
       enableVibrate: true,
       showBadge: true,
       sound: cfg.sound,
@@ -110,7 +115,7 @@ if (Platform.OS === 'android') {
     description: 'Notifikasi utama sistem dengan suara khas Masdar Utama',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#2563EB',
+    lightColor: '#7F1D1D',  // WS-9: merah merek, dulu biru
     enableVibrate: true,
     showBadge: true,
     sound: 'masdar_utama.mp3',
@@ -215,7 +220,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | unde
       description: 'Notifikasi utama sistem dengan suara khas Masdar Utama',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#2563EB',
+      lightColor: '#7F1D1D',  // WS-9: merah merek, dulu biru
       enableVibrate: true,
       showBadge: true,
       sound: 'masdar_utama.mp3',
@@ -370,16 +375,18 @@ export function usePushNotifications() {
       // Trigger automatic UI refresh across screens
       state.triggerRefresh();
 
-      // Teruskan ID server + dedupKey dari payload backend — dedup terpusat
-      // di addNotification. Dulu di sini dicek notification.request.identifier
-      // (ID push Expo) terhadap ID lokal acak: tidak pernah cocok, jadi dedup gagal.
-      const typedData = (data as Record<string, any>) || {};
+      // WS-2: normalisasi data push (lewat FCM, `params` bisa sampai sebagai
+      // string JSON) + sanitasi body JSON mentah + dedupKey turunan dari
+      // params.saleId/doId. Tanpa ini, salinan push dari 1 penjualan bisa
+      // tampil berdua dengan salinan server-nya, dan body JSON mentah bisa
+      // lolos ke pusat notifikasi.
+      const typedData = normalizeNotificationData(data);
       state.addNotification({
         id: typeof typedData.id === 'string' ? typedData.id : undefined,
-        dedupKey: typeof typedData.dedupKey === 'string' ? typedData.dedupKey : undefined,
+        dedupKey: deriveDedupKey(typedData, typeof typedData.dedupKey === 'string' ? typedData.dedupKey : undefined),
         title: title || 'Notifikasi Baru',
-        body: body || '',
-        data: (data as Record<string, unknown>) || {},
+        body: humanizeNotificationBody(body, typedData),
+        data: typedData,
       });
     });
 
@@ -388,18 +395,15 @@ export function usePushNotifications() {
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const notif = response.notification;
       const { title, body, data } = notif.request.content;
-      const typedData = data as Record<string, any>;
+      // WS-2: normalisasi data push — lewat FCM, `params` (dan kadang seluruh
+      // `data`) bisa sampai sebagai string JSON, bukan objek. Normalisasi di
+      // sini menggantikan JSON.parse(params) manual di bawah.
+      const typedData = normalizeNotificationData(data);
 
       // screen bisa dari 'screen' field atau 'type' field (mapping ke screen)
       let screen = typedData?.screen;
       const notifType = typedData?.type;
       let params = typedData?.params;
-
-      if (typeof params === 'string') {
-        try {
-          params = JSON.parse(params);
-        } catch {}
-      }
 
       // Jika tidak ada 'screen' field, coba resolve dari 'type'
       if (!screen && notifType && SCREEN_ROUTES[notifType]) {
@@ -417,9 +421,9 @@ export function usePushNotifications() {
         const state = useNotificationCenterStore.getState();
         state.addNotification({
           id: typeof typedData?.id === 'string' ? typedData.id : undefined,
-          dedupKey: typeof typedData?.dedupKey === 'string' ? typedData.dedupKey : undefined,
+          dedupKey: deriveDedupKey(typedData, typeof typedData?.dedupKey === 'string' ? typedData.dedupKey : undefined),
           title: title || 'Notifikasi Baru',
-          body: body || '',
+          body: humanizeNotificationBody(body, typedData),
           data: typedData || {},
         });
         // Ketuk = dibaca (dulu tidak pernah ditandai, badge tidak turun).

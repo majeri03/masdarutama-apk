@@ -11,7 +11,10 @@ import {
   Keyboard,
   Image,
   Alert,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../stores/auth.store';
 import { masterService } from '../services/master.service';
@@ -35,6 +38,14 @@ export const LoginScreen: React.FC = () => {
   const [isUnverified, setIsUnverified] = useState(false);
   const navigation = useNavigation<any>();
   const { login, isLoading } = useAuthStore();
+
+  // FIX (25 Nov 2026, WS-5 logo OTP login): ukuran logo responsif —
+  // 28% lebar layar, dibatasi 76–112. Sebelumnya logo 120x120 tetap,
+  // sehingga di ponsel kecil seluruh isi layar (logo + card + link +
+  // footer, ±730 kalau kotak kuning OTP muncul) melebihi tinggi layar
+  // dan terpotong di atas/bawah karena tidak ada ScrollView.
+  const { width: screenWidth } = useWindowDimensions();
+  const logoSize = Math.round(Math.min(112, Math.max(76, screenWidth * 0.28)));
 
   const loadLogoAndSettings = async () => {
     try {
@@ -134,148 +145,164 @@ export const LoginScreen: React.FC = () => {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
         >
-          <View style={styles.content}>
-            {/* Logo — tampil langsung TANPA kotak/warna latar belakang
-                (PKG-D, perbaikan 7 item #5: logo harus jelas, tanpa
-                background). File logonya sendiri sudah transparan; yang
-                dihapus di sini adalah kotak merah (logoBg) di belakangnya.
-                Logo toko dari Pengaturan dipakai kalau ada; kalau gagal
-                dimuat, pakai logo bawaan aplikasi (gambar yang sama). */}
-            <View style={styles.header}>
-              {logoUrl && !logoFailed ? (
-                <Image
-                  source={{ uri: logoUrl }}
-                  style={styles.logo}
-                  resizeMode="contain"
-                  onError={() => setLogoFailed(true)}
-                />
-              ) : (
-                <Image
-                  source={require('../../assets/logomasdarutama.png')}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
-              )}
-              <Text style={styles.title}>{storeName}</Text>
-              <Text style={styles.subtitle}>Point of Sale & Inventory Management</Text>
-            </View>
-
-            {/* Form Login — kartu polos minimalis (tanpa efek kaca) */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Masuk Kasir</Text>
-              <Text style={styles.cardSubtitle}>Silakan masuk untuk memulai transaksi Anda</Text>
-
-              {/* Email Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Email</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="mail-outline" size={20} color={Colors.textTertiary} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Masukkan email Anda"
-                    placeholderTextColor={Colors.textTertiary}
-                    value={email}
-                    onChangeText={setEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    autoComplete="email"
-                  />
-                </View>
-              </View>
-
-              {/* Password Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Password</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="lock-closed-outline" size={20} color={Colors.textTertiary} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Masukkan password Anda"
-                    placeholderTextColor={Colors.textTertiary}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    autoComplete="password"
-                  />
-                  <TouchableWithoutFeedback onPress={() => setShowPassword(!showPassword)}>
-                    <Ionicons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={20}
-                      color={Colors.textTertiary}
+          {/* FIX (25 Nov 2026, WS-5): ScrollView supaya seluruh isi layar
+              bisa di-scroll di ponsel kecil / saat keyboard terbuka.
+              Sebelumnya konten di-center tanpa ScrollView, jadi kalau
+              tingginya melebihi layar (apalagi saat kotak kuning OTP
+              muncul) bagian atas — logo — terpotong keluar layar. */}
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.content}>
+              {/* Form Login — kartu polos minimalis (tanpa efek kaca) */}
+              <View style={styles.card}>
+                {/* FIX (25 Nov 2026, WS-5): logo + nama toko PINDAH ke
+                    DALAM card (sebelumnya di header di luar/atas card).
+                    Laporan tes 25 Nov: logo terlihat keluar dari card.
+                    Logo tampil langsung TANPA kotak/warna latar belakang
+                    (PKG-D, perbaikan 7 item #5: logo harus jelas, tanpa
+                    background). File logonya sendiri sudah transparan.
+                    Logo toko dari Pengaturan dipakai kalau ada; kalau gagal
+                    dimuat, pakai logo bawaan aplikasi (gambar yang sama).
+                    Ukuran logo responsif (logoSize, 76–112) supaya muat
+                    di card selebar apa pun — card sendiri maxWidth 400. */}
+                <View style={styles.header}>
+                  {logoUrl && !logoFailed ? (
+                    <Image
+                      source={{ uri: logoUrl }}
+                      style={[styles.logo, { width: logoSize, height: logoSize }]}
+                      resizeMode="contain"
+                      onError={() => setLogoFailed(true)}
                     />
-                  </TouchableWithoutFeedback>
+                  ) : (
+                    <Image
+                      source={require('../../assets/logomasdarutama.png')}
+                      style={[styles.logo, { width: logoSize, height: logoSize }]}
+                      resizeMode="contain"
+                    />
+                  )}
+                  <Text style={styles.title}>{storeName}</Text>
+                  <Text style={styles.subtitle}>Point of Sale & Inventory Management</Text>
                 </View>
+
+                <Text style={styles.cardTitle}>Masuk Kasir</Text>
+                <Text style={styles.cardSubtitle}>Silakan masuk untuk memulai transaksi Anda</Text>
+
+                {/* Email Input */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Email</Text>
+                  <View style={styles.inputWrapper}>
+                    <Ionicons name="mail-outline" size={20} color={Colors.textTertiary} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Masukkan email Anda"
+                      placeholderTextColor={Colors.textTertiary}
+                      value={email}
+                      onChangeText={setEmail}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      autoComplete="email"
+                    />
+                  </View>
+                </View>
+
+                {/* Password Input */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Password</Text>
+                  <View style={styles.inputWrapper}>
+                    <Ionicons name="lock-closed-outline" size={20} color={Colors.textTertiary} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Masukkan password Anda"
+                      placeholderTextColor={Colors.textTertiary}
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry={!showPassword}
+                      autoCapitalize="none"
+                      autoComplete="password"
+                    />
+                    <TouchableWithoutFeedback onPress={() => setShowPassword(!showPassword)}>
+                      <Ionicons
+                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={20}
+                        color={Colors.textTertiary}
+                      />
+                    </TouchableWithoutFeedback>
+                  </View>
+                </View>
+
+                {/* Biometric Option Row */}
+                {isBiometricSupported && hasSavedCredentials && (
+                  <View style={styles.optionsRow}>
+                    <View style={{ flex: 1 }} />
+                    <TouchableOpacity
+                      style={styles.biometricBtn}
+                      onPress={() => triggerBiometricAuth()}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="finger-print-outline" size={20} color={Colors.primaryStart} />
+                      <Text style={styles.biometricBtnText}>Masuk dengan Sidik Jari</Text>
+                    </TouchableOpacity>
+                    <View style={{ flex: 1 }} />
+                  </View>
+                )}
+
+                {/* FIX (24 Nov 2026, APK OTP): akun belum terverifikasi —
+                    tunjukkan JELAS ke mana memasukkan kode OTP (email sudah
+                    terisi di layar verifikasi). */}
+                {isUnverified && (
+                  <View style={styles.unverifiedBox}>
+                    <Text style={styles.unverifiedTitle}>Akun Anda belum terverifikasi</Text>
+                    <Text style={styles.unverifiedText}>
+                      Kode 6 digit sudah dikirim ke email Anda. Masukkan kodenya untuk mengaktifkan akun, lalu login kembali.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.unverifiedBtn}
+                      onPress={() => navigation.navigate('VerifyOtp', { email: email.trim() })}
+                    >
+                      <Ionicons name="key-outline" size={18} color="#FFFFFF" />
+                      <Text style={styles.unverifiedBtnText}>Masukkan Kode OTP</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Login Button */}
+                <GradientButton
+                  title="Masuk Sekarang"
+                  onPress={handleLogin}
+                  loading={isLoading}
+                  variant="primary"
+                  fullWidth
+                  style={styles.button}
+                />
               </View>
 
-              {/* Biometric Option Row */}
-              {isBiometricSupported && hasSavedCredentials && (
-                <View style={styles.optionsRow}>
-                  <View style={{ flex: 1 }} />
-                  <TouchableOpacity
-                    style={styles.biometricBtn}
-                    onPress={() => triggerBiometricAuth()}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="finger-print-outline" size={20} color={Colors.primaryStart} />
-                    <Text style={styles.biometricBtnText}>Masuk dengan Sidik Jari</Text>
-                  </TouchableOpacity>
-                  <View style={{ flex: 1 }} />
-                </View>
-              )}
+              {/* Link verifikasi OTP — selalu tersedia untuk pemilik akun
+                  baru yang belum menerima / belum memasukkan kodenya. */}
+              <TouchableOpacity
+                style={styles.verifyLink}
+                onPress={() => navigation.navigate('VerifyOtp', { email: email.trim() })}
+              >
+                <Ionicons name="mail-outline" size={16} color={Colors.primaryStart} />
+                <Text style={styles.verifyLinkText}>Belum terima kode? Verifikasi email / masukkan kode OTP</Text>
+              </TouchableOpacity>
 
-              {/* FIX (24 Nov 2026, APK OTP): akun belum terverifikasi —
-                  tunjukkan JELAS ke mana memasukkan kode OTP (email sudah
-                  terisi di layar verifikasi). */}
-              {isUnverified && (
-                <View style={styles.unverifiedBox}>
-                  <Text style={styles.unverifiedTitle}>Akun Anda belum terverifikasi</Text>
-                  <Text style={styles.unverifiedText}>
-                    Kode 6 digit sudah dikirim ke email Anda. Masukkan kodenya untuk mengaktifkan akun, lalu login kembali.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.unverifiedBtn}
-                    onPress={() => navigation.navigate('VerifyOtp', { email: email.trim() })}
-                  >
-                    <Ionicons name="key-outline" size={18} color="#FFFFFF" />
-                    <Text style={styles.unverifiedBtnText}>Masukkan Kode OTP</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Login Button */}
-              <GradientButton
-                title="Masuk Sekarang"
-                onPress={handleLogin}
-                loading={isLoading}
-                variant="primary"
-                fullWidth
-                style={styles.button}
-              />
+              {/* Footer */}
+              <Text style={styles.footerText}>
+                J Developer
+              </Text>
             </View>
-
-            {/* Link verifikasi OTP — selalu tersedia untuk pemilik akun
-                baru yang belum menerima / belum memasukkan kodenya. */}
-            <TouchableOpacity
-              style={styles.verifyLink}
-              onPress={() => navigation.navigate('VerifyOtp', { email: email.trim() })}
-            >
-              <Ionicons name="mail-outline" size={16} color={Colors.primaryStart} />
-              <Text style={styles.verifyLinkText}>Belum terima kode? Verifikasi email / masukkan kode OTP</Text>
-            </TouchableOpacity>
-
-            {/* Footer */}
-            <Text style={styles.footerText}>
-              J Developer
-            </Text>
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
-      </View>
+      </SafeAreaView>
     </TouchableWithoutFeedback>
   );
 };
@@ -284,11 +311,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
-    justifyContent: 'center',
   },
   keyboardView: {
     flex: 1,
     justifyContent: 'center',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: Spacing.xl,
   },
   content: {
     paddingHorizontal: Spacing['2xl'],
@@ -296,13 +330,13 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: Spacing['2xl'],
+    marginBottom: Spacing.xl,
+    width: '100%',
   },
   // Logo polos tanpa latar belakang — gambar tampil langsung di atas
-  // warna latar layar. Ukuran 120 supaya logo jelas dibaca.
+  // warna latar card. Ukuran responsif (logoSize, 76–112) — lebar/tinggi
+  // diisi dari useWindowDimensions, BUKAN 120 tetap seperti sebelumnya.
   logo: {
-    width: 120,
-    height: 120,
     marginBottom: Spacing.md,
   },
   title: {
@@ -310,6 +344,7 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     color: Colors.textPrimary,
     letterSpacing: 0.5,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: FontSize.sm,
@@ -318,6 +353,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   // Kartu polos minimalis — putih, garis tipis, tanpa efek kaca/blur.
+  // overflow 'hidden' supaya isi (logo) tidak bisa keluar dari sudut
+  // card yang membulat di Android.
   card: {
     width: '100%',
     maxWidth: 400,
@@ -326,6 +363,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderRadius: BorderRadius.lg,
     padding: 24,
+    overflow: 'hidden',
   },
   cardTitle: {
     fontSize: FontSize.lg,

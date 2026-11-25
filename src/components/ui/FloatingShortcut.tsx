@@ -90,7 +90,7 @@ export const FloatingShortcut: React.FC = () => {
             {/* Row 1 */}
             <View style={styles.menuRow}>
               <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('POS')}>
-                <View style={[styles.iconCircle, { backgroundColor: '#6C63FF' }]}><Ionicons name="calculator" size={24} color="#fff" /></View>
+                <View style={[styles.iconCircle, { backgroundColor: Colors.primary /* WS-9: merah merek, dulu ungu #6C63FF */ }]}><Ionicons name="calculator" size={24} color="#fff" /></View>
                 <Text style={styles.menuText}>Kasir</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('Products')}>

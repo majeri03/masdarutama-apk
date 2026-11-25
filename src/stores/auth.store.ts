@@ -128,7 +128,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // di HP yang sama.
     try {
       const { useNotificationCenterStore } = await import('../stores/notificationCenter.store');
-      useNotificationCenterStore.getState().clearAll();
+      // WS-2: clearAll sekarang async + melempar kalau hapus server gagal —
+      // harus di-await/ditangkap supaya tidak jadi unhandled rejection.
+      await useNotificationCenterStore.getState().clearAll().catch(() => {});
     } catch {}
     set({ user: null, isAuthenticated: false, isLoading: false, allowedPages: [] });
   },
@@ -166,12 +168,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ allowedPages: res.data.allowedPages });
       } else if (userRole === 'ADMIN') {
         // Respons tidak membawa daftar halaman — fallback seperti di catch.
+        // WS-1 (25 Nov 2026): 'fleet_tracking' ikut di fallback supaya
+        // allowedPages tetap benar untuk ADMIN/KASIR. Drawer sendiri kini
+        // memakai minRole untuk menu ini, jadi ini hanya pengaman.
         set({
-          allowedPages: ['pos', 'products', 'reports_settings', 'stock_opname', 'delivery', 'purchase', 'debt', 'customers'],
+          allowedPages: ['pos', 'products', 'reports_settings', 'stock_opname', 'delivery', 'purchase', 'debt', 'customers', 'fleet_tracking'],
         });
       } else if (userRole === 'KASIR') {
         set({
-          allowedPages: ['pos', 'products', 'stock_opname', 'delivery', 'debt', 'customers'],
+          allowedPages: ['pos', 'products', 'stock_opname', 'delivery', 'debt', 'customers', 'fleet_tracking'],
         });
       }
     } catch (error) {
@@ -182,11 +187,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // sama seperti ADMIN (tanpa users_management / system_settings).
       if (userRole === 'ADMIN') {
         set({
-          allowedPages: ['pos', 'products', 'reports_settings', 'stock_opname', 'delivery', 'purchase', 'debt', 'customers'],
+          allowedPages: ['pos', 'products', 'reports_settings', 'stock_opname', 'delivery', 'purchase', 'debt', 'customers', 'fleet_tracking'],
         });
       } else if (userRole === 'KASIR') {
         set({
-          allowedPages: ['pos', 'products', 'stock_opname', 'delivery', 'debt', 'customers'],
+          allowedPages: ['pos', 'products', 'stock_opname', 'delivery', 'debt', 'customers', 'fleet_tracking'],
         });
       }
     }

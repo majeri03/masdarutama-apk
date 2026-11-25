@@ -3,25 +3,34 @@
  * Putih translucent + blur halus + shadow lembut + border glass
  */
 import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, BorderRadius, Spacing, Shadow } from '../../constants/theme';
 
 interface GlassCardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  // FIX tsc (26 Nov 2026): dulu `ViewStyle` saja — pemakaian style berupa
+  // array (mis. [styles.x, kondisi && styles.y] di DashboardScreen) tidak
+  // bisa masuk ke tipe itu dan tsc menolaknya (TS2322). StyleProp menerima
+  // objek tunggal, array, maupun entri falsy — sesuai perilaku runtime
+  // (StyleSheet.flatten di splitStyles sudah menangani array).
+  style?: StyleProp<ViewStyle>;
   intensity?: number;
   gradient?: boolean;
   padding?: number;
   noBorder?: boolean;
-  tinted?: boolean; // Tinted ungu lembut untuk highlight
+  tinted?: boolean; // Tinted merah merek lembut untuk highlight — WS-9 (dulu ungu)
 }
 
 const splitStyles = (style: ViewStyle | any) => {
   if (!style) return { containerStyle: {}, contentStyle: {} };
 
+  // WS-9: 'backgroundColor' WAJIB di container (lapis luar), bukan di dalam
+  // LinearGradient/BlurView — kalau tidak, background menumpuk 2 lapis
+  // (putih solid di atas gradien putih translusen) dan terlihat "numpuk".
   const containerKeys = [
+    'backgroundColor',
     'margin', 'marginTop', 'marginBottom', 'marginLeft', 'marginRight', 'marginVertical', 'marginHorizontal',
     'width', 'height', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight',
     'flex', 'flexGrow', 'flexShrink',
@@ -59,7 +68,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
 
   // Gradien glass iOS: putih 82% → 60%
   const glassColors = tinted
-    ? (['rgba(108, 99, 255, 0.10)', 'rgba(168, 85, 247, 0.06)'] as const)
+    ? (['rgba(127, 29, 29, 0.08)', 'rgba(127, 29, 29, 0.04)'] as const)  // WS-9: merah merek, dulu ungu
     : (['rgba(255, 255, 255, 0.82)', 'rgba(255, 255, 255, 0.60)'] as const);
 
   return (

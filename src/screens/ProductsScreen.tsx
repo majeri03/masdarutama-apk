@@ -16,6 +16,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRoute } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { AppToast } from '../utils/toast';
 
@@ -32,6 +33,7 @@ import type { Product, Category, Unit, SubCategory } from '../types';
 
 export const ProductsScreen: React.FC = () => {
   const { isAdmin } = useAuthStore();
+  const route = useRoute<any>();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -219,6 +221,46 @@ export const ProductsScreen: React.FC = () => {
     setSelectedProduct(product);
     setShowDetailModal(true);
   };
+
+  // WS-2 (25 Nov 2026): deep-link dari notifikasi stok rendah. Dulu layar
+  // ini TIDAK membaca route.params sama sekali — notifikasi stok rendah hanya
+  // membuka daftar produk umum, pengguna harus mencari sendiri produknya.
+  // Sekarang: kalau params membawa productId (dikirim server LOW_STOCK sejak
+  // patch web WS-2, atau polling saat hanya 1 produk rendah), langsung buka
+  // modal detail produk itu. Kalau hanya ada nama/pencarian, filter daftar
+  // dengan nama itu. Dijaga ref supaya tidak terbuka ulang setiap kali tab
+  // Products difokuskan kembali (params tab bertahan di navigator).
+  const handledProductNavRef = useRef<string>('');
+  useEffect(() => {
+    const productId = route.params?.productId as string | undefined;
+    const search = route.params?.search as string | undefined;
+    const productName = route.params?.productName as string | undefined;
+    if (productId) {
+      if (handledProductNavRef.current === `id:${productId}`) return;
+      handledProductNavRef.current = `id:${productId}`;
+      (async () => {
+        try {
+          const res = await productService.getProductById(productId);
+          if (res.success && res.data) {
+            handleViewDetail(res.data);
+          } else {
+            // Produk tidak ketemu (mis. sudah dihapus): jatuh ke daftar.
+            console.warn('[PRODUCTS] Produk notifikasi tidak ditemukan:', productId);
+          }
+        } catch (e) {
+          console.warn('[PRODUCTS] Gagal membuka produk dari notifikasi:', e);
+        }
+      })();
+    } else if (search || productName) {
+      const q = search || productName || '';
+      if (handledProductNavRef.current === `q:${q}`) return;
+      handledProductNavRef.current = `q:${q}`;
+      setSearchQuery(q);
+      setPage(1);
+      loadProducts(q, selectedCategory as any, 1, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.productId, route.params?.search, route.params?.productName]);
 
   // Open Form for Adding New Product
   const handleOpenAddForm = () => {

@@ -423,7 +423,12 @@ const VehicleFormModal: React.FC<{
 export const FleetTrackingScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+  // WS-1 (25 Nov 2026): tambah/edit/hapus kendaraan = SUPER_ADMIN saja.
+  // ADMIN boleh lihat semua armada, KASIR hanya kendaraannya sendiri
+  // (filter server, pentest fix M21) — keduanya tidak boleh menambah,
+  // mengubah, atau menghapus armada.
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const isKasir = user?.role === 'KASIR';
 
   const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -658,6 +663,68 @@ export const FleetTrackingScreen: React.FC = () => {
     }
   };
 
+  // WS-1 (25 Nov 2026): popup panduan pertama kali untuk sopir yang
+  // ditugaskan. Muncul sekali per kendaraan + per akun (disimpan di
+  // AsyncStorage); penugasan baru = kendaraan baru = popup muncul lagi.
+  // Tombol "Mulai GPS" langsung memulai tracking kendaraan itu.
+  const guideShowingRef = useRef(false);
+  useEffect(() => {
+    if (loading || loadError || !user || guideShowingRef.current) return;
+    const assigned = vehicles.find(
+      (v) => v.driverUserId === user.id || v.coDriverUserId === user.id
+    );
+    if (!assigned) return;
+    const showGuide = async () => {
+      const key = `fleet_gps_guide_seen_${user.id}_${assigned.id}`;
+      let seen: string | null = null;
+      try {
+        seen = await AsyncStorage.getItem(key);
+      } catch {}
+      if (seen || guideShowingRef.current) return;
+      guideShowingRef.current = true;
+      // Tandai sudah tampil SEBELUM Alert dibuka, supaya popup tidak
+      // muncul berulang kalau user menutupnya lewat tombol kembali.
+      try {
+        await AsyncStorage.setItem(key, '1');
+      } catch {}
+      Alert.alert(
+        'Kamu Ditugaskan ke Kendaraan Ini',
+        `Kamu ditugaskan ke kendaraan ${assigned.plateNumber} — aktifkan GPS untuk mulai tracking.`,
+        [
+          { text: 'Nanti', style: 'cancel' },
+          {
+            text: 'Mulai GPS',
+            onPress: () => {
+              setSelectedVehicle(assigned);
+              setActiveTab('list');
+              startTracking(assigned.id);
+            },
+          },
+        ]
+      );
+    };
+    showGuide();
+  }, [vehicles, user, loading, loadError]);
+
+  // WS-1 (25 Nov 2026): hentikan sesi tracking lama kalau akun yang login
+  // sekarang BUKAN sopir yang ditugaskan ke kendaraan itu — mis. HP dipakai
+  // akun lain, atau ADMIN yang dulu sempat memulai GPS sebelum aturan ini
+  // berlaku. Tanpa ini, tracking lama dari AsyncStorage akan jalan terus
+  // meski tombol "Mulai GPS" sudah tidak tampil untuk akun tersebut.
+  useEffect(() => {
+    if (loading || loadError || !trackingVehicleId || !user) return;
+    const tracked = vehicles.find((v) => v.id === trackingVehicleId);
+    const stillAssigned =
+      !!tracked &&
+      (tracked.driverUserId === user.id || tracked.coDriverUserId === user.id);
+    if (!stillAssigned) {
+      stopTracking();
+    }
+    // stopTracking sengaja tidak dimasukkan ke deps: identitasnya berubah
+    // tiap render dan effect ini hanya perlu jalan saat daftar/akun berubah.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicles, trackingVehicleId, user, loading, loadError]);
+
   const handleSaveVehicle = async (data: any) => {
     setSaving(true);
     try {
@@ -766,7 +833,7 @@ export const FleetTrackingScreen: React.FC = () => {
               <Ionicons name="stop-circle-outline" size={18} color={Colors.error} />
             </TouchableOpacity>
           )}
-          {isAdmin && (
+          {isSuperAdmin && (
             <TouchableOpacity
               onPress={() => { setEditingVehicle(null); setShowForm(true); }}
               style={styles.addBtn}
@@ -910,11 +977,13 @@ export const FleetTrackingScreen: React.FC = () => {
               ) : (
                 <>
                   <Ionicons name="car-outline" size={56} color={Colors.textMuted} />
-                  <Text style={styles.emptyTitle}>Belum Ada Armada</Text>
+                  <Text style={styles.emptyTitle}>{isKasir ? 'Belum Ada Penugasan' : 'Belum Ada Armada'}</Text>
                   <Text style={styles.emptyDesc}>
-                    {isAdmin
+                    {isSuperAdmin
                       ? 'Tambahkan armada pertama Anda dengan menekan tombol + di atas.'
-                      : 'Belum ada armada yang terdaftar.'}
+                      : isKasir
+                        ? 'Kamu belum ditugaskan ke kendaraan apa pun — hubungi admin.'
+                        : 'Belum ada armada yang terdaftar.'}
                   </Text>
                 </>
               )}
@@ -923,10 +992,13 @@ export const FleetTrackingScreen: React.FC = () => {
           renderItem={({ item: vehicle }) => {
             const cfg = STATUS_CONFIG[vehicle.status];
             const isTracking = trackingVehicleId === vehicle.id;
-            // GPS hanya boleh dikirim ADMIN atau sopir yang ditugaskan (utama/pendamping) untuk kendaraan ini.
+            // WS-1 (25 Nov 2026): tombol GPS "Mulai" HANYA untuk sopir yang
+            // ditugaskan ke kendaraan ini (utama/pendamping), dari HP-nya
+            // sendiri. ADMIN/SUPER_ADMIN tidak boleh memulai GPS — mereka
+            // hanya memantau dari peta. (API location tetap menerima ADMIN+,
+            // sengaja tidak diubah — lihat NOTES WS-1.)
             const canTrack =
-              isAdmin ||
-              (!!user && (user.id === vehicle.driverUserId || user.id === vehicle.coDriverUserId));
+              !!user && (user.id === vehicle.driverUserId || user.id === vehicle.coDriverUserId);
             const typeIcon = VEHICLE_TYPE_ICONS[vehicle.vehicleType] || 'car-outline';
 
             return (
@@ -1064,7 +1136,7 @@ export const FleetTrackingScreen: React.FC = () => {
                         <Text style={[styles.actionBtnText, { color: Colors.info }]}>Lihat Peta</Text>
                       </TouchableOpacity>
 
-                      {isAdmin && (
+                      {isSuperAdmin && (
                         <TouchableOpacity
                           style={[styles.actionBtn, { backgroundColor: Colors.warning + '15', borderColor: Colors.warning + '40' }]}
                           onPress={() => {
@@ -1077,7 +1149,7 @@ export const FleetTrackingScreen: React.FC = () => {
                         </TouchableOpacity>
                       )}
 
-                      {isAdmin && (
+                      {isSuperAdmin && (
                         <TouchableOpacity
                           style={[styles.actionBtn, { backgroundColor: Colors.error + '15', borderColor: Colors.error + '40' }]}
                           onPress={() => handleDeleteVehicle(vehicle)}
@@ -1090,7 +1162,7 @@ export const FleetTrackingScreen: React.FC = () => {
 
                     {!canTrack && (
                       <Text style={styles.trackHintText}>
-                        Hanya sopir yang ditugaskan / ADMIN yang bisa mengirim GPS kendaraan ini.
+                        Hanya sopir yang ditugaskan ke kendaraan ini yang bisa mengirim GPS.
                       </Text>
                     )}
                   </View>

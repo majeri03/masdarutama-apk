@@ -29,7 +29,7 @@ import { uploadService } from '../services/upload.service';
 import { AppToast } from '../utils/toast';
 import { useDebouncedValue } from '../utils/debounce';
 import { toLocalDateString } from '../utils/dates';
-import { generateInvoiceHtml } from '../utils/invoicePdf';
+import { generateInvoiceHtml, getStoreSettings } from '../utils/invoicePdf';
 import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
 import { useAuthStore } from '../stores/auth.store';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
@@ -812,17 +812,14 @@ export const DeliveryScreen: React.FC = () => {
         })),
       };
 
-      const store = {
-        name: 'TB Masdar Utama',
-        phone: '6285398346677',
-        address: 'Jl. Poros Maros - Pangkep, Maccini Baji, Kec. Lau, Kabupaten Maros, Sulawesi Selatan',
-        tagline: 'Distributor Bahan Bangunan Terpercaya',
-      };
+      // WS-6: info toko dari API (getStoreSettings juga menyinkronkan layout
+      // dari server). Surat Jalan hanya untuk render ini -- JANGAN ubah store
+      // layout tersimpan: dulu updateLayout({ layoutType: 'SURAT_JALAN' })
+      // membuat semua invoice berikutnya ikut menjadi Surat Jalan sampai
+      // diubah manual di layar Desain Invoice.
+      const store = await getStoreSettings();
 
-      const { updateLayout } = require('../stores/invoice-layout.store').useInvoiceLayoutStore.getState();
-      updateLayout({ layoutType: 'SURAT_JALAN' });
-
-      const html = generateInvoiceHtml(mockSale, store);
+      const html = generateInvoiceHtml(mockSale, store, { layoutType: 'SURAT_JALAN' });
       await Print.printAsync({ html });
     } catch (error) {
       AppToast.error('Gagal Cetak', 'Gagal memproses cetak surat jalan.');
@@ -876,17 +873,14 @@ export const DeliveryScreen: React.FC = () => {
         })),
       };
 
-      const store = {
-        name: 'TB Masdar Utama',
-        phone: '6285398346677',
-        address: 'Jl. Poros Maros - Pangkep, Maccini Baji, Kec. Lau, Kabupaten Maros, Sulawesi Selatan',
-        tagline: 'Distributor Bahan Bangunan Terpercaya',
-      };
+      // WS-6: info toko dari API (getStoreSettings juga menyinkronkan layout
+      // dari server). Surat Jalan hanya untuk render ini -- JANGAN ubah store
+      // layout tersimpan: dulu updateLayout({ layoutType: 'SURAT_JALAN' })
+      // membuat semua invoice berikutnya ikut menjadi Surat Jalan sampai
+      // diubah manual di layar Desain Invoice.
+      const store = await getStoreSettings();
 
-      const { updateLayout } = require('../stores/invoice-layout.store').useInvoiceLayoutStore.getState();
-      updateLayout({ layoutType: 'SURAT_JALAN' });
-
-      const html = generateInvoiceHtml(mockSale, store);
+      const html = generateInvoiceHtml(mockSale, store, { layoutType: 'SURAT_JALAN' });
       const { uri } = await Print.printToFileAsync({ html });
       
       const canShare = await Sharing.isAvailableAsync();

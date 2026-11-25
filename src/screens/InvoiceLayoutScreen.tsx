@@ -17,7 +17,7 @@ import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../
 import { GlassCard, GradientButton } from '../components/ui';
 import api from '../services/api';
 import { API_ENDPOINTS, API_BASE_URL } from '../constants/api';
-import { useInvoiceLayoutStore, LayoutType } from '../stores/invoice-layout.store';
+import { useInvoiceLayoutStore, LayoutType, toServerInvoiceSettings } from '../stores/invoice-layout.store';
 import { AppToast } from '../utils/toast';
 
 const THERMAL_PRESETS = ['58mm', '80mm', '76mm', '57mm'];
@@ -27,6 +27,13 @@ export const InvoiceLayoutScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const layout = useInvoiceLayoutStore();
   const [storeSettings, setStoreSettings] = React.useState<any>(null);
+
+  // WS-6: info toko untuk preview — dari API, bukan hardcode. Bila data toko
+  // belum diisi di web, tampilkan catatan yang sama seperti web.
+  const previewStoreName = (storeSettings?.name || '').trim() || 'Data toko belum diisi';
+  const previewStoreAddress = storeSettings?.address || '';
+  const previewStorePhone = storeSettings?.phone || '';
+  const previewStoreTagline = storeSettings?.tagline || '';
 
   const [thermalMode, setThermalMode] = React.useState<'preset' | 'custom'>(
     THERMAL_PRESETS.includes(layout.paperSize) ? 'preset' : 'custom'
@@ -46,6 +53,8 @@ export const InvoiceLayoutScreen: React.FC = () => {
         const res = await api.get(API_ENDPOINTS.STORE_SETTINGS);
         if (res.data?.success && res.data?.data) {
           setStoreSettings(res.data.data);
+          // WS-6: samakan layout + rekening APK dengan pengaturan web.
+          layout.syncFromServer(res.data.data);
         }
       } catch (e) {
         console.warn('Error fetching settings:', e);
@@ -72,8 +81,21 @@ export const InvoiceLayoutScreen: React.FC = () => {
     );
   };
 
-  const handleSave = () => {
-    AppToast.success('Sukses', 'Pengaturan desain & layout invoice berhasil disimpan!');
+  // WS-6: perubahan layout sudah tersimpan lokal otomatis (zustand persist)
+  // tiap kali diubah. Tombol Simpan mendorongnya ke server supaya web memakai
+  // pengaturan yang sama. PUT /api/settings hanya untuk SUPER_ADMIN — role
+  // lain tetap tersimpan lokal, dengan penjelasan lewat toast.
+  const handleSave = async () => {
+    try {
+      await api.put(API_ENDPOINTS.STORE_SETTINGS, toServerInvoiceSettings(layout));
+      AppToast.success('Sukses', 'Pengaturan desain & layout invoice berhasil disimpan dan tersinkron ke web!');
+    } catch (e: any) {
+      if (e?.response?.status === 403) {
+        AppToast.info('Tersimpan lokal', 'Pengaturan tersimpan di HP ini. Sinkron ke web hanya untuk SUPER_ADMIN.');
+      } else {
+        AppToast.info('Tersimpan lokal', 'Pengaturan tersimpan di HP ini, tapi gagal tersinkron ke web. Coba lagi saat online.');
+      }
+    }
   };
 
   // Mock Invoice Item Render
@@ -89,9 +111,13 @@ export const InvoiceLayoutScreen: React.FC = () => {
           {/* Header */}
           {layout.showHeader && (
             <View style={styles.previewCenter}>
-              <Text style={[styles.previewTitle, { fontSize: 13 * scale }]}>TB MASDAR UTAMA</Text>
-              <Text style={[styles.previewSubtitle, { fontSize: 9 * scale }]}>Distributor Bahan Bangunan</Text>
-              <Text style={[styles.previewAddr, { fontSize: 8 * scale }]}>Jl. Poros Maros - Pangkep</Text>
+              <Text style={[styles.previewTitle, { fontSize: 13 * scale }]}>{previewStoreName}</Text>
+              {previewStoreTagline ? (
+                <Text style={[styles.previewSubtitle, { fontSize: 9 * scale }]}>{previewStoreTagline}</Text>
+              ) : null}
+              {previewStoreAddress ? (
+                <Text style={[styles.previewAddr, { fontSize: 8 * scale }]}>{previewStoreAddress}</Text>
+              ) : null}
             </View>
           )}
           
@@ -158,8 +184,8 @@ export const InvoiceLayoutScreen: React.FC = () => {
           {layout.showHeader && (
             <View style={[styles.rowBetween, styles.previewA4Header]}>
               <View>
-                <Text style={styles.a4StoreName}>TB MASDAR UTAMA</Text>
-                <Text style={styles.a4StoreAddr}>Jl. Poros Maros - Pangkep</Text>
+                <Text style={styles.a4StoreName}>{previewStoreName}</Text>
+                <Text style={styles.a4StoreAddr}>{previewStoreAddress}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.a4DocType}>SURAT JALAN</Text>
@@ -237,9 +263,9 @@ export const InvoiceLayoutScreen: React.FC = () => {
                   )
                 )}
                 <View>
-                  <Text style={styles.a4StoreName}>TB MASDAR UTAMA</Text>
-                  <Text style={styles.a4StoreAddr}>Jl. Poros Maros - Pangkep</Text>
-                  <Text style={styles.a4StorePhone}>Phone: 6285398346677</Text>
+                  <Text style={styles.a4StoreName}>{previewStoreName}</Text>
+                  <Text style={styles.a4StoreAddr}>{previewStoreAddress}</Text>
+                  <Text style={styles.a4StorePhone}>Phone: {previewStorePhone}</Text>
                 </View>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
@@ -333,9 +359,9 @@ export const InvoiceLayoutScreen: React.FC = () => {
           {layout.showHeader && (
             <View style={[styles.rowBetween, styles.previewA4Header, { borderBottomWidth: 1, borderColor: '#000' }]}>
               <View>
-                <Text style={styles.a4StoreName}>TB MASDAR UTAMA</Text>
-                <Text style={styles.a4StoreAddr}>Jl. Poros Maros - Pangkep</Text>
-                <Text style={styles.a4StorePhone}>Phone: 6285398346677</Text>
+                <Text style={styles.a4StoreName}>{previewStoreName}</Text>
+                <Text style={styles.a4StoreAddr}>{previewStoreAddress}</Text>
+                <Text style={styles.a4StorePhone}>Phone: {previewStorePhone}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.a4DocType}>FAKTUR NCR</Text>

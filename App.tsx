@@ -192,7 +192,7 @@ const MainTabNavigator = () => {
           paddingBottom: 10,
           paddingTop: 8,
           // Shadow iOS halus
-          shadowColor: '#6C63FF',
+          shadowColor: '#64748B',  // WS-9: abu netral, dulu ungu #6C63FF
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.08,
           shadowRadius: 12,
@@ -203,7 +203,7 @@ const MainTabNavigator = () => {
           borderBottomWidth: 1,
           borderBottomColor: Colors.border,
           elevation: 0,
-          shadowColor: '#6C63FF',
+          shadowColor: '#64748B',  // WS-9: abu netral, dulu ungu #6C63FF
           shadowOpacity: 0.06,
           shadowRadius: 8,
           shadowOffset: { width: 0, height: 2 },

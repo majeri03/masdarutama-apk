@@ -2,7 +2,7 @@
  * TransactionHistoryScreen — Riwayat transaksi lengkap dengan filter,
  * detail per invoice, status pembayaran, dan cetak invoice.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -88,6 +88,15 @@ export const TransactionHistoryScreen: React.FC = () => {
     }
   };
 
+  // WS-2 (25 Nov 2026): deep-link dari notifikasi pesanan baru. Dulu efek
+  // ini hanya memfilter daftar berdasarkan invoiceNumber — pengguna masih
+  // harus mengetuk barisnya sendiri. Sekarang kalau params membawa saleId
+  // (dikirim server onNewOrder + polling), langsung buka modal detail
+  // penjualan itu. Dijaga ref supaya tidak terbuka ulang setiap kali layar
+  // difokuskan kembali (params bertahan di navigator). Kalau saleId tidak
+  // ketemu (mis. penjualan sudah dihapus), jatuh ke filter invoice seperti
+  // sebelumnya.
+  const handledSaleNavRef = useRef<string>('');
   useEffect(() => {
     if (route.params?.customerId) {
       setActiveCustomerId(route.params.customerId);
@@ -97,7 +106,23 @@ export const TransactionHistoryScreen: React.FC = () => {
       setFilters((prev) => ({ ...prev, search: searchParam }));
       setPendingFilters((prev) => ({ ...prev, search: searchParam }));
     }
-  }, [route.params?.customerId, route.params?.search, route.params?.invoiceNumber]);
+    const saleId = route.params?.saleId as string | undefined;
+    if (saleId && handledSaleNavRef.current !== `id:${saleId}`) {
+      handledSaleNavRef.current = `id:${saleId}`;
+      (async () => {
+        try {
+          const res = await salesService.getSaleById(saleId);
+          if (res.success && res.data) {
+            openDetail(res.data);
+          } else {
+            console.warn('[TRANSACTIONS] Penjualan notifikasi tidak ditemukan:', saleId);
+          }
+        } catch (e) {
+          console.warn('[TRANSACTIONS] Gagal membuka penjualan dari notifikasi:', e);
+        }
+      })();
+    }
+  }, [route.params?.customerId, route.params?.search, route.params?.invoiceNumber, route.params?.saleId]);
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);

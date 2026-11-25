@@ -1,6 +1,14 @@
 /**
  * Update Service — Pembaruan APK via Google Drive
  * ─────────────────────────────────────────────────────────────────────────
+ * DI MANA MANIFEST DI-HOST (terbukti 25 Nov 2026, bukan di repo):
+ * Manifest TIDAK ada di repo APK maupun repo backend — manifest adalah file
+ * JSON di Google Drive (file ID 15dZHNf5cy6ZOeicCZEFsQgm1UaLZTcrq, share
+ * publik "Anyone with the link"), diambil lewat UPDATE_MANIFEST_URL di bawah.
+ * File APK-nya juga di Drive (file ID 1GOTYnk6regrKvIQTatRkmIVJtbcnpNXq).
+ * Backend punya endpoint GET /api/mobile/update-check, tapi APK TIDAK
+ * PERNAH memanggilnya — jalur update yang aktif hanya manifest Drive ini.
+ *
  * Cara kerja:
  * 1. Simpan file JSON "manifest" di Google Drive (share publik / "Anyone with link").
  * 2. Ubah link share menjadi link direct download:
@@ -22,12 +30,25 @@
  *    atau di PowerShell:
  *      (Get-FileHash masdar-utama-v1.2.0.apk -Algorithm SHA256).Hash
  *    Salin hasilnya (64 karakter hex) ke field "sha256" di manifest.
+ * 5. Setiap rilis baru: naikkan version + versionCode lewat
+ *    `npm run bump:patch` (script itu mengupdate app.json, package.json DAN
+ *    CURRENT_VERSION / CURRENT_VERSION_CODE di file ini sekaligus), lalu
+ *    upload APK baru sebagai VERSI BARU file Drive yang sama (supaya file
+ *    ID apkUrl tidak berubah), isi sha256 APK baru ke manifest, lalu upload
+ *    manifest baru sebagai VERSI BARU file manifest (supaya URL manifest
+ *    tidak berubah). Jangan buat file Drive baru — ID-nya akan berubah dan
+ *    apkUrl / UPDATE_MANIFEST_URL di kode harus ikut diubah.
  * ─────────────────────────────────────────────────────────────────────────
  * PENTING: Ganti UPDATE_MANIFEST_URL dan CURRENT_VERSION sesuai project Anda.
  * PERINGATAN: Sejak Nov 2026, update DITOLAK kalau manifest tidak punya
  * sha256 yang valid (REQUIRE_MANIFEST_HASH di bawah). Jadi SETELAH patch ini
  * rilis, JANGAN LUPA menambahkan sha256 ke manifest — kalau tidak, tombol
  * "Cek Pembaruan" akan selalu gagal sampai hash-nya diisi.
+ * PERINGATAN 2: eas.json production TIDAK BOLEH pakai "autoIncrement": true
+ * (sudah dihapus di patch ini). Kalau autoIncrement aktif, EAS menaikkan
+ * versionCode binary sendiri dan nilainya tidak lagi sama dengan
+ * CURRENT_VERSION_CODE di file ini — akibatnya aplikasi yang sudah terbaru
+ * tetap mengira ada pembaruan (perbandingan versionCode jadi salah).
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
@@ -46,8 +67,10 @@ import { sha256FileAsync } from '../utils/sha256';
  */
 export const REQUIRE_MANIFEST_HASH = true;
 
-export const CURRENT_VERSION = '1.1.1';       // Versi app saat ini
-export const CURRENT_VERSION_CODE = 3;        // Build number saat ini
+export const CURRENT_VERSION = '1.1.1';       // HARUS sama dengan expo.version di app.json
+export const CURRENT_VERSION_CODE = 3;        // HARUS sama dengan expo.android.versionCode di app.json
+// Keduanya diupdate otomatis oleh `npm run bump:patch|minor|major`
+// (scripts/bump-version.js). JANGAN ubah manual di satu tempat saja.
 
 /**
  * URL ke file JSON manifest yang ada di Google Drive.
@@ -78,13 +101,24 @@ export type DownloadProgress = {
 
 /**
  * Mengambil manifest versi terbaru dari Google Drive.
- * Mengembalikan null jika gagal atau tidak ada pembaruan.
+ * - Mengembalikan manifest kalau ada pembaruan (versionCode manifest LEBIH
+ *   BESAR dari CURRENT_VERSION_CODE, dibandingkan sebagai ANGKA).
+ * - Mengembalikan null kalau versi manifest sama atau lebih lama (tidak ada
+ *   pembaruan) — tanpa peduli ada/tidaknya sha256 di manifest.
+ * - MELEMPAR Error kalau cek update-nya sendiri gagal (tidak ada internet,
+ *   HTTP error, atau balasan bukan JSON — mis. halaman peringatan virus-scan
+ *   Google Drive) atau manifest tidak valid. Error ini DITAMPILKAN di layar
+ *   sebagai "Gagal Memperbarui", dan TIDAK BOLEH disamarkan jadi "tidak ada
+ *   pembaruan" (bug lama: gagal fetch return null sehingga layar menampilkan
+ *   "Aplikasi Sudah Terbaru!" padahal cek-nya gagal).
  */
 export async function checkForUpdate(): Promise<UpdateManifest | null> {
   let manifest: UpdateManifest;
   try {
-    // Tambahkan timestamp untuk hindari caching
-    const url = `${UPDATE_MANIFEST_URL}&t=${Date.now()}`;
+    // Tambahkan timestamp untuk hindari caching. Pakai '?' atau '&' sesuai
+    // URL — link Drive sudah punya '?', tapi host lain belum tentu.
+    const separator = UPDATE_MANIFEST_URL.includes('?') ? '&' : '?';
+    const url = `${UPDATE_MANIFEST_URL}${separator}t=${Date.now()}`;
     const response = await fetch(url, {
       headers: { 'Cache-Control': 'no-cache' },
     });
@@ -99,14 +133,29 @@ export async function checkForUpdate(): Promise<UpdateManifest | null> {
     if (!manifest.version || !manifest.apkUrl) {
       throw new Error('Manifest tidak valid: field version atau apkUrl tidak ada.');
     }
+
+    // versionCode HARUS angka — kalau hilang / bukan angka, jangan diam-diam
+    // dianggap "tidak ada pembaruan".
+    if (typeof manifest.versionCode !== 'number' || !Number.isFinite(manifest.versionCode)) {
+      throw new Error('Manifest tidak valid: field versionCode harus berupa angka.');
+    }
   } catch (e: any) {
     console.warn('[UpdateService] Gagal cek update:', e?.message);
+    throw new Error(e?.message || 'Gagal menghubungi server pembaruan.');
+  }
+
+  // Bandingkan versionCode (angka — lebih reliable daripada string comparison).
+  // Versi sama atau lebih lama = tidak ada pembaruan.
+  if (manifest.versionCode <= CURRENT_VERSION_CODE) {
     return null;
   }
 
-  // Validasi hash — SENGAJA di luar try/catch di atas supaya penolakan ini
-  // TIDAK ditelan menjadi "tidak ada pembaruan". Kalau hash tidak ada/tidak
-  // valid, lempar error supaya layar update menampilkan pesan yang jelas.
+  // Validasi hash — SENGAJA di sini, HANYA kalau memang ada pembaruan.
+  // Dulu pengecekan ini jalan SEBELUM membandingkan versi, sehingga
+  // manifest versi sama yang belum sempat diisi sha256-nya membuat
+  // "Cek Pembaruan" selalu error padahal tidak ada update yang ditawarkan.
+  // Kalau hash tidak ada/tidak valid, lempar error supaya layar update
+  // menampilkan pesan yang jelas.
   if (REQUIRE_MANIFEST_HASH) {
     const hash = (manifest.sha256 || '').trim();
     if (!/^[a-fA-F0-9]{64}$/.test(hash)) {
@@ -116,12 +165,7 @@ export async function checkForUpdate(): Promise<UpdateManifest | null> {
     }
   }
 
-  // Bandingkan versionCode (lebih reliable daripada string comparison)
-  if (manifest.versionCode > CURRENT_VERSION_CODE) {
-    return manifest;
-  }
-
-  return null; // Tidak ada pembaruan
+  return manifest;
 }
 
 /**

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
+import { humanizeNotificationBody, normalizeNotificationData } from '../utils/notificationText';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { GlassCard } from '../components/ui';
 import { navigateToScreen, sendTestNotification, getPushTokenStatus } from '../hooks/usePushNotifications';
@@ -106,6 +107,7 @@ export const NotificationCenterScreen: React.FC = () => {
     notifications,
     markAsRead,
     markAllAsRead,
+    deleteNotification,
     clearReadNotifications,
     clearAll,
     cleanupOldNotifications,
@@ -141,6 +143,40 @@ export const NotificationCenterScreen: React.FC = () => {
     }
   };
 
+  // WS-2 (25 Nov 2026): hapus SATU notifikasi. Dulu tidak ada tombol hapus
+  // per item — pengguna hanya bisa "Bersihkan Terbaca". Kalau hapus server
+  // gagal, store mengembalikan item ke daftar dan di sini tampil pesan error
+  // (tidak lagi gagal diam-diam lalu "muncul lagi" tanpa penjelasan).
+  const handleDeleteOne = (id: string, title: string) => {
+    Alert.alert('Hapus Notifikasi', `Hapus notifikasi "${title}"?`, [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const ok = await deleteNotification(id);
+          if (!ok) {
+            Alert.alert(
+              'Gagal Menghapus',
+              'Notifikasi tidak berhasil dihapus dari server (mis. tidak ada internet). Coba lagi — notifikasi dikembalikan ke daftar supaya tidak hilang diam-diam.',
+            );
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleClearRead = async () => {
+    try {
+      await clearReadNotifications();
+    } catch {
+      Alert.alert(
+        'Gagal Membersihkan',
+        'Notifikasi terbaca tidak berhasil dihapus dari server (mis. tidak ada internet). Daftar dikembalikan seperti semula — coba lagi nanti.',
+      );
+    }
+  };
+
   const formatDate = (isoString: string) => {
     const d = new Date(isoString);
     return `${d.toLocaleDateString('id-ID')} ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
@@ -170,9 +206,13 @@ export const NotificationCenterScreen: React.FC = () => {
   const renderItem = ({ item }: { item: any }) => {
     // Fallback jika data dari push notification Expo (struktur berbeda)
     const title = item.title || item.request?.content?.title || 'Notifikasi Baru';
-    const body = item.body || item.request?.content?.body || item.subtitle || '';
-    const notifData = item.data || item.request?.content?.data || {};
-    const meta = getNotifMeta(item);
+    // WS-2: pertahanan terakhir di render — body JSON mentah (dari build
+    // lama / baris server lama) diubah jadi pesan manusiawi di sini juga,
+    // supaya tidak ada jalur apa pun yang bisa menampilkan JSON mentah.
+    const rawBody = item.body || item.request?.content?.body || item.subtitle || '';
+    const notifData = normalizeNotificationData(item.data || item.request?.content?.data || {});
+    const body = humanizeNotificationBody(rawBody, notifData);
+    const meta = getNotifMeta({ ...item, title, body, data: notifData });
 
     // Tentukan screen target: dari field 'screen', atau fallback ke mapping kategori
     let targetScreen = notifData?.screen;
@@ -208,6 +248,15 @@ export const NotificationCenterScreen: React.FC = () => {
                   {title}
                 </Text>
                 {!item.isRead && <View style={[styles.unreadDot, { backgroundColor: meta.color }]} />}
+                {/* WS-2: hapus per item — dulu tidak ada; hanya ada
+                    "Bersihkan Terbaca" yang gagal diam-diam. */}
+                <TouchableOpacity
+                  onPress={() => handleDeleteOne(item.id, title)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.deleteBtn}
+                >
+                  <Ionicons name="trash-outline" size={16} color={Colors.error} />
+                </TouchableOpacity>
               </View>
               {!!body && (
                 <Text style={styles.cardBody} numberOfLines={3}>{body}</Text>
@@ -288,7 +337,7 @@ export const NotificationCenterScreen: React.FC = () => {
           <Ionicons name="checkmark-done" size={16} color={Colors.primaryStart} />
           <Text style={styles.actionBtnText}>Baca Semua</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={clearReadNotifications} style={[styles.actionBtn, { borderColor: Colors.error }]}>
+        <TouchableOpacity onPress={handleClearRead} style={[styles.actionBtn, { borderColor: Colors.error }]}>
           <Ionicons name="trash-outline" size={16} color={Colors.error} />
           <Text style={[styles.actionBtnText, { color: Colors.error }]}>Bersihkan Terbaca</Text>
         </TouchableOpacity>
@@ -454,6 +503,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryStart,
     marginLeft: 8,
     marginTop: 4,
+  },
+  deleteBtn: {
+    padding: 4,
+    marginLeft: 8,
+    marginTop: 0,
   },
   cardBody: {
     fontSize: FontSize.xs,

@@ -42,6 +42,15 @@ export const AppUpdateScreen: React.FC = () => {
 
   const isManifestConfigured = !UPDATE_MANIFEST_URL.includes('GANTI_DENGAN_FILE_ID');
 
+  // Pembaruan wajib (manifest.mandatory === true) TIDAK BOLEH dilewati dari
+  // layar ini: tombol "Lewati" / "Install Nanti" disembunyikan dan tombol
+  // kembali di header dimatikan selama update wajib masih menunggu.
+  // (Bukan paksaan mutlak — user tetap bisa menutup aplikasi dari Android —
+  // tapi dari dalam layar update tidak ada jalan untuk mengabaikannya.)
+  const isMandatoryPending =
+    (state.status === 'update_available' || state.status === 'downloaded') &&
+    state.manifest.mandatory === true;
+
   const handleCheckUpdate = useCallback(async () => {
     if (!isManifestConfigured) {
       Alert.alert(
@@ -186,12 +195,14 @@ export const AppUpdateScreen: React.FC = () => {
               <Text style={styles.checkBtnText}>Download & Update Sekarang</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.checkBtn, { backgroundColor: Colors.textTertiary, marginTop: 8 }]}
-              onPress={() => setState({ status: 'idle' })}
-            >
-              <Text style={styles.checkBtnText}>Lewati</Text>
-            </TouchableOpacity>
+            {!manifest.mandatory && (
+              <TouchableOpacity
+                style={[styles.checkBtn, { backgroundColor: Colors.textTertiary, marginTop: 8 }]}
+                onPress={() => setState({ status: 'idle' })}
+              >
+                <Text style={styles.checkBtnText}>Lewati</Text>
+              </TouchableOpacity>
+            )}
           </View>
         );
       }
@@ -240,12 +251,14 @@ export const AppUpdateScreen: React.FC = () => {
               <Ionicons name="arrow-down-circle-outline" size={18} color="#fff" />
               <Text style={styles.checkBtnText}>Install Sekarang</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.checkBtn, { backgroundColor: Colors.textTertiary, marginTop: 8 }]}
-              onPress={() => setState({ status: 'idle' })}
-            >
-              <Text style={styles.checkBtnText}>Install Nanti</Text>
-            </TouchableOpacity>
+            {!manifest.mandatory && (
+              <TouchableOpacity
+                style={[styles.checkBtn, { backgroundColor: Colors.textTertiary, marginTop: 8 }]}
+                onPress={() => setState({ status: 'idle' })}
+              >
+                <Text style={styles.checkBtnText}>Install Nanti</Text>
+              </TouchableOpacity>
+            )}
           </View>
         );
       }
@@ -274,9 +287,13 @@ export const AppUpdateScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        {isMandatoryPending ? (
+          <View style={{ width: 32 }} />
+        ) : (
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+          </TouchableOpacity>
+        )}
         <Text style={styles.headerTitle}>PEMBARUAN APLIKASI</Text>
         <View style={{ width: 32 }} />
       </View>

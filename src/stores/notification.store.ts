@@ -146,8 +146,11 @@ export const useNotificationStore = create<NotificationState>()(
                   const title = '🛒 Pesanan Baru Masuk!';
                   const body = `${latest.customer?.name || 'Pelanggan'} — Invoice #${latest.invoiceNumber || ''} (Rp ${Number(latest.grandTotal || 0).toLocaleString('id-ID')})`;
                   if (shouldSendNotif(get()._lastSaleNotifAt, title, body)) {
-                    addNotif({ id: `local-sale-${latest.id}`, dedupKey: `sale-${latest.id}`, title, body, data: { screen: 'History', params: { invoiceNumber: latest.invoiceNumber } } });
-                    scheduleLocalNotification(title, body, { screen: 'History', params: { invoiceNumber: latest.invoiceNumber } }, 'masdar_channel_v3');
+                    // WS-2: params membawa saleId juga (dulu hanya invoiceNumber)
+                    // supaya ketukan notifikasi membuka DETAIL penjualan itu di
+                    // History, bukan sekadar daftar yang difilter.
+                    addNotif({ id: `local-sale-${latest.id}`, dedupKey: `sale-${latest.id}`, title, body, data: { screen: 'History', params: { saleId: latest.id, invoiceNumber: latest.invoiceNumber } } });
+                    scheduleLocalNotification(title, body, { screen: 'History', params: { saleId: latest.id, invoiceNumber: latest.invoiceNumber } }, 'masdar_channel_v3');
                     set({ _lastSaleNotifAt: Date.now() });
                   }
                 }
@@ -168,8 +171,17 @@ export const useNotificationStore = create<NotificationState>()(
                 // Cooldown 1 hari untuk stok rendah (tidak perlu tiap 5 menit)
                 const timeSinceLast = Date.now() - get()._lastStockNotifAt;
                 if (timeSinceLast > 24 * 60 * 60 * 1000 && shouldSendNotif(get()._lastStockNotifAt, title, body)) {
-                  addNotif({ dedupKey: `low-stock-${count}`, title, body, data: { screen: 'Products' } });
-                  scheduleLocalNotification(title, body, { screen: 'Products' }, 'masdar_channel_v3');
+                  // WS-2: kalau hanya 1 produk yang rendah, bawa productId-nya
+                  // supaya ketukan notifikasi membuka DETAIL produk itu (bukan
+                  // daftar umum). Kalau banyak, tetap buka daftar produk.
+                  const singleProductId = count === 1 ? (stockList[0] as any)?.id : undefined;
+                  const stockParams = singleProductId ? { productId: singleProductId } : {};
+                  // Dedup per produk kalau hanya 1 produk (bukan per jumlah):
+                  // kalau produknya berganti tapi jumlahnya tetap 1, kunci
+                  // `low-stock-1` yang lama akan menelan notifikasi baru.
+                  const stockDedupKey = singleProductId ? `low-stock-${singleProductId}` : `low-stock-${count}`;
+                  addNotif({ dedupKey: stockDedupKey, title, body, data: { screen: 'Products', params: stockParams } });
+                  scheduleLocalNotification(title, body, { screen: 'Products', params: stockParams }, 'masdar_channel_v3');
                   set({ _lastStockNotifAt: Date.now() });
                 }
               }

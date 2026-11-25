@@ -104,14 +104,20 @@ export const SidebarDrawer: React.FC = () => {
   interface MenuRouteWithKey extends MenuRoute {
     pageKey?: string;
     // Peran minimum (hierarki SUPER_ADMIN 3 > ADMIN 2 > KASIR 1).
-    // Dipakai Salesman & Poin: aturannya KASIR+ boleh baca — kalau memakai
-    // pageKey, menu akan hilang untuk KASIR karena matriks Akses Halaman
-    // default-nya nonaktif untuk ADMIN/KASIR. Jangan tambah pageKey di sini.
+    // Dipakai Salesman, Poin & Tracking Armada: aturannya KASIR+ boleh baca
+    // — kalau memakai pageKey, menu akan hilang untuk KASIR karena matriks
+    // Akses Halaman default-nya nonaktif untuk ADMIN/KASIR. Jangan tambah
+    // pageKey di sini.
     minRole?: Role;
   }
 
   const routes: MenuRouteWithKey[] = [
-    { name: 'FleetTracking', label: 'Tracking Armada', icon: 'car-outline', pageKey: 'fleet_tracking' },
+    // WS-1 (25 Nov 2026): tanpa pageKey — pakai minRole seperti Salesman &
+    // Poin. Kunci 'fleet_tracking' tidak pernah ada di PAGE_KEYS backend,
+    // jadi menu ini tidak pernah muncul untuk ADMIN/KASIR lewat matriks
+    // (lihat CATATAN investigasi armada). KASIR+ boleh buka layar; KASIR
+    // yang tidak ditugaskan hanya melihat empty state penugasan.
+    { name: 'FleetTracking', label: 'Tracking Armada', icon: 'car-outline', minRole: 'KASIR' },
     { name: 'StockOpname', label: 'Stock Opname', icon: 'clipboard-outline', pageKey: 'stock_opname' },
     { name: 'Delivery', label: 'Surat Jalan & Pengiriman', icon: 'paper-plane-outline' },
     { name: 'Purchase', label: 'Purchase Order (PO)', icon: 'cart-outline', pageKey: 'po' },
@@ -157,7 +163,7 @@ export const SidebarDrawer: React.FC = () => {
         <Animated.View style={[styles.drawerPanel, { transform: [{ translateX: slideAnim }] }]}>
           <BlurView intensity={40} tint="light" style={styles.blurWrapper}>
             <LinearGradient
-              colors={['rgba(255, 255, 255, 0.95)', 'rgba(240, 244, 248, 0.85)']}
+              colors={['rgba(255, 255, 255, 0.95)', 'rgba(245, 245, 244, 0.85)']}
               style={styles.gradientWrapper}
             >
               <SafeAreaView style={styles.safeArea}>

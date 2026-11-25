@@ -415,8 +415,8 @@ export const SettingsScreen: React.FC = () => {
           <GlassCard padding={0}>
             <TouchableOpacity style={styles.settingItem} onPress={handleSupport}>
               <View style={styles.settingItemLeft}>
-                <View style={[styles.iconBox, { backgroundColor: '#8B5CF618' }]}>
-                  <Ionicons name="help-buoy-outline" size={20} color="#8B5CF6" />
+                <View style={[styles.iconBox, { backgroundColor: Colors.primary + '18' }]}>
+                  <Ionicons name="help-buoy-outline" size={20} color={Colors.primary} />
                 </View>
                 <View>
                   <Text style={styles.settingLabel}>Bantuan & Dukungan</Text>
@@ -451,8 +451,8 @@ export const SettingsScreen: React.FC = () => {
               onPress={() => navigation.navigate('StorageManager')}
             >
               <View style={styles.settingItemLeft}>
-                <View style={[styles.iconBox, { backgroundColor: '#38BDF818' }]}>
-                  <Ionicons name="cloud-outline" size={20} color="#38BDF8" />
+                <View style={[styles.iconBox, { backgroundColor: Colors.primary + '18' }]}>
+                  <Ionicons name="cloud-outline" size={20} color={Colors.primary} />
                 </View>
                 <View>
                   <Text style={styles.settingLabel}>Penyimpanan Cloudflare R2</Text>

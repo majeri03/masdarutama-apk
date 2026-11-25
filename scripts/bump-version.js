@@ -57,4 +57,11 @@ if (sidebarContent !== sidebarBefore) {
 }
 
 console.log(`\n✅ Versi berhasil di-bump: ${currentVersion} => ${newVersion} (Build ${newVersionCode})`);
-console.log('   Jangan lupa upload APK baru dan update manifest JSON di Google Drive!');
+console.log('   LANGKAH RILIS (wajib, kalau tidak "Cek Pembaruan" di APK tidak jalan):');
+console.log('   1. EAS build production, download file APK hasil build.');
+console.log('   2. Upload APK itu sebagai VERSI BARU file Drive yang sama (ID file');
+console.log('      APK jangan diganti, supaya apkUrl di manifest tetap berlaku).');
+console.log('   3. Hitung SHA-256 APK baru: (Get-FileHash <file>.apk -Algorithm SHA256).Hash');
+console.log('   4. Update manifest JSON di Drive (file yang sama, upload versi baru):');
+console.log(`      version=${newVersion}, versionCode=${newVersionCode}, sha256=<hash langkah 3>.`);
+console.log('   5. Jangan lupa isi releaseNotes manifest dengan isi update yang sebenarnya.');

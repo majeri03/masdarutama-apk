@@ -77,6 +77,14 @@ const DeviceSettingsContent: React.FC = () => {
   const [bleError, setBleError] = useState<string | null>(null);
   const [permGranted, setPermGranted] = useState(true);
   const [bluetoothEnabled, setBluetoothEnabled] = useState<boolean | null>(null); // null = unknown
+  // loadError: kegagalan tak terduga saat mount (mis. exception di luar
+  // alur izin/scan). Ditampilkan sebagai banner — layar TIDAK PERNAH boleh
+  // blank tanpa penjelasan.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Cegah dua scan tumpang tindih (mount effect + focus effect + tombol
+  // refresh bisa terpanggil bersamaan). Panggilan native getDeviceList
+  // bersamaan ke adapter singleton library bukan perilaku yang aman.
+  const scanInProgress = useRef(false);
 
   // Cleanup isMounted on unmount
   useEffect(() => {
@@ -98,12 +106,16 @@ const DeviceSettingsContent: React.FC = () => {
       focusCountRef.current += 1;
       if (focusCountRef.current <= 1) return;
       (async () => {
-        const granted = await printerService.hasBlePermission();
-        if (granted) {
-          if (!permGranted) setPermGranted(true);
-          scanDevices();
-        } else if (permGranted) {
-          setPermGranted(false);
+        try {
+          const granted = await printerService.hasBlePermission();
+          if (granted) {
+            if (!permGranted) setPermGranted(true);
+            scanDevices();
+          } else if (permGranted) {
+            setPermGranted(false);
+          }
+        } catch (e) {
+          console.warn('[DeviceSettings] Focus refresh error:', e);
         }
       })();
     }, [permGranted])
@@ -114,14 +126,24 @@ const DeviceSettingsContent: React.FC = () => {
     // sengaja "selalu lanjutkan init meski izin ditolak" — di Android 12+
     // getBondedDevices() tanpa BLUETOOTH_CONNECT melempar SecurityException
     // native yang tidak bisa ditangkap JS, runtime mati, layar jadi abu-abu.
-    const granted = await printerService.requestBlePermission();
-    if (isMounted.current) setPermGranted(granted);
-    if (!granted) {
-      // Berhenti di sini: kotak izin di bawah yang tampil, bukan scan.
-      return;
-    }
+    // Seluruh alur mount dibungkus try/catch: kegagalan tak terduga harus
+    // tampil sebagai banner loadError, bukan layar diam/blank.
+    try {
+      setLoadError(null);
+      const granted = await printerService.requestBlePermission();
+      if (isMounted.current) setPermGranted(granted);
+      if (!granted) {
+        // Berhenti di sini: kotak izin di bawah yang tampil, bukan scan.
+        return;
+      }
 
-    await initAndScan();
+      await initAndScan();
+    } catch (e: any) {
+      console.warn('[DeviceSettings] requestPermissionsAndInit error:', e);
+      if (isMounted.current) {
+        setLoadError(e?.message || 'Gagal memuat pengaturan perangkat.');
+      }
+    }
   };
 
   // Buka pengaturan Bluetooth Android
@@ -160,9 +182,29 @@ const DeviceSettingsContent: React.FC = () => {
     }
     // Scan terpisah — tidak blokir render screen
     await scanDevices();
+    // Pulihkan printer tersimpan SETELAH scan, di latar belakang, tanpa
+    // di-await: reconnect BLE memanggil BluetoothSocket.connect() native
+    // yang BLOCKING tanpa timeout — kalau printer mati / di luar jangkauan,
+    // thread native tertahan dan scan berikutnya ikut antre (layar diam).
+    // Status printer aktif di-refresh begitu pemulihan selesai.
+    printerService.restoreSavedPrinter().then(() => {
+      if (isMounted.current) setActivePrinter(printerService.getActivePrinter());
+    });
   };
 
   const scanDevices = async () => {
+    if (!isMounted.current) return;
+    // Jangan tumpuk dua scan (mount + focus + tombol refresh).
+    if (scanInProgress.current) return;
+    scanInProgress.current = true;
+    try {
+      await scanDevicesInner();
+    } finally {
+      scanInProgress.current = false;
+    }
+  };
+
+  const scanDevicesInner = async () => {
     if (!isMounted.current) return;
     // Gerbang izin: jangan sentuh modul BLE native tanpa izin.
     if (!(await printerService.hasBlePermission())) {
@@ -303,6 +345,21 @@ const DeviceSettingsContent: React.FC = () => {
         <View style={styles.initBanner}>
           <ActivityIndicator size="small" color={Colors.primaryStart} />
           <Text style={styles.initBannerText}>Menginisialisasi modul printer...</Text>
+        </View>
+      )}
+
+      {/* Load error — kegagalan tak terduga saat mount; layar tetap tampil
+          lengkap di bawah banner ini, tidak pernah blank tanpa penjelasan. */}
+      {loadError && (
+        <View style={styles.loadErrorBanner}>
+          <Ionicons name="alert-circle-outline" size={18} color={Colors.error} />
+          <Text style={styles.loadErrorText}>{loadError}</Text>
+          <TouchableOpacity
+            style={styles.loadErrorRetryBtn}
+            onPress={() => requestPermissionsAndInit()}
+          >
+            <Text style={styles.loadErrorRetryBtnText}>Coba Lagi</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -571,6 +628,33 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
   },
   permSettingsBtnText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  loadErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.error + '12',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: Colors.error + '20',
+  },
+  loadErrorText: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.error,
+    fontWeight: FontWeight.medium,
+  },
+  loadErrorRetryBtn: {
+    backgroundColor: Colors.error,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+  },
+  loadErrorRetryBtnText: {
     color: '#fff',
     fontSize: 11,
     fontWeight: 'bold',

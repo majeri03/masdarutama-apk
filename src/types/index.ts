@@ -139,6 +139,10 @@ export interface Customer {
   // Poin loyalitas (PKG-D, perbaikan 7 item #6) — diisi backend setelah
   // PKG-A di-deploy; opsional supaya data lama tanpa field ini tetap jalan.
   points?: number;
+  // Total belanja lunas (WS-8, 25 Nov 2026) — dikirim backend (getCustomers):
+  // jumlah grandTotal penjualan COMPLETED bukan CREDIT. Opsional supaya
+  // data lama tanpa field ini tetap jalan.
+  totalBelanja?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -152,6 +156,11 @@ export interface Salesman {
   isActive: boolean;
   // Jumlah transaksi yang mencatat salesman ini (dikirim backend).
   salesCount?: number;
+  // Total penjualan & total fee (WS-8, 25 Nov 2026) — dikirim backend
+  // (getSalesmen), dihitung server dengan rumus yang sama seperti detail.
+  // Opsional supaya data lama tanpa field ini tetap jalan.
+  totalSales?: number;
+  totalFee?: number;
   createdAt: string;
   updatedAt: string;
 }

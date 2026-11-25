@@ -54,7 +54,7 @@ const searchStyles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     height: 48,
     gap: Spacing.sm,
-    shadowColor: '#6C63FF',
+    shadowColor: '#64748B',  // WS-9: abu netral, dulu ungu #6C63FF
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
@@ -237,7 +237,7 @@ const statStyles = StyleSheet.create({
     padding: Spacing.lg,
     gap: Spacing.xs,
     // Shadow iOS lembut
-    shadowColor: '#6C63FF',
+    shadowColor: '#64748B',  // WS-9: abu netral, dulu ungu #6C63FF
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 10,
