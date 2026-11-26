@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   Keyboard,
   Image,
-  Alert,
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
@@ -310,7 +309,7 @@ export const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
   },
   keyboardView: {
     flex: 1,
@@ -439,16 +438,9 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
     width: '100%',
   },
-  checkboxWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  checkboxLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.medium,
-  },
+  // WS-6: DIHAPUS — style checkboxWrapper & checkboxLabel tidak pernah
+  // dipakai (checkbox "ingat saya" sudah tidak ada; ingat login diatur
+  // otomatis lewat SecureStore 'saved_remember').
   biometricBtn: {
     flexDirection: 'row',
     alignItems: 'center',

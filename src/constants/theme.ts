@@ -8,7 +8,7 @@ export const Colors = {
   background: '#F5F5F4',           // abu terang netral (bukan biru-abu) — WS-9
   backgroundSecondary: '#FFFFFF',  // white for cards / bars
   surface: '#FFFFFF',
-  surfaceLight: '#F8FAFC',
+  surfaceLight: '#FAFAF9',  // abu hangat netral (stone-50) — WS-7: dulu #F8FAFC biru-abu slate
 
   glass: 'rgba(255, 255, 255, 0.72)',
   glassBorder: 'rgba(0, 0, 0, 0.08)',
@@ -57,7 +57,7 @@ export const Gradients = {
   secondary: [Colors.secondaryStart, Colors.secondaryEnd] as const,
   accent: [Colors.accentStart, Colors.accentEnd] as const,
   light: ['#FFFFFF', '#F5F5F4'] as const,  // WS-9: samakan dengan Colors.background
-  surface: ['rgba(255, 255, 255, 0.85)', 'rgba(248, 250, 252, 0.70)'] as const,
+  surface: ['rgba(255, 255, 255, 0.85)', 'rgba(245, 245, 244, 0.70)'] as const,  // WS-7: dulu rgba(248,250,252) biru-abu
   card: ['rgba(255, 255, 255, 0.80)', 'rgba(255, 255, 255, 0.50)'] as const,
 } as const;
 
@@ -131,7 +131,7 @@ export const Shadow = {
     elevation: 6,
   }),
   card: {
-    shadowColor: '#94A3B8',
+    shadowColor: '#A8A29E',  // WS-7: abu hangat netral (stone-400), dulu #94A3B8 slate kebiruan
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.12,
     shadowRadius: 12,

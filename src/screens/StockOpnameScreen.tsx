@@ -14,8 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
-import { GlassCard, GradientButton, StatusBadge } from '../components/ui';
+import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
+import { GlassCard, GradientButton } from '../components/ui';
 import { stockService, StockMovement } from '../services/stock.service';
 import { productService } from '../services/product.service';
 import { useAuthStore } from '../stores/auth.store';
@@ -562,7 +562,7 @@ export const StockOpnameScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
   },
   header: {
     padding: Spacing.lg,

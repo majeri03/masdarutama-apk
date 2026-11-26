@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, StyleProp, ViewStyle } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, FontSize } from '../../constants/theme';
+import { Colors } from '../../constants/theme';
 
 interface DatePickerInputProps {
   value: Date | null;

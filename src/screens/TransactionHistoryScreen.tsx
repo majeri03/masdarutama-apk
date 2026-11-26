@@ -14,13 +14,12 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
-  Alert,
   Share,
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
+import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
 import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { ProofImageUploader } from '../components/ui/ProofImageUploader';
@@ -868,7 +867,7 @@ export const TransactionHistoryScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: 'transparent' },  // WS-6: tembus ke AppBackground app-wide
   searchBar: {
     flexDirection: 'row',
     padding: Spacing.lg,
@@ -979,7 +978,8 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   statusText: { fontSize: 10, fontWeight: FontWeight.bold },
-  paymentMethod: { fontSize: 11, color: Colors.textTertiary },
+  // WS-6: DIHAPUS — style paymentMethod tidak pernah dipakai (metode bayar
+  // ditampilkan lewat chip/filter, bukan style ini).
   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 },
   loadingText: { color: Colors.textSecondary, fontSize: FontSize.sm },
   emptyBox: { alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 },

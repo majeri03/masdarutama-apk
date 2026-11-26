@@ -32,7 +32,6 @@ import { GlassCard, StatCard } from '../components/ui';
 import type { Product, FinancialReport } from '../types';
 import api from '../services/api';
 import { API_ENDPOINTS } from '../constants/api';
-import { Image } from 'react-native';
 
 export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   const { user, allowedPages } = useAuthStore();
@@ -139,7 +138,6 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
   const [financialReport, setFinancialReport] = useState<FinancialReport | null>(null);
-  const [storeLogo, setStoreLogo] = useState<string | null>(null);
   const [storeName, setStoreName] = useState("TB Masdar Utama");
   const [weeklyData, setWeeklyData] = useState<{ day: string; amount: number }[]>([]);
 
@@ -189,9 +187,11 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
         setFinancialReport(reportRes.data);
       }
       if (settingsRes?.data?.success && settingsRes?.data?.data) {
-        const { name, logoUrl } = settingsRes.data.data;
+        const { name } = settingsRes.data.data;
         if (name) setStoreName(name);
-        if (logoUrl) setStoreLogo(logoUrl);
+        // WS-6: logoUrl dulu disimpan ke state storeLogo tapi TIDAK PERNAH
+        // dirender di layar ini (header hanya menampilkan nama toko teks),
+        // jadi state + fetch logonya dihapus.
       }
       if (salesRes.success && salesRes.data) {
         const salesList = (salesRes.data as any).sales || salesRes.data;
@@ -262,7 +262,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
         </View>
       ),
     });
-  }, [navigation, storeLogo, unreadCount]);
+  }, [navigation, unreadCount]);
 
   if (loading) {
     return (
@@ -600,7 +600,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
   },
   contentContainer: {
     padding: Spacing.lg,
@@ -608,7 +608,7 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -662,24 +662,9 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textSecondary,
   },
-  avatarBg: {
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.primaryStart,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: '#fff',
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-  },
-  storeLogo: {
-    width: 64,
-    height: 64,
-    borderRadius: BorderRadius.md,
-  },
+  // WS-6 (26 Nov 2026): DIHAPUS — style avatarBg, avatarText, storeLogo
+  // tidak pernah dipakai (header profil/logo lama sudah diganti teks
+  // nama toko + sapaan saja, logonya pun tidak dirender).
   sectionTitle: {
     fontSize: FontSize.md,
     fontWeight: FontWeight.bold,

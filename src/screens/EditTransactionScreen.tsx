@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, FontSize, BorderRadius, Spacing } from '../constants/theme';
+import { Colors, FontSize } from '../constants/theme';
 import api from '../services/api';
 import { salesService } from '../services/sales.service';
 import { productService } from '../services/product.service';
@@ -235,7 +235,7 @@ export const EditTransactionScreen = () => {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent' }}>
         <ActivityIndicator size="large" color={Colors.primaryStart} />
         <Text style={{ marginTop: 12, color: Colors.textSecondary }}>Memuat data transaksi...</Text>
       </View>
@@ -522,7 +522,7 @@ export const EditTransactionScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: 'transparent' },  // WS-6: tembus ke AppBackground app-wide
   header: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: Colors.surface, borderBottomWidth: 1, borderColor: Colors.border },
   title: { fontSize: FontSize.lg, fontWeight: 'bold', color: Colors.textPrimary },
   card: { padding: 16, backgroundColor: Colors.surface, borderRadius: 10, borderWidth: 1, borderColor: Colors.border },

@@ -99,6 +99,13 @@ export const DebtScreen: React.FC = () => {
   const [payNotes, setPayNotes] = useState('');
   const [submittingPayment, setSubmittingPayment] = useState(false);
 
+  // Detail Modal (pola tabel TransactionHistoryScreen, Nov 2026): baris
+  // tabel hanya menampilkan info paling penting; semua info lengkap ada
+  // di modal detail per baris. State ini terpisah dari selectedDebt yang
+  // dipakai modal bayar, supaya modal bayar tidak terganggu.
+  const [detailDebt, setDetailDebt] = useState<any | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+
   // Stats summaries
   const [totalDebtSummary, setTotalDebtSummary] = useState(0);
   const [totalPaidSummary, setTotalPaidSummary] = useState(0);
@@ -298,89 +305,57 @@ export const DebtScreen: React.FC = () => {
     }
   };
 
-  const renderDebtCard = ({ item }: { item: any }) => {
+  const openDetail = (debt: any) => {
+    setDetailDebt(debt);
+    setShowDetail(true);
+  };
+
+  // Dari modal detail: tutup detail dulu, lalu buka modal bayar yang sama
+  // seperti sebelumnya (tidak ada perubahan logika pembayaran).
+  const handlePayFromDetail = (debt: any) => {
+    setShowDetail(false);
+    handleOpenPayModal(debt);
+  };
+
+  // Pola tabel TransactionHistoryScreen: satu baris = info paling penting
+  // saja (tanggal, no. tagihan, nama, sisa, status), zebra striping,
+  // ketuk baris untuk membuka modal detail lengkap.
+  const renderDebtRow = ({ item, index }: { item: any; index: number }) => {
     const status = STATUS_CONFIG[item.status] || STATUS_CONFIG.UNPAID;
     const name = activeTab === 'customer' ? item.customer?.name : item.supplier?.name;
-    const code = activeTab === 'customer' ? item.customer?.code : item.supplier?.code;
-    const docNo = activeTab === 'customer' ? item.sale?.invoiceNumber : item.purchase?.poNumber;
-    const phone = activeTab === 'customer' ? item.customer?.phone : item.supplier?.phone;
+    const isEven = index % 2 === 0;
 
     return (
-      <GlassCard padding={16} style={styles.debtCard}>
-        <View style={styles.cardHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.debtNumber}>{item.debtNumber}</Text>
-            <Text style={styles.refNumber}>
-              {activeTab === 'customer' ? 'No. Invoice' : 'No. PO'}: <Text style={{ fontWeight: 'bold', color: Colors.primaryStart }}>{docNo || '-'}</Text>
-            </Text>
-          </View>
-          <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-            <Ionicons name={status.icon as any} size={11} color={status.color} />
-            <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
-          </View>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.entityRow}>
-          <Ionicons name={activeTab === 'customer' ? 'person-outline' : 'business-outline'} size={16} color={Colors.textSecondary} />
-          <View style={{ marginLeft: 8 }}>
-            <Text style={styles.entityName}>{name || 'Umum'}</Text>
-            <Text style={styles.entityCode}>
-              {code || '-'} {phone ? `• ${phone}` : ''}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.dateGrid}>
-          <View>
-            <Text style={styles.dateLabel}>Tanggal Transaksi</Text>
-            <Text style={styles.dateVal}>{formatWitaDate(item.createdAt)}</Text>
-          </View>
-          <View>
-            <Text style={styles.dateLabel}>Jatuh Tempo</Text>
-            <Text style={[styles.dateVal, item.status === 'OVERDUE' && { color: Colors.error, fontWeight: 'bold' }]}>
-              {formatWitaDate(item.dueDate)}
-            </Text>
+      <TouchableOpacity
+        onPress={() => openDetail(item)}
+        activeOpacity={0.7}
+        style={[styles.tableRow, isEven && styles.tableRowEven]}
+      >
+        <Text style={[styles.tableCell, { flex: 1.2 }]} numberOfLines={1}>
+          {new Date(item.createdAt).toLocaleDateString('id-ID', {
+            day: '2-digit',
+            month: '2-digit',
+            year: '2-digit',
+          })}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 2.2, fontWeight: 'bold' }]} numberOfLines={1}>
+          {item.debtNumber}
+        </Text>
+        <Text style={[styles.tableCell, { flex: 2.6 }]} numberOfLines={1}>
+          {name || 'Umum'}
+        </Text>
+        <Text
+          style={[styles.tableCell, { flex: 2.5, textAlign: 'right', fontWeight: 'bold', color: Colors.error }]}
+          numberOfLines={1}
+        >
+          {Number(item.remainingDebt || 0).toLocaleString('id-ID')}
+        </Text>
+        <View style={{ flex: 1.5, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={[styles.statusBadgeSm, { backgroundColor: status.bg }]}>
+            <Text style={[styles.statusTextSm, { color: status.color }]}>{status.label}</Text>
           </View>
         </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.priceRow}>
-          <View style={styles.priceCol}>
-            <Text style={styles.priceLabel}>Total Tagihan</Text>
-            <Text style={styles.priceVal}>Rp {Number(item.totalDebt || 0).toLocaleString('id-ID')}</Text>
-          </View>
-          <View style={styles.priceCol}>
-            <Text style={styles.priceLabel}>Sudah Dibayar</Text>
-            <Text style={[styles.priceVal, { color: Colors.success }]}>
-              Rp {Number(item.paidAmount || 0).toLocaleString('id-ID')}
-            </Text>
-          </View>
-          <View style={styles.priceCol}>
-            <Text style={styles.priceLabel}>Sisa Tagihan</Text>
-            <Text style={[styles.priceVal, { color: Colors.error, fontWeight: 'bold' }]}>
-              Rp {Number(item.remainingDebt || 0).toLocaleString('id-ID')}
-            </Text>
-          </View>
-        </View>
-
-        {/* QA fix M-39: tombol Bayar Cicilan hanya untuk ADMIN/SUPER_ADMIN.
-            Backend selalu menolak (403) kalau kasir yang membayar, jadi
-            tombolnya disembunyikan dari kasir supaya tidak menyesatkan. */}
-        {isAdmin() && item.remainingDebt > 0 && (
-          <View style={{ marginTop: 12 }}>
-            <GradientButton
-              title="Bayar Cicilan / Pelunasan"
-              onPress={() => handleOpenPayModal(item)}
-              variant="success"
-              fullWidth
-              style={{ height: 38 }}
-            />
-          </View>
-        )}
-      </GlassCard>
+      </TouchableOpacity>
     );
   };
 
@@ -512,38 +487,214 @@ export const DebtScreen: React.FC = () => {
           <Text style={styles.loadingText}>Memuat data utang piutang...</Text>
         </View>
       ) : (
-        <FlatList
-          data={debts}
-          keyExtractor={(item) => item.id}
-          renderItem={renderDebtCard}
-          contentContainerStyle={styles.listContent}
-          onEndReached={loadMoreDebts}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={
-            debtLoadingMore ? (
-              <View style={{ paddingVertical: Spacing.md, alignItems: 'center' }}>
-                <ActivityIndicator size="small" color={Colors.primaryStart} />
+        <View style={styles.tableContainer}>
+          {/* Header Tabel — pola TransactionHistoryScreen */}
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, { flex: 1.2 }]}>Tgl</Text>
+            <Text style={[styles.tableHeaderText, { flex: 2.2 }]}>No. Tagihan</Text>
+            <Text style={[styles.tableHeaderText, { flex: 2.6 }]}>
+              {activeTab === 'customer' ? 'Pelanggan' : 'Supplier'}
+            </Text>
+            <Text style={[styles.tableHeaderText, { flex: 2.5, textAlign: 'right' }]}>Sisa (Rp)</Text>
+            <Text style={[styles.tableHeaderText, { flex: 1.5, textAlign: 'center' }]}>Status</Text>
+          </View>
+
+          <FlatList
+            data={debts}
+            keyExtractor={(item) => item.id}
+            renderItem={renderDebtRow}
+            contentContainerStyle={styles.listContent}
+            onEndReached={loadMoreDebts}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              debtLoadingMore ? (
+                <View style={{ paddingVertical: Spacing.md, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={Colors.primaryStart} />
+                </View>
+              ) : null
+            }
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={Colors.primaryStart}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyBox}>
+                <Ionicons name="journal-outline" size={48} color={Colors.textTertiary} />
+                <Text style={styles.emptyTitle}>Tidak ada tagihan</Text>
+                <Text style={styles.emptyDesc}>
+                  Semua transaksi kredit lunas atau tidak ditemukan data yang sesuai.
+                </Text>
               </View>
-            ) : null
-          }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={Colors.primaryStart}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Ionicons name="journal-outline" size={48} color={Colors.textTertiary} />
-              <Text style={styles.emptyTitle}>Tidak ada tagihan</Text>
-              <Text style={styles.emptyDesc}>
-                Semua transaksi kredit lunas atau tidak ditemukan data yang sesuai.
-              </Text>
-            </View>
-          }
-        />
+            }
+          />
+        </View>
       )}
+
+      {/* ── DETAIL TAGIHAN MODAL (pola TransactionHistoryScreen) ── */}
+      {/* Semua info yang dulu tampil di kartu kini tampil lengkap di sini,
+          supaya baris tabel tetap lega. Tidak ada info yang dihapus. */}
+      <Modal visible={showDetail} animationType="slide">
+        <SafeAreaView style={styles.detailContainer}>
+          <View style={styles.detailHeader}>
+            <TouchableOpacity onPress={() => setShowDetail(false)}>
+              <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.detailHeaderTitle}>Detail Tagihan</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          {detailDebt ? (
+            <ScrollView contentContainerStyle={styles.detailContent}>
+              {/* Nomor tagihan + tanggal + status + no. dokumen */}
+              <GlassCard padding={20} style={styles.detailDebtCard} tinted>
+                <Text style={styles.detailDebtNo}>{detailDebt.debtNumber}</Text>
+                <Text style={styles.detailDateBig}>{formatWitaDate(detailDebt.createdAt)}</Text>
+                <View style={styles.detailStatusRow}>
+                  {(() => {
+                    const s = STATUS_CONFIG[detailDebt.status] || STATUS_CONFIG.UNPAID;
+                    return (
+                      <View style={[styles.statusBadge, { backgroundColor: s.bg }]}>
+                        <Ionicons name={s.icon as any} size={12} color={s.color} />
+                        <Text style={[styles.statusText, { color: s.color }]}>{s.label}</Text>
+                      </View>
+                    );
+                  })()}
+                  <Text style={styles.detailDocRef}>
+                    {activeTab === 'customer' ? 'No. Invoice' : 'No. PO'}: {activeTab === 'customer'
+                      ? detailDebt.sale?.invoiceNumber || '-'
+                      : detailDebt.purchase?.poNumber || '-'}
+                  </Text>
+                </View>
+              </GlassCard>
+
+              {/* Pelanggan / Supplier */}
+              <GlassCard padding={16} style={styles.detailSection}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>
+                    {activeTab === 'customer' ? 'Pelanggan' : 'Supplier'}
+                  </Text>
+                  <Text style={styles.detailValue}>
+                    {activeTab === 'customer'
+                      ? detailDebt.customer?.name || 'Umum'
+                      : detailDebt.supplier?.name || 'Umum'}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Kode</Text>
+                  <Text style={styles.detailValue}>
+                    {activeTab === 'customer'
+                      ? detailDebt.customer?.code || '-'
+                      : detailDebt.supplier?.code || '-'}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Telepon</Text>
+                  <Text style={styles.detailValue}>
+                    {activeTab === 'customer'
+                      ? detailDebt.customer?.phone || '-'
+                      : detailDebt.supplier?.phone || '-'}
+                  </Text>
+                </View>
+              </GlassCard>
+
+              {/* Tanggal */}
+              <GlassCard padding={16} style={styles.detailSection}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Tanggal Transaksi</Text>
+                  <Text style={styles.detailValue}>{formatWitaDate(detailDebt.createdAt)}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Jatuh Tempo</Text>
+                  <Text
+                    style={[
+                      styles.detailValue,
+                      detailDebt.status === 'OVERDUE' && { color: Colors.error, fontWeight: 'bold' },
+                    ]}
+                  >
+                    {formatWitaDate(detailDebt.dueDate)}
+                  </Text>
+                </View>
+              </GlassCard>
+
+              {/* Ringkasan angka — sama persis seperti di kartu lama */}
+              <GlassCard padding={16} style={styles.detailSummaryCard}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Total Tagihan</Text>
+                  <Text style={styles.detailValue}>
+                    Rp {Number(detailDebt.totalDebt || 0).toLocaleString('id-ID')}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Sudah Dibayar</Text>
+                  <Text style={[styles.detailValue, { color: Colors.success }]}>
+                    Rp {Number(detailDebt.paidAmount || 0).toLocaleString('id-ID')}
+                  </Text>
+                </View>
+                <View style={[styles.detailRow, styles.grandTotalRow]}>
+                  <Text style={styles.grandTotalLabel}>Sisa Tagihan</Text>
+                  <Text style={[styles.grandTotalVal, { color: Colors.error }]}>
+                    Rp {Number(detailDebt.remainingDebt || 0).toLocaleString('id-ID')}
+                  </Text>
+                </View>
+              </GlassCard>
+
+              {/* Riwayat pembayaran / cicilan */}
+              <Text style={styles.itemsLabel}>Riwayat Pembayaran</Text>
+              {(detailDebt.payments || []).length > 0 ? (
+                (detailDebt.payments || []).map((p: any) => (
+                  <GlassCard key={p.id || `${p.paymentDate}-${p.amount}`} padding={12} style={styles.paymentCard}>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailValue}>{formatWitaDate(p.paymentDate)}</Text>
+                      <Text style={styles.detailValue}>
+                        Rp {Number(p.amount || 0).toLocaleString('id-ID')}
+                      </Text>
+                    </View>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>
+                        {PAYMENT_LABEL[p.paymentMethod] || p.paymentMethod}
+                        {p.admin?.name ? ` • ${p.admin.name}` : ''}
+                      </Text>
+                    </View>
+                    {p.notes ? (
+                      <Text style={styles.paymentNotes}>{p.notes}</Text>
+                    ) : null}
+                  </GlassCard>
+                ))
+              ) : (
+                <GlassCard padding={12} style={styles.paymentCard}>
+                  <Text style={styles.detailLabel}>Belum ada pembayaran.</Text>
+                </GlassCard>
+              )}
+
+              {/* Catatan tagihan (utang supplier) */}
+              {detailDebt.notes ? (
+                <GlassCard padding={12} style={styles.notesCard}>
+                  <Text style={styles.notesLabel}>Catatan:</Text>
+                  <Text style={styles.notesText}>{detailDebt.notes}</Text>
+                </GlassCard>
+              ) : null}
+
+              {/* QA fix M-39: tombol Bayar Cicilan hanya untuk ADMIN/SUPER_ADMIN.
+                  Backend selalu menolak (403) kalau kasir yang membayar, jadi
+                  tombolnya disembunyikan dari kasir supaya tidak menyesatkan.
+                  Pindah dari kartu ke modal detail; syarat & aksi sama. */}
+              {isAdmin() && detailDebt.remainingDebt > 0 && (
+                <View style={{ marginTop: Spacing.xl, marginBottom: Spacing['3xl'] }}>
+                  <GradientButton
+                    title="Bayar Cicilan / Pelunasan"
+                    onPress={() => handlePayFromDetail(detailDebt)}
+                    variant="success"
+                    fullWidth
+                  />
+                </View>
+              )}
+            </ScrollView>
+          ) : null}
+        </SafeAreaView>
+      </Modal>
 
       {/* Repayment Payment Modal */}
       <Modal visible={showPayModal} animationType="slide" transparent>
@@ -627,7 +778,8 @@ export const DebtScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  // Koordinator (26 Nov 2026): container transparan supaya background kaca app-wide (AppBackground di App.tsx) terlihat di layar ini juga.
+  container: { flex: 1, backgroundColor: 'transparent' },
   // Header
   header: {
     flexDirection: 'row',
@@ -758,28 +910,107 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: FontWeight.bold,
   },
-  // List
+  // Tabel — pola TransactionHistoryScreen: header kolom + baris zebra,
+  // teks singkat satu baris, detail lengkap di modal per baris.
+  tableContainer: { flex: 1 },
   listContent: {
-    padding: Spacing.lg,
-    gap: Spacing.md,
-    paddingBottom: Spacing['3xl'],
+    paddingBottom: Spacing.xl,
   },
-  debtCard: {},
-  cardHeader: {
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  tableHeaderText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderColor: Colors.border + '80',
+  },
+  tableRowEven: {
+    backgroundColor: Colors.surface,
+  },
+  tableCell: {
+    fontSize: 12,
+    color: Colors.textPrimary,
+  },
+  statusBadgeSm: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusTextSm: { fontSize: 9, fontWeight: 'bold' },
+  // Modal detail — pola TransactionHistoryScreen
+  detailContainer: { flex: 1, backgroundColor: Colors.background },
+  detailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 64,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.lg,
+  },
+  detailHeaderTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  detailContent: { padding: Spacing.lg, gap: Spacing.md },
+  detailDebtCard: { alignItems: 'flex-start', gap: 4 },
+  detailDebtNo: { fontSize: FontSize.xl, fontWeight: FontWeight.extrabold, color: Colors.primaryStart },
+  detailDateBig: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  detailStatusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: 4 },
+  detailDocRef: {
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+    fontWeight: FontWeight.medium,
+  },
+  detailSection: { gap: 8 },
+  detailSummaryCard: { gap: 4 },
+  detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    paddingVertical: 4,
   },
-  debtNumber: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.primaryStart,
+  detailLabel: { fontSize: FontSize.sm, color: Colors.textTertiary },
+  detailValue: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  grandTotalRow: {
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    paddingTop: Spacing.sm,
+    marginTop: 4,
   },
-  refNumber: {
-    fontSize: 10,
-    color: Colors.textTertiary,
-    marginTop: 2,
+  grandTotalLabel: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  grandTotalVal: { fontSize: FontSize.xl, fontWeight: FontWeight.extrabold, color: Colors.primaryStart },
+  itemsLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
   },
+  paymentCard: {},
+  paymentNotes: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 4 },
+  notesCard: {},
+  notesLabel: { fontSize: FontSize.xs, color: Colors.textTertiary, fontWeight: FontWeight.bold },
+  notesText: { fontSize: FontSize.sm, color: Colors.textPrimary, marginTop: 4 },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -789,64 +1020,8 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   statusText: {
-    fontSize: 9,
-    fontWeight: FontWeight.extrabold,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border,
-    marginVertical: 12,
-  },
-  entityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  entityName: {
-    fontSize: FontSize.sm,
+    fontSize: 10,
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-  },
-  entityCode: {
-    fontSize: FontSize.xs,
-    color: Colors.textTertiary,
-    marginTop: 2,
-  },
-  dateGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    backgroundColor: Colors.surfaceLight,
-    padding: 10,
-    borderRadius: BorderRadius.md,
-  },
-  dateLabel: {
-    fontSize: 9,
-    color: Colors.textTertiary,
-    textTransform: 'uppercase',
-  },
-  dateVal: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  priceCol: {
-    flex: 1,
-  },
-  priceLabel: {
-    fontSize: 9,
-    color: Colors.textTertiary,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  priceVal: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
   },
   // Empty
   loadingBox: {

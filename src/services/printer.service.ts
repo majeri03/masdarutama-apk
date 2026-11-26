@@ -27,6 +27,39 @@ export class BlePermissionError extends Error {
 /** Pesan error native yang artinya Bluetooth mati / adapter tidak aktif. */
 const BLE_NOT_ENABLED_RE = /not enabled|bluetooth is off|adapter is not enabled|bluetooth.{0,10}disabled/i;
 
+/**
+ * JALUR KE-4 (WS-2, 26 Nov 2026) — init USB library melempar SecurityException
+ * di Android 14+ dan MEMATIKAN runtime (layar abu-abu blank).
+ *
+ * Rantai: printerService.init() -> initUsb() -> USBPrinter.init() (JS,
+ * dist/index.js) -> RNUSBPrinterModule.init() native ->
+ * USBPrinterAdapter.init() (USBPrinterAdapter.java baris 109-122) yang
+ * memanggil `mContext.registerReceiver(mUsbDeviceReceiver, filter)` TANPA
+ * flag RECEIVER_EXPORTED / RECEIVER_NOT_EXPORTED. IntentFilter-nya berisi
+ * action KUSTOM `com.pinmi.react.USBPrinter.USB_PERMISSION` (bukan hanya
+ * broadcast sistem), jadi pengecualian "hanya broadcast sistem" di aturan
+ * Android 14 TIDAK berlaku. Aturan Android 14 (API 34+): aplikasi dengan
+ * targetSdk 34+ WAJIB menentukan flag export saat registerReceiver, kalau
+ * tidak sistem melempar SecurityException — dan exception yang dilempar di
+ * dalam @ReactMethod tidak bisa ditangkap JS, proses aplikasi mati
+ * (FATAL EXCEPTION di thread mqt_native_modules), persis seperti
+ * SecurityException BLE yang dulu diperbaiki commit aafff1f.
+ *
+ * Aplikasi ini targetSdk 36 (Expo SDK 54, app.json tidak meng-override
+ * targetSdk), jadi di HP Android 14+ mana pun, SETIAP buka layar ini
+ * memicu initUsb() -> crash — tidak peduli Bluetooth nyala/mati, ada/tidak
+ * ada printer, izin diberikan/ditolak. Itu sebabnya layar tetap blank
+ * walau patch WS-3 (yang hanya menutup 3 jalur BLE) sudah masuk HEAD.
+ *
+ * Kode native library tinggal di node_modules, tidak bisa di-patch lewat
+ * repo ini. Maka dari sisi JS modul USB TIDAK PERNAH disentuh di
+ * Android API >= 34: initUsb() langsung kembali, getUsbPrinters()
+ * mengembalikan [], dan layar menampilkan penjelasan, bukan crash.
+ * Perbaikan permanen (di luar patch ini): patch library / config plugin
+ * yang memanggil registerReceiver dengan RECEIVER_NOT_EXPORTED.
+ */
+const USB_INIT_MIN_BLOCKED_API_LEVEL = 34;
+
 /** Izin Bluetooth yang dibutuhkan untuk membaca daftar perangkat yang sudah di-pairing. */
 function requiredBlePermissions(): Permission[] {
   if (Platform.OS !== 'android') return [];
@@ -119,6 +152,15 @@ class PrinterService {
   /** Inisialisasi modul USB saja (idempotent, aman dipanggil ulang). */
   private async initUsb(): Promise<void> {
     if (this.usbReady || !hasRNUSBPrinter) return;
+    // JALUR KE-4 (WS-2): JANGAN PERNAH panggil USBPrinter.init() di
+    // Android 14+ — native registerReceiver tanpa flag di library lama
+    // melempar SecurityException yang mematikan proses (lihat komentar di
+    // USB_INIT_MIN_BLOCKED_API_LEVEL). usbReady tetap false sehingga
+    // semua pemanggil USB berikutnya menolak dengan aman, bukan crash.
+    if (this.isUsbInitBlockedByOs()) {
+      console.warn('[PrinterService] USB dinonaktifkan: library printer tidak mendukung Android 14+ (registerReceiver tanpa flag).');
+      return;
+    }
     try {
       await withTimeout(USBPrinter.init(), 3000, 'USBPrinter.init');
       this.usbReady = true;
@@ -150,6 +192,10 @@ class PrinterService {
   /**
    * init — Inisialisasi semua modul printer dengan timeout per modul.
    * Tidak akan throw atau hang — semua error ditangkap per modul.
+   * Modul di-init PARALEL (dulu berurutan): init USB/NET yang gagal atau
+   * timeout tidak boleh menunda scan BLE sampai 8 detik — layar sempat
+   * terlihat "diam" karenanya. Modul-modul native ini independen
+   * (singleton terpisah), jadi init bersamaan aman.
    * SENGAJA TIDAK memulihkan printer tersimpan di sini: reconnect BLE
    * memanggil BluetoothSocket.connect() native yang BLOCKING tanpa timeout;
    * kalau printer mati / di luar jangkauan, thread native modul printer
@@ -162,20 +208,37 @@ class PrinterService {
     if (this.isInitialized) return;
     this.initError = null;
 
-    await this.initBle();
-    await this.initUsb();
-    await this.initNet();
+    await Promise.allSettled([this.initBle(), this.initUsb(), this.initNet()]);
 
     this.isInitialized = true;
   }
+
+  /**
+   * True kalau OS ini memblokir init USB library (Android API >= 34).
+   * Dipakai layar untuk menampilkan penjelasan, bukan mencoba scan USB.
+   */
+  isUsbBlockedByOs(): boolean {
+    return this.isUsbInitBlockedByOs();
+  }
+
+  private isUsbInitBlockedByOs(): boolean {
+    return Platform.OS === 'android' && (Platform.Version as number) >= USB_INIT_MIN_BLOCKED_API_LEVEL;
+  }
+
+  private restoreInProgress = false;
 
   /**
    * restoreSavedPrinter — Pulihkan printer tersimpan (AsyncStorage
    * 'saved_printer'). Tidak pernah throw; mengembalikan false kalau tidak
    * ada printer tersimpan / tidak bisa terhubung. Aman dipanggil dari
    * latar belakang: JANGAN di-await sebelum scan selesai.
+   * Dijaga re-entry: buka-tutup layar cepat (mount + focus) tidak boleh
+   * menumpuk dua reconnect BLE yang blocking — masing-masing bisa menahan
+   * thread native belasan detik dan membuat scan berikutnya antre lama.
    */
   async restoreSavedPrinter(): Promise<boolean> {
+    if (this.restoreInProgress) return false;
+    this.restoreInProgress = true;
     try {
       const saved = await AsyncStorage.getItem('saved_printer');
       if (!saved) return false;
@@ -189,6 +252,8 @@ class PrinterService {
     } catch (e) {
       console.warn('[PrinterService] Gagal pulihkan printer tersimpan:', e);
       return false;
+    } finally {
+      this.restoreInProgress = false;
     }
   }
 
@@ -204,7 +269,9 @@ class PrinterService {
   }
 
   isUsbSupported(): boolean {
-    return hasRNUSBPrinter;
+    // Modul USB native ada, tapi di Android 14+ init-nya fatal (lihat
+    // USB_INIT_MIN_BLOCKED_API_LEVEL) — anggap tidak didukung di OS ini.
+    return hasRNUSBPrinter && !this.isUsbInitBlockedByOs();
   }
 
   /**
@@ -275,6 +342,12 @@ class PrinterService {
   }
 
   async getUsbPrinters() {
+    // JALUR KE-4 (WS-2): di Android 14+ jangan sentuh modul USB sama
+    // sekali — init-nya melempar SecurityException yang mematikan proses.
+    // Kembalikan [] supaya kartu USB menampilkan empty state / penjelasan.
+    if (this.isUsbInitBlockedByOs()) {
+      return [];
+    }
     if (!hasRNUSBPrinter) {
       return [];
     }
@@ -309,6 +382,8 @@ class PrinterService {
           'BLE connect'
         );
       } else if (printer.type === 'USB' && printer.vendor_id && printer.product_id) {
+        // JALUR KE-4 (WS-2): USB tidak pernah dihubungkan di Android 14+.
+        if (this.isUsbInitBlockedByOs()) return false;
         await this.initUsb();
         if (!this.usbReady) return false;
         await withTimeout(

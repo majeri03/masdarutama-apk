@@ -250,7 +250,7 @@ export const VerifyOtpScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: 'transparent', justifyContent: 'center' },  // WS-6: tembus ke AppBackground app-wide
   keyboardView: { flex: 1, justifyContent: 'center' },
   scrollView: { flex: 1 },
   scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: Spacing.xl },

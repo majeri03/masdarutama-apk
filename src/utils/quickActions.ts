@@ -163,7 +163,7 @@ export const QUICK_ACTION_CATALOG: QuickActionDef[] = [
     label: 'Tracking Armada',
     desc: 'Live GPS & peta rute',
     icon: 'car-outline',
-    iconBg: '#2563EB18',
+    iconBg: Colors.primaryStart + '18',  // WS-7: merah merek, dulu biru #2563EB18
     iconColor: Colors.primaryStart,
     route: 'FleetTracking',
     target: 'stack',
@@ -196,8 +196,8 @@ export const QUICK_ACTION_CATALOG: QuickActionDef[] = [
     label: 'Desain Invoice',
     desc: 'Layout struk & faktur',
     icon: 'color-palette-outline',
-    iconBg: '#DB277718',
-    iconColor: '#DB2777',
+    iconBg: Colors.primaryStart + '18',  // WS-7: merah merek, dulu pink #DB277718
+    iconColor: Colors.primaryStart,  // WS-7: merah merek, dulu pink #DB2777
     route: 'InvoiceLayout',
     target: 'stack',
     pageKey: 'invoice_layout',

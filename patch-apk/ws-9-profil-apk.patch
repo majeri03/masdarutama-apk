@@ -1,0 +1,990 @@
+diff --git a/App.tsx b/App.tsx
+index e208057..927c19e 100644
+--- a/App.tsx
++++ b/App.tsx
+@@ -40,6 +40,7 @@ import AppUpdateScreen from './src/screens/AppUpdateScreen';
+ import { StorageManagerScreen } from './src/screens/StorageManagerScreen';
+ import { SalesmenScreen } from './src/screens/SalesmenScreen';
+ import { PointsScreen } from './src/screens/PointsScreen';
++import { ProfileScreen } from './src/screens/ProfileScreen';
+ 
+ // Import Sidebar Drawer
+ import { SidebarDrawer } from './src/components/ui/SidebarDrawer';
+@@ -533,6 +534,13 @@ export default function App() {
+                 component={PointsScreen}
+                 options={{ headerShown: false }}
+               />
++              {/* WS-9 (26 Nov 2026): layar Profil Akun — dibuka dari kartu
++                  "Profil Akun" di SettingsScreen. */}
++              <Stack.Screen
++                name="Profile"
++                component={ProfileScreen}
++                options={{ headerShown: false }}
++              />
+             </>
+           )}
+         </Stack.Navigator>
+diff --git a/src/constants/api.ts b/src/constants/api.ts
+index 2dba7d1..4e419be 100644
+--- a/src/constants/api.ts
++++ b/src/constants/api.ts
+@@ -82,6 +82,10 @@ export const API_ENDPOINTS = {
+   REPORT_INVENTORY: '/api/reports/inventory',
+   REPORT_DEBTS: '/api/reports/debts',
+ 
++  // Profil (WS-9, 26 Nov 2026): upload/hapus foto profil.
++  // POST = upload/ganti (multipart { file }), DELETE = hapus foto.
++  PROFILE_AVATAR: '/api/profile/avatar',
++
+   // Settings
+   STORE_SETTINGS: '/api/settings',
+ } as const;
+diff --git a/src/screens/ProfileScreen.tsx b/src/screens/ProfileScreen.tsx
+new file mode 100644
+index 0000000..f09e8d7
+--- /dev/null
++++ b/src/screens/ProfileScreen.tsx
+@@ -0,0 +1,442 @@
++/**
++ * ProfileScreen — layar Profil Akun (WS-9, 26 Nov 2026).
++ *
++ * Dibuka dari kartu "Profil Akun" di SettingsScreen. Isinya:
++ * - Foto profil: tampilkan, upload/ganti (galeri, crop 1:1), hapus.
++ *   Batas: maks 2 MB, JPG/PNG/WebP (ditegakkan client di profileService
++ *   DAN server di /api/profile/avatar).
++ * - Info user: nama, email, peran (dari auth store — diisi backend
++ *   lewat login / session-check).
++ * - Ubah password: PINDAHAN dari modal di SettingsScreen — modal dan
++ *   seksi "Keamanan" di Settings sudah dihapus, jadi hanya ada SATU
++ *   tempat ganti password: di sini. Kebijakan sama seperti web/server:
++ *   min 8, maks 128, 1 huruf besar, 1 angka, 1 simbol. Sukses ganti
++ *   password = login ulang (server menaikkan tokenVersion).
++ */
++import React, { useState } from 'react';
++import {
++  View,
++  Text,
++  StyleSheet,
++  ScrollView,
++  TouchableOpacity,
++  Alert,
++  ActivityIndicator,
++  TextInput,
++  Image,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { Ionicons } from '@expo/vector-icons';
++import { useNavigation } from '@react-navigation/native';
++import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
++import { useAuthStore } from '../stores/auth.store';
++import { authService } from '../services/auth.service';
++import {
++  profileService,
++  validateNewPassword,
++  AVATAR_MAX_SIZE_LABEL,
++} from '../services/profile.service';
++import { GlassCard, GradientButton } from '../components/ui';
++import { AppToast } from '../utils/toast';
++
++export const ProfileScreen: React.FC = () => {
++  const navigation = useNavigation<any>();
++  const { user, setUser, logout } = useAuthStore();
++
++  const [uploadingAvatar, setUploadingAvatar] = useState(false);
++  const [deletingAvatar, setDeletingAvatar] = useState(false);
++
++  const [currentPassword, setCurrentPassword] = useState('');
++  const [newPassword, setNewPassword] = useState('');
++  const [confirmPassword, setConfirmPassword] = useState('');
++  const [changingPassword, setChangingPassword] = useState(false);
++
++  const handleUploadAvatar = async () => {
++    setUploadingAvatar(true);
++    try {
++      const res = await profileService.uploadAvatar();
++      if (res.success && res.data?.avatarUrl && user) {
++        const updated = { ...user, avatarUrl: res.data.avatarUrl };
++        setUser(updated);
++        await authService.updateStoredUser(updated);
++        AppToast.success('Sukses', 'Foto profil berhasil diunggah.');
++      } else if (!res.success && res.error !== 'Tidak ada foto yang dipilih.') {
++        AppToast.error('Gagal', res.error || 'Gagal mengunggah foto profil.');
++      }
++    } finally {
++      setUploadingAvatar(false);
++    }
++  };
++
++  const handleDeleteAvatar = () => {
++    if (!user?.avatarUrl) return;
++    Alert.alert('Hapus Foto Profil', 'Apakah Anda yakin ingin menghapus foto profil?', [
++      { text: 'Batal', style: 'cancel' },
++      {
++        text: 'Hapus',
++        style: 'destructive',
++        onPress: async () => {
++          setDeletingAvatar(true);
++          try {
++            const res = await profileService.deleteAvatar();
++            if (res.success && user) {
++              const updated = { ...user, avatarUrl: null };
++              setUser(updated);
++              await authService.updateStoredUser(updated);
++              AppToast.success('Sukses', 'Foto profil berhasil dihapus.');
++            } else {
++              AppToast.error('Gagal', res.error || 'Gagal menghapus foto profil.');
++            }
++          } finally {
++            setDeletingAvatar(false);
++          }
++        },
++      },
++    ]);
++  };
++
++  const handleChangePassword = async () => {
++    if (!currentPassword || !newPassword || !confirmPassword) {
++      AppToast.error('Peringatan', 'Semua field password wajib diisi.');
++      return;
++    }
++    if (newPassword !== confirmPassword) {
++      AppToast.error('Peringatan', 'Password baru dan konfirmasi tidak cocok.');
++      return;
++    }
++    // Kebijakan password (sama seperti server): min 8, maks 128,
++    // 1 huruf besar, 1 angka, 1 simbol.
++    const policyError = validateNewPassword(newPassword);
++    if (policyError) {
++      AppToast.error('Peringatan', policyError);
++      return;
++    }
++    if (newPassword === currentPassword) {
++      AppToast.error('Peringatan', 'Password baru tidak boleh sama dengan password lama.');
++      return;
++    }
++
++    setChangingPassword(true);
++    try {
++      const res = await profileService.changePassword(currentPassword, newPassword);
++      if (res.success) {
++        Alert.alert('Sukses', 'Password berhasil diubah. Silakan login ulang.', [
++          {
++            text: 'OK',
++            onPress: () => {
++              setCurrentPassword('');
++              setNewPassword('');
++              setConfirmPassword('');
++              logout();
++            },
++          },
++        ]);
++      } else {
++        AppToast.error('Gagal', res.error || 'Gagal mengubah password.');
++      }
++    } finally {
++      setChangingPassword(false);
++    }
++  };
++
++  return (
++    <SafeAreaView style={styles.container} edges={['top']}>
++      <View style={styles.header}>
++        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
++          <Ionicons name="arrow-back-outline" size={24} color={Colors.textPrimary} />
++        </TouchableOpacity>
++        <View style={{ flex: 1 }}>
++          <Text style={styles.headerTitle}>Profil Akun</Text>
++          <Text style={styles.headerSubtitle}>Foto, info akun & ubah password</Text>
++        </View>
++      </View>
++
++      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
++        {/* FOTO PROFIL */}
++        <View style={styles.section}>
++          <GlassCard padding={20}>
++            <View style={styles.profileHeader}>
++              {user?.avatarUrl ? (
++                <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
++              ) : (
++                <View style={styles.avatar}>
++                  <Text style={styles.avatarText}>{user?.name?.charAt(0) || 'U'}</Text>
++                </View>
++              )}
++              <View style={styles.profileInfo}>
++                <Text style={styles.profileName}>{user?.name || '—'}</Text>
++                <Text style={styles.profileEmail}>{user?.email || '—'}</Text>
++                <View style={styles.roleBadge}>
++                  <Text style={styles.roleText}>{user?.role || 'KASIR'}</Text>
++                </View>
++              </View>
++            </View>
++
++            <View style={styles.avatarActions}>
++              <TouchableOpacity
++                style={styles.avatarButton}
++                onPress={handleUploadAvatar}
++                disabled={uploadingAvatar || deletingAvatar}
++              >
++                {uploadingAvatar ? (
++                  <ActivityIndicator size="small" color={Colors.primaryStart} />
++                ) : (
++                  <Ionicons name="camera-outline" size={18} color={Colors.primaryStart} />
++                )}
++                <Text style={styles.avatarButtonText}>
++                  {user?.avatarUrl ? 'Ganti Foto' : 'Upload Foto'}
++                </Text>
++              </TouchableOpacity>
++              {user?.avatarUrl ? (
++                <TouchableOpacity
++                  style={[styles.avatarButton, styles.avatarButtonDanger]}
++                  onPress={handleDeleteAvatar}
++                  disabled={uploadingAvatar || deletingAvatar}
++                >
++                  {deletingAvatar ? (
++                    <ActivityIndicator size="small" color={Colors.error} />
++                  ) : (
++                    <Ionicons name="trash-outline" size={18} color={Colors.error} />
++                  )}
++                  <Text style={[styles.avatarButtonText, { color: Colors.error }]}>
++                    Hapus Foto
++                  </Text>
++                </TouchableOpacity>
++              ) : null}
++            </View>
++            <Text style={styles.avatarHint}>
++              Maks. {AVATAR_MAX_SIZE_LABEL} • JPG, PNG, atau WebP
++            </Text>
++          </GlassCard>
++        </View>
++
++        {/* UBAH PASSWORD */}
++        <View style={styles.section}>
++          <Text style={styles.sectionTitle}>Ubah Password</Text>
++          <GlassCard padding={20}>
++            <Text style={styles.policyText}>
++              Password baru minimal 8 karakter, maksimal 128 karakter, dan
++              mengandung minimal 1 huruf besar, 1 angka, dan 1 simbol.
++            </Text>
++
++            <View style={styles.inputGroup}>
++              <Text style={styles.inputLabel}>Password Saat Ini</Text>
++              <TextInput
++                style={styles.textInput}
++                placeholder="Masukkan password lama"
++                placeholderTextColor={Colors.textTertiary}
++                secureTextEntry
++                value={currentPassword}
++                onChangeText={setCurrentPassword}
++              />
++            </View>
++
++            <View style={styles.inputGroup}>
++              <Text style={styles.inputLabel}>Password Baru</Text>
++              <TextInput
++                style={styles.textInput}
++                placeholder="Minimal 8 karakter"
++                placeholderTextColor={Colors.textTertiary}
++                secureTextEntry
++                value={newPassword}
++                onChangeText={setNewPassword}
++              />
++            </View>
++
++            <View style={styles.inputGroup}>
++              <Text style={styles.inputLabel}>Konfirmasi Password Baru</Text>
++              <TextInput
++                style={styles.textInput}
++                placeholder="Ulangi password baru"
++                placeholderTextColor={Colors.textTertiary}
++                secureTextEntry
++                value={confirmPassword}
++                onChangeText={setConfirmPassword}
++              />
++            </View>
++            {confirmPassword !== '' && newPassword !== confirmPassword ? (
++              <Text style={styles.mismatchText}>Password tidak cocok</Text>
++            ) : null}
++
++            <View style={{ marginTop: Spacing.md }}>
++              <GradientButton
++                title="Simpan Password"
++                onPress={handleChangePassword}
++                loading={changingPassword}
++                variant="primary"
++                fullWidth
++              />
++            </View>
++          </GlassCard>
++        </View>
++
++        <Text style={styles.footnote}>
++          Untuk mengubah nama atau email, hubungi admin toko.
++        </Text>
++      </ScrollView>
++    </SafeAreaView>
++  );
++};
++
++const styles = StyleSheet.create({
++  container: {
++    flex: 1,
++    backgroundColor: Colors.background,
++  },
++  header: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: Spacing.sm,
++    paddingHorizontal: Spacing.lg,
++    paddingVertical: Spacing.md,
++  },
++  backBtn: {
++    padding: 4,
++  },
++  headerTitle: {
++    fontSize: FontSize.lg,
++    fontWeight: FontWeight.bold,
++    color: Colors.textPrimary,
++  },
++  headerSubtitle: {
++    fontSize: FontSize.sm,
++    color: Colors.textSecondary,
++  },
++  scroll: {
++    flex: 1,
++  },
++  content: {
++    padding: Spacing.lg,
++    paddingBottom: Spacing['3xl'],
++  },
++  section: {
++    marginBottom: Spacing.xl,
++  },
++  sectionTitle: {
++    fontSize: FontSize.xs,
++    fontWeight: FontWeight.bold,
++    color: Colors.textTertiary,
++    textTransform: 'uppercase',
++    letterSpacing: 0.8,
++    marginBottom: Spacing.md,
++    marginLeft: 4,
++  },
++  profileHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: Spacing.lg,
++  },
++  avatar: {
++    width: 72,
++    height: 72,
++    borderRadius: 36,
++    backgroundColor: Colors.primaryStart,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  avatarImage: {
++    width: 72,
++    height: 72,
++    borderRadius: 36,
++  },
++  avatarText: {
++    color: '#fff',
++    fontSize: FontSize['2xl'],
++    fontWeight: FontWeight.bold,
++  },
++  profileInfo: {
++    flex: 1,
++    gap: 4,
++  },
++  profileName: {
++    fontSize: FontSize.lg,
++    fontWeight: FontWeight.bold,
++    color: Colors.textPrimary,
++  },
++  profileEmail: {
++    fontSize: FontSize.sm,
++    color: Colors.textSecondary,
++  },
++  roleBadge: {
++    alignSelf: 'flex-start',
++    backgroundColor: Colors.primaryStart + '18',
++    paddingHorizontal: 8,
++    paddingVertical: 4,
++    borderRadius: BorderRadius.sm,
++    marginTop: 4,
++    borderWidth: 1,
++    borderColor: Colors.primaryStart + '30',
++  },
++  roleText: {
++    color: Colors.primaryStart,
++    fontSize: 10,
++    fontWeight: FontWeight.bold,
++  },
++  avatarActions: {
++    flexDirection: 'row',
++    gap: Spacing.md,
++    marginTop: Spacing.lg,
++  },
++  avatarButton: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 6,
++    paddingHorizontal: Spacing.md,
++    paddingVertical: 10,
++    borderRadius: BorderRadius.md,
++    borderWidth: 1,
++    borderColor: Colors.primaryStart + '40',
++    backgroundColor: Colors.primaryStart + '10',
++  },
++  avatarButtonDanger: {
++    borderColor: Colors.error + '40',
++    backgroundColor: Colors.error + '10',
++  },
++  avatarButtonText: {
++    fontSize: FontSize.sm,
++    fontWeight: FontWeight.semibold,
++    color: Colors.primaryStart,
++  },
++  avatarHint: {
++    fontSize: 11,
++    color: Colors.textTertiary,
++    marginTop: Spacing.md,
++  },
++  policyText: {
++    fontSize: FontSize.sm,
++    color: Colors.textSecondary,
++    marginBottom: Spacing.lg,
++  },
++  inputGroup: {
++    marginBottom: Spacing.md,
++  },
++  inputLabel: {
++    fontSize: FontSize.sm,
++    fontWeight: FontWeight.semibold,
++    color: Colors.textSecondary,
++    marginBottom: 6,
++  },
++  textInput: {
++    backgroundColor: Colors.surface,
++    borderWidth: 1.5,
++    borderColor: Colors.border,
++    borderRadius: BorderRadius.md,
++    height: 48,
++    paddingHorizontal: Spacing.md,
++    fontSize: FontSize.md,
++    color: Colors.textPrimary,
++  },
++  mismatchText: {
++    fontSize: 11,
++    color: Colors.error,
++    marginTop: -Spacing.sm,
++    marginBottom: Spacing.sm,
++  },
++  footnote: {
++    fontSize: 11,
++    color: Colors.textTertiary,
++    textAlign: 'center',
++  },
++});
++
++export default ProfileScreen;
+diff --git a/src/screens/SettingsScreen.tsx b/src/screens/SettingsScreen.tsx
+index 5e256d9..61fce9d 100644
+--- a/src/screens/SettingsScreen.tsx
++++ b/src/screens/SettingsScreen.tsx
+@@ -11,8 +11,6 @@ import {
+   Linking,
+   ActivityIndicator,
+   RefreshControl,
+-  Modal,
+-  TextInput,
+   Image,
+ } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+@@ -23,7 +21,6 @@ import { useNavigation } from '@react-navigation/native';
+ import api from '../services/api';
+ import { API_ENDPOINTS } from '../constants/api';
+ import type { StoreSetting } from '../types';
+-import { AppToast } from '../utils/toast';
+ import { CURRENT_VERSION, CURRENT_VERSION_CODE } from '../services/update.service';
+ 
+ export const SettingsScreen: React.FC = () => {
+@@ -35,13 +32,6 @@ export const SettingsScreen: React.FC = () => {
+   const [refreshing, setRefreshing] = useState(false);
+   const [storeSettings, setStoreSettings] = useState<StoreSetting | null>(null);
+ 
+-  // Password change modal
+-  const [showPasswordModal, setShowPasswordModal] = useState(false);
+-  const [currentPassword, setCurrentPassword] = useState('');
+-  const [newPassword, setNewPassword] = useState('');
+-  const [confirmPassword, setConfirmPassword] = useState('');
+-  const [changingPassword, setChangingPassword] = useState(false);
+-
+   // Fetch store settings
+   const fetchSettings = useCallback(async () => {
+     try {
+@@ -86,50 +76,6 @@ export const SettingsScreen: React.FC = () => {
+     );
+   };
+ 
+-  const handleChangePassword = async () => {
+-    if (!currentPassword || !newPassword || !confirmPassword) {
+-      AppToast.error('Peringatan', 'Semua field password wajib diisi.');
+-      return;
+-    }
+-    if (newPassword !== confirmPassword) {
+-      AppToast.error('Peringatan', 'Password baru dan konfirmasi tidak cocok.');
+-      return;
+-    }
+-    if (newPassword.length < 8) {
+-      AppToast.error('Peringatan', 'Password baru minimal 8 karakter.');
+-      return;
+-    }
+-
+-    setChangingPassword(true);
+-    try {
+-      // Endpoint ganti password
+-      const res = await api.post('/api/auth/change-password', {
+-        currentPassword,
+-        newPassword,
+-      });
+-      if (res.data?.success) {
+-        Alert.alert('Sukses', 'Password berhasil diubah. Silakan login ulang.', [
+-          {
+-            text: 'OK',
+-            onPress: () => {
+-              setShowPasswordModal(false);
+-              setCurrentPassword('');
+-              setNewPassword('');
+-              setConfirmPassword('');
+-              logout();
+-            },
+-          },
+-        ]);
+-      } else {
+-        AppToast.error('Gagal', res.data?.error || 'Gagal mengubah password.');
+-      }
+-    } catch (e: any) {
+-      AppToast.error('Gagal', e?.response?.data?.error || 'Terjadi kesalahan sistem.');
+-    } finally {
+-      setChangingPassword(false);
+-    }
+-  };
+-
+   if (loading) {
+     return (
+       <View style={styles.loadingContainer}>
+@@ -180,22 +126,35 @@ export const SettingsScreen: React.FC = () => {
+         )}
+ 
+         {/* PROFILE SECTION */}
++        {/* WS-9 (26 Nov 2026): kartu ini sekarang BISA DIKETUK — membuka
++            layar Profil baru (foto, info user, ubah password). Foto profil
++            tampil di sini kalau sudah ada (user.avatarUrl dari sesi). */}
+         <View style={styles.section}>
+           <Text style={styles.sectionTitle}>Profil Akun</Text>
+-          <GlassCard padding={20}>
+-            <View style={styles.profileHeader}>
+-              <View style={styles.avatar}>
+-                <Text style={styles.avatarText}>{user?.name?.charAt(0) || 'U'}</Text>
+-              </View>
+-              <View style={styles.profileInfo}>
+-                <Text style={styles.profileName}>{user?.name || 'Kasir 1'}</Text>
+-                <Text style={styles.profileEmail}>{user?.email || 'kasir1@example.com'}</Text>
+-                <View style={styles.roleBadge}>
+-                  <Text style={styles.roleText}>{user?.role || 'KASIR'}</Text>
++          <TouchableOpacity
++            activeOpacity={0.85}
++            onPress={() => navigation.navigate('Profile')}
++          >
++            <GlassCard padding={20}>
++              <View style={styles.profileHeader}>
++                {user?.avatarUrl ? (
++                  <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
++                ) : (
++                  <View style={styles.avatar}>
++                    <Text style={styles.avatarText}>{user?.name?.charAt(0) || 'U'}</Text>
++                  </View>
++                )}
++                <View style={styles.profileInfo}>
++                  <Text style={styles.profileName}>{user?.name || 'Kasir 1'}</Text>
++                  <Text style={styles.profileEmail}>{user?.email || 'kasir1@example.com'}</Text>
++                  <View style={styles.roleBadge}>
++                    <Text style={styles.roleText}>{user?.role || 'KASIR'}</Text>
++                  </View>
+                 </View>
++                <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+               </View>
+-            </View>
+-          </GlassCard>
++            </GlassCard>
++          </TouchableOpacity>
+         </View>
+ 
+         {/* APP PREFERENCES */}
+@@ -388,27 +347,9 @@ export const SettingsScreen: React.FC = () => {
+           </View>
+         )}
+ 
+-        {/* ACCOUNT SETTINGS */}
+-        <View style={styles.section}>
+-          <Text style={styles.sectionTitle}>Keamanan</Text>
+-          <GlassCard padding={0}>
+-            <TouchableOpacity
+-              style={styles.settingItem}
+-              onPress={() => setShowPasswordModal(true)}
+-            >
+-              <View style={styles.settingItemLeft}>
+-                <View style={[styles.iconBox, { backgroundColor: Colors.error + '18' }]}>
+-                  <Ionicons name="lock-closed-outline" size={20} color={Colors.error} />
+-                </View>
+-                <View>
+-                  <Text style={styles.settingLabel}>Ubah Password</Text>
+-                  <Text style={styles.settingDesc}>Perbarui kata sandi akun Anda</Text>
+-                </View>
+-              </View>
+-              <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+-            </TouchableOpacity>
+-          </GlassCard>
+-        </View>
++        {/* WS-9 (26 Nov 2026): seksi "Keamanan" (Ubah Password) DIHAPUS
++            dari sini — ubah password pindah ke layar Profil baru
++            (ProfileScreen), dibuka dari kartu "Profil Akun" di atas. */}
+ 
+         <View style={styles.section}>
+           <Text style={styles.sectionTitle}>Lainnya</Text>
+@@ -495,75 +436,6 @@ export const SettingsScreen: React.FC = () => {
+           />
+         </View>
+       </ScrollView>
+-
+-      {/* ── CHANGE PASSWORD MODAL ── */}
+-      <Modal visible={showPasswordModal} transparent animationType="fade">
+-        <View style={styles.modalOverlay}>
+-          <GlassCard padding={24} style={styles.modalCard}>
+-            <Text style={styles.modalTitle}>Ubah Password</Text>
+-            <Text style={styles.modalSubtitle}>
+-              Masukkan password lama dan password baru Anda
+-            </Text>
+-
+-            <View style={styles.inputGroup}>
+-              <Text style={styles.inputLabel}>Password Saat Ini</Text>
+-              <TextInput
+-                style={styles.textInput}
+-                placeholder="Masukkan password lama"
+-                placeholderTextColor={Colors.textTertiary}
+-                secureTextEntry
+-                value={currentPassword}
+-                onChangeText={setCurrentPassword}
+-              />
+-            </View>
+-
+-            <View style={styles.inputGroup}>
+-              <Text style={styles.inputLabel}>Password Baru</Text>
+-              <TextInput
+-                style={styles.textInput}
+-                placeholder="Minimal 8 karakter"
+-                placeholderTextColor={Colors.textTertiary}
+-                secureTextEntry
+-                value={newPassword}
+-                onChangeText={setNewPassword}
+-              />
+-            </View>
+-
+-            <View style={styles.inputGroup}>
+-              <Text style={styles.inputLabel}>Konfirmasi Password Baru</Text>
+-              <TextInput
+-                style={styles.textInput}
+-                placeholder="Ulangi password baru"
+-                placeholderTextColor={Colors.textTertiary}
+-                secureTextEntry
+-                value={confirmPassword}
+-                onChangeText={setConfirmPassword}
+-              />
+-            </View>
+-
+-            <View style={{ gap: Spacing.sm, marginTop: Spacing.lg }}>
+-              <GradientButton
+-                title="Simpan Password"
+-                onPress={handleChangePassword}
+-                loading={changingPassword}
+-                variant="primary"
+-                fullWidth
+-              />
+-              <GradientButton
+-                title="Batal"
+-                onPress={() => {
+-                  setShowPasswordModal(false);
+-                  setCurrentPassword('');
+-                  setNewPassword('');
+-                  setConfirmPassword('');
+-                }}
+-                variant="outline"
+-                fullWidth
+-              />
+-            </View>
+-          </GlassCard>
+-        </View>
+-      </Modal>
+     </>
+   );
+ };
+@@ -647,6 +519,11 @@ const styles = StyleSheet.create({
+     alignItems: 'center',
+     justifyContent: 'center',
+   },
++  avatarImage: {
++    width: 64,
++    height: 64,
++    borderRadius: 32,
++  },
+   avatarText: {
+     color: '#fff',
+     fontSize: FontSize['2xl'],
+@@ -714,47 +591,6 @@ const styles = StyleSheet.create({
+     backgroundColor: Colors.border,
+     marginLeft: 72,
+   },
+-  modalOverlay: {
+-    flex: 1,
+-    backgroundColor: Colors.overlay,
+-    justifyContent: 'center',
+-    alignItems: 'center',
+-    padding: Spacing['2xl'],
+-  },
+-  modalCard: {
+-    width: '100%',
+-    maxWidth: 380,
+-  },
+-  modalTitle: {
+-    fontSize: FontSize.lg,
+-    fontWeight: FontWeight.bold,
+-    color: Colors.textPrimary,
+-    marginBottom: 4,
+-  },
+-  modalSubtitle: {
+-    fontSize: FontSize.sm,
+-    color: Colors.textSecondary,
+-    marginBottom: Spacing.xl,
+-  },
+-  inputGroup: {
+-    marginBottom: Spacing.md,
+-  },
+-  inputLabel: {
+-    fontSize: FontSize.sm,
+-    fontWeight: FontWeight.semibold,
+-    color: Colors.textSecondary,
+-    marginBottom: 6,
+-  },
+-  textInput: {
+-    backgroundColor: Colors.surface,
+-    borderWidth: 1.5,
+-    borderColor: Colors.border,
+-    borderRadius: BorderRadius.md,
+-    height: 48,
+-    paddingHorizontal: Spacing.md,
+-    fontSize: FontSize.md,
+-    color: Colors.textPrimary,
+-  },
+ });
+ 
+ export default SettingsScreen;
+diff --git a/src/services/auth.service.ts b/src/services/auth.service.ts
+index f38fa46..9bfbeb4 100644
+--- a/src/services/auth.service.ts
++++ b/src/services/auth.service.ts
+@@ -148,6 +148,22 @@ export const authService = {
+     }
+   },
+ 
++  /**
++   * Perbarui user tersimpan (mis. habis ganti foto profil) tanpa login ulang.
++   * WS-9 (26 Nov 2026): dipakai ProfileScreen setelah upload/hapus avatar
++   * supaya avatarUrl baru tetap ada saat aplikasi dibuka offline.
++   */
++  async updateStoredUser(user: AuthUser): Promise<void> {
++    try {
++      await SecureStore.setItemAsync(
++        SECURE_STORE_KEYS.USER_DATA,
++        JSON.stringify(user)
++      );
++    } catch (error) {
++      console.warn('[AUTH] Gagal memperbarui user tersimpan:', error);
++    }
++  },
++
+   /**
+    * Logout - clear all stored session data.
+    */
+diff --git a/src/services/profile.service.ts b/src/services/profile.service.ts
+new file mode 100644
+index 0000000..4d39602
+--- /dev/null
++++ b/src/services/profile.service.ts
+@@ -0,0 +1,152 @@
++/**
++ * Profile Service — foto profil + ubah password (layar Profil).
++ * WS-9 (26 Nov 2026).
++ *
++ * Foto profil memakai infrastruktur upload yang sudah ada (R2 via
++ * POST /api/upload dipakai logo toko), tapi lewat endpoint KHUSUS
++ * /api/profile/avatar — bukan /api/upload umum — supaya aturan avatar
++ * (maks 2 MB, folder "avatars", ikat ke User.avatarUrl, hapus avatar
++ * lama) tidak bercampur dengan jalur logo toko.
++ */
++import * as FileSystem from 'expo-file-system';
++import api from './api';
++import { API_ENDPOINTS } from '../constants/api';
++import { pickAndCompressImage } from '../utils/imageCompressor';
++import type { ApiResponse } from '../types';
++
++/** Batas foto profil: maks 2 MB, hanya JPG/PNG/WebP.
++ *  Angka yang sama ditegakkan server (route /api/profile/avatar) dan
++ *  ditampilkan ke user di layar Profil ("Maks. 2 MB • JPG, PNG, WebP"). */
++export const AVATAR_MAX_SIZE_BYTES = 2 * 1024 * 1024;
++export const AVATAR_MAX_SIZE_LABEL = '2 MB';
++
++/** Kebijakan password — SAMA PERSIS dengan server (24 Nov 2026):
++ *  min 8, maks 128, minimal 1 huruf besar, 1 angka, 1 simbol.
++ *  Cek client ini hanya untuk pesan cepat; server tetap menolak
++ *  password yang tidak lolos (route /api/auth/change-password). */
++export function validateNewPassword(password: string): string | null {
++  if (password.length < 8 || password.length > 128) {
++    return 'Password harus minimal 8 karakter dan maksimal 128 karakter.';
++  }
++  if (!/[A-Z]/.test(password)) {
++    return 'Password harus mengandung minimal 1 huruf besar (A-Z).';
++  }
++  if (!/[0-9]/.test(password)) {
++    return 'Password harus mengandung minimal 1 angka (0-9).';
++  }
++  if (!/[^A-Za-z0-9]/.test(password)) {
++    return 'Password harus mengandung minimal 1 simbol (mis. ! @ # $ %).';
++  }
++  return null;
++}
++
++export const profileService = {
++  /**
++   * Pilih foto dari galeri (crop 1:1, dikompresi maks 512px JPEG),
++   * cek ukuran ≤ 2 MB, lalu upload ke POST /api/profile/avatar.
++   * Mengembalikan avatarUrl baru kalau sukses.
++   */
++  async uploadAvatar(): Promise<ApiResponse<{ avatarUrl: string }>> {
++    try {
++      const picked = await pickAndCompressImage('gallery', {
++        maxWidth: 512,
++        quality: 0.8,
++        aspect: [1, 1],
++      });
++      if (!picked) {
++        return { success: false, error: 'Tidak ada foto yang dipilih.' };
++      }
++
++      // Batas ukuran ditegakkan di client SEBELUM upload (server di
++      // route avatar menegakkan angka yang sama).
++      const fileInfo = await FileSystem.getInfoAsync(picked.uri);
++      if (fileInfo.exists && typeof fileInfo.size === 'number') {
++        if (fileInfo.size > AVATAR_MAX_SIZE_BYTES) {
++          const mbSize = (fileInfo.size / (1024 * 1024)).toFixed(2);
++          return {
++            success: false,
++            error: `Ukuran foto (${mbSize} MB) melebihi batas maksimal ${AVATAR_MAX_SIZE_LABEL}.`,
++          };
++        }
++      }
++
++      const formData = new FormData();
++      // @ts-ignore — React Native FormData memakai { uri, name, type }.
++      formData.append('file', {
++        uri: picked.uri,
++        name: picked.filename,
++        type: 'image/jpeg',
++      });
++
++      const response = await api.post<any>(API_ENDPOINTS.PROFILE_AVATAR, formData, {
++        headers: { 'Content-Type': 'multipart/form-data' },
++      });
++
++      if (response.data?.success && response.data?.data?.avatarUrl) {
++        return { success: true, data: { avatarUrl: response.data.data.avatarUrl } };
++      }
++      return {
++        success: false,
++        error: response.data?.error || 'Gagal mengunggah foto profil.',
++      };
++    } catch (error: any) {
++      return {
++        success: false,
++        error: error.response?.data?.error || 'Gagal terhubung ke server.',
++      };
++    }
++  },
++
++  /**
++   * Hapus foto profil (DELETE /api/profile/avatar).
++   */
++  async deleteAvatar(): Promise<ApiResponse<{ avatarUrl: null }>> {
++    try {
++      const response = await api.delete<any>(API_ENDPOINTS.PROFILE_AVATAR);
++      if (response.data?.success) {
++        return { success: true, data: { avatarUrl: null } };
++      }
++      return {
++        success: false,
++        error: response.data?.error || 'Gagal menghapus foto profil.',
++      };
++    } catch (error: any) {
++      return {
++        success: false,
++        error: error.response?.data?.error || 'Gagal terhubung ke server.',
++      };
++    }
++  },
++
++  /**
++   * Ubah password lewat POST /api/auth/change-password (endpoint yang
++   * sudah ada — sebelumnya dipanggil dari modal di SettingsScreen).
++   * Server menaikkan tokenVersion, jadi semua sesi lama mati dan user
++   * harus login ulang setelah sukses (ProfileScreen yang menangani).
++   */
++  async changePassword(
++    currentPassword: string,
++    newPassword: string
++  ): Promise<ApiResponse<void>> {
++    try {
++      const response = await api.post<any>('/api/auth/change-password', {
++        currentPassword,
++        newPassword,
++      });
++      if (response.data?.success) {
++        return { success: true };
++      }
++      return {
++        success: false,
++        error: response.data?.error || 'Gagal mengubah password.',
++      };
++    } catch (error: any) {
++      return {
++        success: false,
++        error:
++          error.response?.data?.error ||
++          'Terjadi kesalahan sistem. Coba lagi.',
++      };
++    }
++  },
++};
+diff --git a/src/types/index.ts b/src/types/index.ts
+index 8b5a06d..b6aa2f2 100644
+--- a/src/types/index.ts
++++ b/src/types/index.ts
+@@ -35,6 +35,10 @@ export interface AuthUser {
+   email: string;
+   name: string;
+   role: Role;
++  /** URL foto profil (R2, folder "avatars") — null kalau belum ada.
++   *  WS-9 (26 Nov 2026): diisi backend dari User.avatarUrl lewat login
++   *  dan /api/auth/session-check. */
++  avatarUrl?: string | null;
+ }
+ 
+ export interface LoginResponse {

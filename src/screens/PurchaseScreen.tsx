@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
+import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
 import { DatePickerInput } from '../components/ui/DatePickerInput';
 import { purchaseService } from '../services/purchase.service';
@@ -1112,7 +1112,7 @@ export const PurchaseScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
   },
   header: {
     flexDirection: 'row',
@@ -1228,14 +1228,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statusTextSm: { fontSize: 9, fontWeight: 'bold' },
-  poCard: {
-    backgroundColor: Colors.backgroundSecondary,
-  },
-  poNumber: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    color: Colors.primaryStart,
-  },
+  // WS-6: DIHAPUS — style poCard, poNumber, supplierName, purchaseDate,
+  // totalLabel, totalValue, itemsCount tidak pernah dipakai (kartu PO lama;
+  // tampilannya sekarang memakai GlassCard + style details*).
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -1245,36 +1240,10 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: FontWeight.bold,
   },
-  supplierName: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
-    marginTop: Spacing.xs,
-  },
-  purchaseDate: {
-    fontSize: 11,
-    color: Colors.textTertiary,
-    marginTop: 2,
-  },
   divider: {
     height: 1,
     backgroundColor: Colors.border,
     marginVertical: Spacing.md,
-  },
-  totalLabel: {
-    fontSize: 10,
-    color: Colors.textTertiary,
-    textTransform: 'uppercase',
-  },
-  totalValue: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-  },
-  itemsCount: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.bold,
-    color: Colors.primaryStart,
   },
   rowBetween: {
     flexDirection: 'row',

@@ -45,7 +45,7 @@ class DeviceSettingsErrorBoundary extends Component<ErrorBoundaryProps, ErrorBou
   render() {
     if (this.state.hasError) {
       return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background, padding: 20, justifyContent: 'center', alignItems: 'center' }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent', padding: 20, justifyContent: 'center', alignItems: 'center' }}>
           <Ionicons name="alert-circle-outline" size={48} color={Colors.error} />
           <Text style={{ fontSize: FontSize.md, fontWeight: 'bold', color: Colors.textPrimary, marginTop: 12, textAlign: 'center' }}>
             Gagal Memuat Pengaturan Perangkat
@@ -76,6 +76,10 @@ const DeviceSettingsContent: React.FC = () => {
   const [usbDevices, setUsbDevices] = useState<any[]>([]);
   const [bleError, setBleError] = useState<string | null>(null);
   const [permGranted, setPermGranted] = useState(true);
+  // WS-2: true di Android 14+ — modul USB library tidak boleh disentuh di
+  // OS ini (init-nya melempar SecurityException yang mematikan aplikasi).
+  // Kartu USB menampilkan penjelasan, bukan spinner / daftar kosong.
+  const [usbBlocked] = useState(() => printerService.isUsbBlockedByOs());
   const [bluetoothEnabled, setBluetoothEnabled] = useState<boolean | null>(null); // null = unknown
   // loadError: kegagalan tak terduga saat mount (mis. exception di luar
   // alur izin/scan). Ditampilkan sebagai banner — layar TIDAK PERNAH boleh
@@ -516,7 +520,14 @@ const DeviceSettingsContent: React.FC = () => {
             <Ionicons name="hardware-chip-outline" size={20} color={Colors.textSecondary} />
           </View>
 
-          {scanning ? (
+          {usbBlocked ? (
+            <View style={styles.bleErrorBox}>
+              <Ionicons name="information-circle-outline" size={20} color={Colors.warning} />
+              <Text style={styles.bleErrorText}>
+                Printer USB (OTG) tidak didukung di Android 14 ke atas pada versi aplikasi ini — library printer belum mendukungnya. Gunakan Printer Bluetooth atau Printer Sistem di atas.
+              </Text>
+            </View>
+          ) : scanning ? (
             <View style={styles.scanningBox}>
               <ActivityIndicator size="small" color={Colors.primaryStart} />
               <Text style={styles.scanningText}>Sedang mencari perangkat USB...</Text>
@@ -571,7 +582,8 @@ export const DeviceSettingsScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  // Koordinator (26 Nov 2026): container transparan supaya background kaca app-wide (AppBackground di App.tsx) terlihat di layar ini juga.
+  container: { flex: 1, backgroundColor: 'transparent' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

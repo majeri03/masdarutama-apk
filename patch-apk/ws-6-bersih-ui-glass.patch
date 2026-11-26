@@ -1,0 +1,734 @@
+diff --git a/App.tsx b/App.tsx
+index e208057..03e9edd 100644
+--- a/App.tsx
++++ b/App.tsx
+@@ -1,7 +1,7 @@
+ import React, { useEffect, useState, useRef } from 'react';
+ import { StatusBar } from 'expo-status-bar';
+ import { SafeAreaProvider } from 'react-native-safe-area-context';
+-import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity, Animated, Easing, Vibration, Image, LogBox } from 'react-native';
++import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing, Vibration, Image, LogBox } from 'react-native';
+ import { NavigationContainer, DefaultTheme, useNavigation } from '@react-navigation/native';
+ import { createNativeStackNavigator } from '@react-navigation/native-stack';
+ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+@@ -44,6 +44,9 @@ import { PointsScreen } from './src/screens/PointsScreen';
+ // Import Sidebar Drawer
+ import { SidebarDrawer } from './src/components/ui/SidebarDrawer';
+ import { FloatingShortcut } from './src/components/ui/FloatingShortcut';
++// WS-6 (26 Nov 2026): background kaca app-wide — dipasang sekali di sini,
++// di belakang NavigationContainer; lihat src/components/ui/AppBackground.tsx.
++import { AppBackground } from './src/components/ui/AppBackground';
+ 
+ // Design Theme
+ import { Colors, FontWeight, FontSize } from './src/constants/theme';
+@@ -87,11 +90,15 @@ const HeaderBackButton: React.FC = () => {
+ };
+ 
+ // Light Glassmorphism Theme for React Navigation (iOS/macOS style)
++// WS-6: background 'transparent' supaya AppBackground (gradien + blob kaca
++// di belakang NavigationContainer) terlihat di semua layar. Layar yang
++// container root-nya masih solid menutupi gradien ini — itu disengaja
++// sampai workstream pemilik layar itu ikut mengubahnya ke transparent.
+ const appNavTheme = {
+   ...DefaultTheme,
+   colors: {
+     ...DefaultTheme.colors,
+-    background: Colors.background,
++    background: 'transparent',
+     card: Colors.backgroundSecondary,
+     text: Colors.textPrimary,
+     border: Colors.border,
+@@ -100,19 +107,9 @@ const appNavTheme = {
+   },
+ };
+ 
+-// Logout button component for the header
+-const HeaderLogoutButton: React.FC = () => {
+-  const logout = useAuthStore((state) => state.logout);
+-  return (
+-    <TouchableOpacity
+-      onPress={logout}
+-      style={{ marginRight: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+-    >
+-      <Ionicons name="log-out-outline" size={20} color={Colors.error} />
+-      <Text style={{ color: Colors.error, fontSize: FontSize.xs, fontWeight: FontWeight.semibold }}>Keluar</Text>
+-    </TouchableOpacity>
+-  );
+-};
++// WS-6 (26 Nov 2026): DIHAPUS — HeaderLogoutButton tidak pernah dipakai
++// di mana pun (tidak ada header yang memanggilnya); tombol Keluar sudah
++// ada di SidebarDrawer. Menghapusnya supaya tidak ada komponen mati.
+ 
+ // Notification button component for the header
+ const HeaderNotificationButton: React.FC = () => {
+@@ -184,8 +181,12 @@ const MainTabNavigator = () => {
+         },
+         tabBarActiveTintColor: Colors.primaryStart,
+         tabBarInactiveTintColor: Colors.textTertiary,
++        // WS-6: scene transparan supaya AppBackground terlihat; tab bar &
++        // header putih TRANSLUCENT (0.88) — tetap terbaca, tapi gradien
++        // kaca di belakangnya samar-samar tembus (efek kaca, bukan solid).
++        sceneContainerStyle: { backgroundColor: 'transparent' },
+         tabBarStyle: {
+-          backgroundColor: Colors.surface,       // putih solid iOS
++          backgroundColor: 'rgba(255, 255, 255, 0.88)',  // WS-6: dulu Colors.surface solid
+           borderTopWidth: 1,
+           borderTopColor: Colors.border,
+           height: 64,
+@@ -199,7 +200,7 @@ const MainTabNavigator = () => {
+           elevation: 8,
+         },
+         headerStyle: {
+-          backgroundColor: Colors.surface,       // putih solid
++          backgroundColor: 'rgba(255, 255, 255, 0.88)',  // WS-6: dulu Colors.surface solid
+           borderBottomWidth: 1,
+           borderBottomColor: Colors.border,
+           elevation: 0,
+@@ -282,8 +283,8 @@ export default function App() {
+   const textFadeAnim = React.useRef(new Animated.Value(0)).current;
+   const textSlideAnim = useRef(new Animated.Value(20)).current;
+ 
+-  // Track current route for global components visibility
+-  const [currentRoute, setCurrentRoute] = useState<string | undefined>(undefined);
++  // WS-6 (26 Nov 2026): DIHAPUS — state currentRoute dulu hanya di-set di
++  // onStateChange tapi tidak pernah dibaca di mana pun.
+   const splashFadeAnim = React.useRef(new Animated.Value(1)).current;
+ 
+   const playChime = async () => {
+@@ -425,15 +426,16 @@ export default function App() {
+           PERNAH tampil bersamaan dengan logo splash saat fade (PKG-D,
+           perbaikan 7 item #5: logo bentrok). */}
+       {!showSplash && (
+-      <NavigationContainer 
+-        theme={appNavTheme} 
++      <View style={styles.appRoot}>
++      {/* WS-6: AppBackground dipasang sekali di sini, di belakang seluruh
++          navigator — jangan dipasang lagi di dalam tiap layar (nanti
++          background menumpuk 2 lapis seperti kasus WS-9). */}
++      <AppBackground />
++      <NavigationContainer
++        theme={appNavTheme}
+         ref={navigationRef}
+-        onStateChange={() => {
+-          const current = navigationRef.getCurrentRoute()?.name;
+-          setCurrentRoute(current);
+-        }}
+       >
+-        <Stack.Navigator screenOptions={{ headerShown: false }}>
++        <Stack.Navigator screenOptions={{ headerShown: false, cardStyle: { backgroundColor: 'transparent' } }}>
+           {!isAuthenticated ? (
+             <>
+               <Stack.Screen name="Login" component={LoginScreen} />
+@@ -452,7 +454,7 @@ export default function App() {
+                 options={{
+                   headerShown: true,
+                   headerTitle: 'STOCK OPNAME',
+-                  headerStyle: { backgroundColor: Colors.surface },
++                  headerStyle: { backgroundColor: 'rgba(255, 255, 255, 0.88)' },  // WS-6: dulu Colors.surface solid
+                   headerTitleStyle: {
+                     fontSize: FontSize.md,
+                     fontWeight: FontWeight.bold,
+@@ -537,6 +539,7 @@ export default function App() {
+           )}
+         </Stack.Navigator>
+       </NavigationContainer>
++      </View>
+       )}
+ 
+       {isAuthenticated && <FloatingShortcut />}
+@@ -546,17 +549,10 @@ export default function App() {
+ }
+ 
+ const styles = StyleSheet.create({
+-  loadingContainer: {
++  // WS-6: pembungkus NavigationContainer — AppBackground (absolute fill)
++  // duduk di belakang navigator di dalam View ini.
++  appRoot: {
+     flex: 1,
+-    backgroundColor: Colors.background,
+-    alignItems: 'center',
+-    justifyContent: 'center',
+-    gap: 12,
+-  },
+-  loadingText: {
+-    color: Colors.textSecondary,
+-    fontSize: FontSize.sm,
+-    fontWeight: FontWeight.medium,
+   },
+   splashContainer: {
+     ...StyleSheet.absoluteFillObject,
+diff --git a/src/components/ui/AppBackground.tsx b/src/components/ui/AppBackground.tsx
+new file mode 100644
+index 0000000..33b5e34
+--- /dev/null
++++ b/src/components/ui/AppBackground.tsx
+@@ -0,0 +1,69 @@
++/**
++ * AppBackground — WS-6 (26 Nov 2026): background kaca app-wide, SATU tempat.
++ *
++ * Satu komponen ini dipasang SEKALI di App.tsx, tepat di belakang
++ * NavigationContainer, sehingga SELURUH layar aplikasi mendapat corak yang
++ * sama tanpa tiap layar mengatur background-nya sendiri.
++ *
++ * Cara kerja:
++ * - LinearGradient vertikal SANGAT halus (hampir sama terangnya dengan
++ *   Colors.background #F5F5F4) + dua blob bundar merah merek yang sangat
++ *   samar (opacity 5-6%) di kanan atas dan kiri bawah. Hasilnya: layar
++ *   terlihat seperti kaca buram yang hangat, selaras dengan GlassCard dan
++ *   sidebar kaca web — bukan warna baru yang mencolok.
++ * - Komponen ini pointerEvents="none" dan TIDAK menumpuk di atas konten,
++ *   jadi tidak bisa menabrak GlassCard (pelajaran WS-9: background jangan
++ *   sampai 2 lapis). Syaratnya: container root tiap layar harus
++ *   backgroundColor 'transparent' — kalau masih solid #F5F5F4, gradien ini
++ *   tertutup dan tidak terlihat. Layar-layar yang masih solid (yang sedang
++ *   dikerjakan workstream lain) tetap tampil seperti sebelumnya.
++ * - Teks tetap terbaca: gradiennya terang (luminansi ≈ #F5F5F4), kontras
++ *   teks Colors.textPrimary (#111827) tidak berubah.
++ */
++import React from 'react';
++import { View, StyleSheet } from 'react-native';
++import { LinearGradient } from 'expo-linear-gradient';
++
++// Putih hangat → abu netral tema → putih hangat kemerahan yang sangat samar.
++const APP_GRADIENT = ['#FCFAF7', '#F5F5F4', '#F7F0EB'] as const;
++
++export const AppBackground: React.FC = () => {
++  return (
++    <View style={styles.root} pointerEvents="none">
++      <LinearGradient
++        colors={APP_GRADIENT}
++        start={{ x: 0, y: 0 }}
++        end={{ x: 0, y: 1 }}
++        style={StyleSheet.absoluteFill}
++      />
++      {/* Blob merah merek, sangat samar — memberi kesan kaca, bukan blok warna. */}
++      <View style={styles.blobTop} />
++      <View style={styles.blobBottom} />
++    </View>
++  );
++};
++
++const styles = StyleSheet.create({
++  root: {
++    ...StyleSheet.absoluteFillObject,
++    overflow: 'hidden',
++  },
++  blobTop: {
++    position: 'absolute',
++    top: -110,
++    right: -90,
++    width: 320,
++    height: 320,
++    borderRadius: 160,
++    backgroundColor: 'rgba(127, 29, 29, 0.06)',
++  },
++  blobBottom: {
++    position: 'absolute',
++    bottom: -120,
++    left: -100,
++    width: 300,
++    height: 300,
++    borderRadius: 150,
++    backgroundColor: 'rgba(127, 29, 29, 0.05)',
++  },
++});
+diff --git a/src/components/ui/DatePickerInput.tsx b/src/components/ui/DatePickerInput.tsx
+index 432dfae..55857cb 100644
+--- a/src/components/ui/DatePickerInput.tsx
++++ b/src/components/ui/DatePickerInput.tsx
+@@ -2,7 +2,7 @@ import React, { useState } from 'react';
+ import { View, Text, TouchableOpacity, StyleSheet, Platform, StyleProp, ViewStyle } from 'react-native';
+ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+ import { Ionicons } from '@expo/vector-icons';
+-import { Colors, FontSize } from '../../constants/theme';
++import { Colors } from '../../constants/theme';
+ 
+ interface DatePickerInputProps {
+   value: Date | null;
+diff --git a/src/components/ui/index.ts b/src/components/ui/index.ts
+index b8dc3c1..28704b3 100644
+--- a/src/components/ui/index.ts
++++ b/src/components/ui/index.ts
+@@ -1,4 +1,5 @@
+ export { GlassCard } from './GlassCard';
++export { AppBackground } from './AppBackground';
+ export { GradientButton } from './GradientButton';
+ export { SearchBar, StatusBadge, EmptyState, StatCard } from './Common';
+ export { ProofImageUploader } from './ProofImageUploader';
+diff --git a/src/screens/AppUpdateScreen.tsx b/src/screens/AppUpdateScreen.tsx
+index fa8cadf..f2f5a45 100644
+--- a/src/screens/AppUpdateScreen.tsx
++++ b/src/screens/AppUpdateScreen.tsx
+@@ -341,7 +341,7 @@ export const AppUpdateScreen: React.FC = () => {
+ };
+ 
+ const styles = StyleSheet.create({
+-  container: { flex: 1, backgroundColor: Colors.background },
++  container: { flex: 1, backgroundColor: 'transparent' },  // WS-6: tembus ke AppBackground app-wide
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+@@ -537,10 +537,8 @@ const styles = StyleSheet.create({
+     color: Colors.textTertiary,
+     lineHeight: 17,
+   },
+-  // re-use from DeviceSettings
+-  border: {
+-    borderColor: (Colors as any).border,
+-  },
++  // WS-6: DIHAPUS — style border ("re-use from DeviceSettings") tidak
++  // pernah dipakai di layar ini.
+ });
+ 
+ export default AppUpdateScreen;
+diff --git a/src/screens/DashboardScreen.tsx b/src/screens/DashboardScreen.tsx
+index e017f6e..35d0792 100644
+--- a/src/screens/DashboardScreen.tsx
++++ b/src/screens/DashboardScreen.tsx
+@@ -32,7 +32,6 @@ import { GlassCard, StatCard } from '../components/ui';
+ import type { Product, FinancialReport } from '../types';
+ import api from '../services/api';
+ import { API_ENDPOINTS } from '../constants/api';
+-import { Image } from 'react-native';
+ 
+ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
+   const { user, allowedPages } = useAuthStore();
+@@ -139,7 +138,6 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
+   const [refreshing, setRefreshing] = useState(false);
+   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
+   const [financialReport, setFinancialReport] = useState<FinancialReport | null>(null);
+-  const [storeLogo, setStoreLogo] = useState<string | null>(null);
+   const [storeName, setStoreName] = useState("TB Masdar Utama");
+   const [weeklyData, setWeeklyData] = useState<{ day: string; amount: number }[]>([]);
+ 
+@@ -189,9 +187,11 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
+         setFinancialReport(reportRes.data);
+       }
+       if (settingsRes?.data?.success && settingsRes?.data?.data) {
+-        const { name, logoUrl } = settingsRes.data.data;
++        const { name } = settingsRes.data.data;
+         if (name) setStoreName(name);
+-        if (logoUrl) setStoreLogo(logoUrl);
++        // WS-6: logoUrl dulu disimpan ke state storeLogo tapi TIDAK PERNAH
++        // dirender di layar ini (header hanya menampilkan nama toko teks),
++        // jadi state + fetch logonya dihapus.
+       }
+       if (salesRes.success && salesRes.data) {
+         const salesList = (salesRes.data as any).sales || salesRes.data;
+@@ -262,7 +262,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
+         </View>
+       ),
+     });
+-  }, [navigation, storeLogo, unreadCount]);
++  }, [navigation, unreadCount]);
+ 
+   if (loading) {
+     return (
+@@ -600,7 +600,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+   },
+   contentContainer: {
+     padding: Spacing.lg,
+@@ -608,7 +608,7 @@ const styles = StyleSheet.create({
+   },
+   loadingContainer: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+     alignItems: 'center',
+     justifyContent: 'center',
+   },
+@@ -662,24 +662,9 @@ const styles = StyleSheet.create({
+     fontSize: FontSize.xs,
+     color: Colors.textSecondary,
+   },
+-  avatarBg: {
+-    width: 56,
+-    height: 56,
+-    borderRadius: BorderRadius.full,
+-    backgroundColor: Colors.primaryStart,
+-    alignItems: 'center',
+-    justifyContent: 'center',
+-  },
+-  avatarText: {
+-    color: '#fff',
+-    fontSize: FontSize.xl,
+-    fontWeight: FontWeight.bold,
+-  },
+-  storeLogo: {
+-    width: 64,
+-    height: 64,
+-    borderRadius: BorderRadius.md,
+-  },
++  // WS-6 (26 Nov 2026): DIHAPUS — style avatarBg, avatarText, storeLogo
++  // tidak pernah dipakai (header profil/logo lama sudah diganti teks
++  // nama toko + sapaan saja, logonya pun tidak dirender).
+   sectionTitle: {
+     fontSize: FontSize.md,
+     fontWeight: FontWeight.bold,
+diff --git a/src/screens/EditTransactionScreen.tsx b/src/screens/EditTransactionScreen.tsx
+index e4b938a..e19c790 100644
+--- a/src/screens/EditTransactionScreen.tsx
++++ b/src/screens/EditTransactionScreen.tsx
+@@ -1,8 +1,8 @@
+ import React, { useState, useEffect, useCallback } from 'react';
+-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Alert } from 'react-native';
++import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal } from 'react-native';
+ import { SafeAreaView } from 'react-native-safe-area-context';
+ import { Ionicons } from '@expo/vector-icons';
+-import { Colors, FontSize, BorderRadius, Spacing } from '../constants/theme';
++import { Colors, FontSize } from '../constants/theme';
+ import api from '../services/api';
+ import { salesService } from '../services/sales.service';
+ import { productService } from '../services/product.service';
+@@ -235,7 +235,7 @@ export const EditTransactionScreen = () => {
+ 
+   if (loading) {
+     return (
+-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
++      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent' }}>
+         <ActivityIndicator size="large" color={Colors.primaryStart} />
+         <Text style={{ marginTop: 12, color: Colors.textSecondary }}>Memuat data transaksi...</Text>
+       </View>
+@@ -522,7 +522,7 @@ export const EditTransactionScreen = () => {
+ };
+ 
+ const styles = StyleSheet.create({
+-  container: { flex: 1, backgroundColor: Colors.background },
++  container: { flex: 1, backgroundColor: 'transparent' },  // WS-6: tembus ke AppBackground app-wide
+   header: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: Colors.surface, borderBottomWidth: 1, borderColor: Colors.border },
+   title: { fontSize: FontSize.lg, fontWeight: 'bold', color: Colors.textPrimary },
+   card: { padding: 16, backgroundColor: Colors.surface, borderRadius: 10, borderWidth: 1, borderColor: Colors.border },
+diff --git a/src/screens/FleetTrackingScreen.tsx b/src/screens/FleetTrackingScreen.tsx
+index 113261b..8f9d427 100644
+--- a/src/screens/FleetTrackingScreen.tsx
++++ b/src/screens/FleetTrackingScreen.tsx
+@@ -15,7 +15,6 @@ import {
+   FlatList,
+   Modal,
+   TextInput,
+-  Platform,
+   RefreshControl,
+   Animated,
+   Dimensions,
+@@ -1186,7 +1185,7 @@ export const FleetTrackingScreen: React.FC = () => {
+ };
+ 
+ const styles = StyleSheet.create({
+-  container: { flex: 1, backgroundColor: Colors.background },
++  container: { flex: 1, backgroundColor: 'transparent' },  // WS-6: tembus ke AppBackground app-wide
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+diff --git a/src/screens/InvoiceLayoutScreen.tsx b/src/screens/InvoiceLayoutScreen.tsx
+index 4219b12..fc1dd63 100644
+--- a/src/screens/InvoiceLayoutScreen.tsx
++++ b/src/screens/InvoiceLayoutScreen.tsx
+@@ -17,7 +17,7 @@ import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../
+ import { GlassCard, GradientButton } from '../components/ui';
+ import api from '../services/api';
+ import { API_ENDPOINTS, API_BASE_URL } from '../constants/api';
+-import { useInvoiceLayoutStore, LayoutType, toServerInvoiceSettings } from '../stores/invoice-layout.store';
++import { useInvoiceLayoutStore, toServerInvoiceSettings } from '../stores/invoice-layout.store';
+ import { AppToast } from '../utils/toast';
+ 
+ const THERMAL_PRESETS = ['58mm', '80mm', '76mm', '57mm'];
+@@ -802,7 +802,7 @@ export const InvoiceLayoutScreen: React.FC = () => {
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+   },
+   header: {
+     flexDirection: 'row',
+diff --git a/src/screens/LoginScreen.tsx b/src/screens/LoginScreen.tsx
+index dfce33a..6d9320d 100644
+--- a/src/screens/LoginScreen.tsx
++++ b/src/screens/LoginScreen.tsx
+@@ -10,7 +10,6 @@ import {
+   TouchableOpacity,
+   Keyboard,
+   Image,
+-  Alert,
+   ScrollView,
+   useWindowDimensions,
+ } from 'react-native';
+@@ -310,7 +309,7 @@ export const LoginScreen: React.FC = () => {
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+   },
+   keyboardView: {
+     flex: 1,
+@@ -439,16 +438,9 @@ const styles = StyleSheet.create({
+     marginTop: Spacing.xs,
+     width: '100%',
+   },
+-  checkboxWrapper: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    gap: 8,
+-  },
+-  checkboxLabel: {
+-    fontSize: FontSize.sm,
+-    color: Colors.textSecondary,
+-    fontWeight: FontWeight.medium,
+-  },
++  // WS-6: DIHAPUS — style checkboxWrapper & checkboxLabel tidak pernah
++  // dipakai (checkbox "ingat saya" sudah tidak ada; ingat login diatur
++  // otomatis lewat SecureStore 'saved_remember').
+   biometricBtn: {
+     flexDirection: 'row',
+     alignItems: 'center',
+diff --git a/src/screens/NotificationCenterScreen.tsx b/src/screens/NotificationCenterScreen.tsx
+index b514847..5ef05c5 100644
+--- a/src/screens/NotificationCenterScreen.tsx
++++ b/src/screens/NotificationCenterScreen.tsx
+@@ -368,7 +368,7 @@ export const NotificationCenterScreen: React.FC = () => {
+ };
+ 
+ const styles = StyleSheet.create({
+-  container: { flex: 1, backgroundColor: Colors.background },
++  container: { flex: 1, backgroundColor: 'transparent' },  // WS-6: tembus ke AppBackground app-wide
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+diff --git a/src/screens/POSScreen.tsx b/src/screens/POSScreen.tsx
+index 341d899..dc07e58 100644
+--- a/src/screens/POSScreen.tsx
++++ b/src/screens/POSScreen.tsx
+@@ -9,7 +9,6 @@ import {
+   ScrollView,
+   Modal,
+   ActivityIndicator,
+-  Alert,
+   KeyboardAvoidingView,
+   Platform,
+   BackHandler,
+@@ -1324,7 +1323,7 @@ export const POSScreen: React.FC = () => {
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+   },
+   header: {
+     padding: Spacing.lg,
+@@ -1721,12 +1720,8 @@ const styles = StyleSheet.create({
+     alignItems: 'center',
+     justifyContent: 'center',
+   },
+-  qtyText: {
+-    paddingHorizontal: 12,
+-    color: Colors.textPrimary,
+-    fontWeight: FontWeight.bold,
+-    fontSize: FontSize.md,
+-  },
++  // WS-6: DIHAPUS — style qtyText tidak pernah dipakai (jumlah di keranjang
++  // memakai qtyInput, bukan Text qtyText).
+   qtyInput: {
+     paddingHorizontal: 8,
+     paddingVertical: 0,
+diff --git a/src/screens/ProductsScreen.tsx b/src/screens/ProductsScreen.tsx
+index ec092ad..060fee6 100644
+--- a/src/screens/ProductsScreen.tsx
++++ b/src/screens/ProductsScreen.tsx
+@@ -1518,7 +1518,7 @@ export const ProductsScreen: React.FC = () => {
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+   },
+   header: {
+     padding: Spacing.lg,
+diff --git a/src/screens/PurchaseScreen.tsx b/src/screens/PurchaseScreen.tsx
+index 575ec6e..ebd4cf6 100644
+--- a/src/screens/PurchaseScreen.tsx
++++ b/src/screens/PurchaseScreen.tsx
+@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
+ import { Ionicons } from '@expo/vector-icons';
+ import * as Print from 'expo-print';
+ import * as Sharing from 'expo-sharing';
+-import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
++import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
+ import { GlassCard, GradientButton } from '../components/ui';
+ import { DatePickerInput } from '../components/ui/DatePickerInput';
+ import { purchaseService } from '../services/purchase.service';
+@@ -1112,7 +1112,7 @@ export const PurchaseScreen: React.FC = () => {
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+   },
+   header: {
+     flexDirection: 'row',
+@@ -1228,14 +1228,9 @@ const styles = StyleSheet.create({
+     justifyContent: 'center',
+   },
+   statusTextSm: { fontSize: 9, fontWeight: 'bold' },
+-  poCard: {
+-    backgroundColor: Colors.backgroundSecondary,
+-  },
+-  poNumber: {
+-    fontSize: FontSize.md,
+-    fontWeight: FontWeight.bold,
+-    color: Colors.primaryStart,
+-  },
++  // WS-6: DIHAPUS — style poCard, poNumber, supplierName, purchaseDate,
++  // totalLabel, totalValue, itemsCount tidak pernah dipakai (kartu PO lama;
++  // tampilannya sekarang memakai GlassCard + style details*).
+   statusBadge: {
+     paddingHorizontal: 8,
+     paddingVertical: 3,
+@@ -1245,37 +1240,11 @@ const styles = StyleSheet.create({
+     fontSize: 9,
+     fontWeight: FontWeight.bold,
+   },
+-  supplierName: {
+-    fontSize: FontSize.md,
+-    fontWeight: FontWeight.semibold,
+-    color: Colors.textPrimary,
+-    marginTop: Spacing.xs,
+-  },
+-  purchaseDate: {
+-    fontSize: 11,
+-    color: Colors.textTertiary,
+-    marginTop: 2,
+-  },
+   divider: {
+     height: 1,
+     backgroundColor: Colors.border,
+     marginVertical: Spacing.md,
+   },
+-  totalLabel: {
+-    fontSize: 10,
+-    color: Colors.textTertiary,
+-    textTransform: 'uppercase',
+-  },
+-  totalValue: {
+-    fontSize: FontSize.md,
+-    fontWeight: FontWeight.bold,
+-    color: Colors.textPrimary,
+-  },
+-  itemsCount: {
+-    fontSize: FontSize.xs,
+-    fontWeight: FontWeight.bold,
+-    color: Colors.primaryStart,
+-  },
+   rowBetween: {
+     flexDirection: 'row',
+     justifyContent: 'space-between',
+diff --git a/src/screens/ReportsScreen.tsx b/src/screens/ReportsScreen.tsx
+index 7313aa0..5de2a1e 100644
+--- a/src/screens/ReportsScreen.tsx
++++ b/src/screens/ReportsScreen.tsx
+@@ -3,7 +3,6 @@ import {
+   View,
+   Text,
+   StyleSheet,
+-  FlatList,
+   TouchableOpacity,
+   ScrollView,
+   ActivityIndicator,
+@@ -384,7 +383,7 @@ export const ReportsScreen: React.FC = () => {
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+   },
+   contentContainer: {
+     padding: Spacing.lg,
+@@ -392,7 +391,7 @@ const styles = StyleSheet.create({
+   },
+   loadingBox: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+     alignItems: 'center',
+     justifyContent: 'center',
+   },
+diff --git a/src/screens/StockOpnameScreen.tsx b/src/screens/StockOpnameScreen.tsx
+index 3758fc1..f89de07 100644
+--- a/src/screens/StockOpnameScreen.tsx
++++ b/src/screens/StockOpnameScreen.tsx
+@@ -14,8 +14,8 @@ import {
+ } from 'react-native';
+ import { SafeAreaView } from 'react-native-safe-area-context';
+ import { Ionicons } from '@expo/vector-icons';
+-import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
+-import { GlassCard, GradientButton, StatusBadge } from '../components/ui';
++import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
++import { GlassCard, GradientButton } from '../components/ui';
+ import { stockService, StockMovement } from '../services/stock.service';
+ import { productService } from '../services/product.service';
+ import { useAuthStore } from '../stores/auth.store';
+@@ -562,7 +562,7 @@ export const StockOpnameScreen: React.FC = () => {
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,
+-    backgroundColor: Colors.background,
++    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
+   },
+   header: {
+     padding: Spacing.lg,
+diff --git a/src/screens/TransactionHistoryScreen.tsx b/src/screens/TransactionHistoryScreen.tsx
+index 40e145e..3be185c 100644
+--- a/src/screens/TransactionHistoryScreen.tsx
++++ b/src/screens/TransactionHistoryScreen.tsx
+@@ -14,13 +14,12 @@ import {
+   ScrollView,
+   ActivityIndicator,
+   RefreshControl,
+-  Alert,
+   Share,
+   Image,
+ } from 'react-native';
+ import { SafeAreaView } from 'react-native-safe-area-context';
+ import { Ionicons } from '@expo/vector-icons';
+-import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
++import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
+ import { GlassCard, GradientButton } from '../components/ui';
+ import { DatePickerInput } from '../components/ui/DatePickerInput';
+ import { ProofImageUploader } from '../components/ui/ProofImageUploader';
+@@ -868,7 +867,7 @@ export const TransactionHistoryScreen: React.FC = () => {
+ };
+ 
+ const styles = StyleSheet.create({
+-  container: { flex: 1, backgroundColor: Colors.background },
++  container: { flex: 1, backgroundColor: 'transparent' },  // WS-6: tembus ke AppBackground app-wide
+   searchBar: {
+     flexDirection: 'row',
+     padding: Spacing.lg,
+@@ -979,7 +978,8 @@ const styles = StyleSheet.create({
+     borderRadius: BorderRadius.full,
+   },
+   statusText: { fontSize: 10, fontWeight: FontWeight.bold },
+-  paymentMethod: { fontSize: 11, color: Colors.textTertiary },
++  // WS-6: DIHAPUS — style paymentMethod tidak pernah dipakai (metode bayar
++  // ditampilkan lewat chip/filter, bukan style ini).
+   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 },
+   loadingText: { color: Colors.textSecondary, fontSize: FontSize.sm },
+   emptyBox: { alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 },
+diff --git a/src/screens/VerifyOtpScreen.tsx b/src/screens/VerifyOtpScreen.tsx
+index 1a08331..910aa66 100644
+--- a/src/screens/VerifyOtpScreen.tsx
++++ b/src/screens/VerifyOtpScreen.tsx
+@@ -250,7 +250,7 @@ export const VerifyOtpScreen: React.FC = () => {
+ };
+ 
+ const styles = StyleSheet.create({
+-  container: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
++  container: { flex: 1, backgroundColor: 'transparent', justifyContent: 'center' },  // WS-6: tembus ke AppBackground app-wide
+   keyboardView: { flex: 1, justifyContent: 'center' },
+   scrollView: { flex: 1 },
+   scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: Spacing.xl },

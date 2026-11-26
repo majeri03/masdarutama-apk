@@ -1,0 +1,74 @@
+diff --git a/src/constants/theme.ts b/src/constants/theme.ts
+index 806b7f3..e045e16 100644
+--- a/src/constants/theme.ts
++++ b/src/constants/theme.ts
+@@ -8,7 +8,7 @@ export const Colors = {
+   background: '#F5F5F4',           // abu terang netral (bukan biru-abu) — WS-9
+   backgroundSecondary: '#FFFFFF',  // white for cards / bars
+   surface: '#FFFFFF',
+-  surfaceLight: '#F8FAFC',
++  surfaceLight: '#FAFAF9',  // abu hangat netral (stone-50) — WS-7: dulu #F8FAFC biru-abu slate
+ 
+   glass: 'rgba(255, 255, 255, 0.72)',
+   glassBorder: 'rgba(0, 0, 0, 0.08)',
+@@ -57,7 +57,7 @@ export const Gradients = {
+   secondary: [Colors.secondaryStart, Colors.secondaryEnd] as const,
+   accent: [Colors.accentStart, Colors.accentEnd] as const,
+   light: ['#FFFFFF', '#F5F5F4'] as const,  // WS-9: samakan dengan Colors.background
+-  surface: ['rgba(255, 255, 255, 0.85)', 'rgba(248, 250, 252, 0.70)'] as const,
++  surface: ['rgba(255, 255, 255, 0.85)', 'rgba(245, 245, 244, 0.70)'] as const,  // WS-7: dulu rgba(248,250,252) biru-abu
+   card: ['rgba(255, 255, 255, 0.80)', 'rgba(255, 255, 255, 0.50)'] as const,
+ } as const;
+ 
+@@ -131,7 +131,7 @@ export const Shadow = {
+     elevation: 6,
+   }),
+   card: {
+-    shadowColor: '#94A3B8',
++    shadowColor: '#A8A29E',  // WS-7: abu hangat netral (stone-400), dulu #94A3B8 slate kebiruan
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.12,
+     shadowRadius: 12,
+diff --git a/src/screens/SettingsScreen.tsx b/src/screens/SettingsScreen.tsx
+index 5e256d9..a2688e1 100644
+--- a/src/screens/SettingsScreen.tsx
++++ b/src/screens/SettingsScreen.tsx
+@@ -148,9 +148,12 @@ export const SettingsScreen: React.FC = () => {
+           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />
+         }
+       >
+-        {/* STORE INFO BANNER */}
++        {/* STORE INFO BANNER — WS-7: tanpa tinted, kaca putih bersih sama
++            seperti kartu lain di Settings. Varian tinted (merah 0.08 di atas
++            BlurView) terbaca abu di Android dan diduga penyebab kartu ini
++            terlihat abu-ungu di screenshot user. */}
+         {storeSettings && (
+-          <GlassCard padding={20} style={styles.storeBanner} tinted>
++          <GlassCard padding={20} style={styles.storeBanner}>
+             <View style={styles.storeInfoRow}>
+               <View style={[styles.storeIconBg, { backgroundColor: 'transparent', padding: 0, width: 52, height: 52 }]}>
+                 <Image
+diff --git a/src/utils/quickActions.ts b/src/utils/quickActions.ts
+index fc0e92c..574c4f1 100644
+--- a/src/utils/quickActions.ts
++++ b/src/utils/quickActions.ts
+@@ -163,7 +163,7 @@ export const QUICK_ACTION_CATALOG: QuickActionDef[] = [
+     label: 'Tracking Armada',
+     desc: 'Live GPS & peta rute',
+     icon: 'car-outline',
+-    iconBg: '#2563EB18',
++    iconBg: Colors.primaryStart + '18',  // WS-7: merah merek, dulu biru #2563EB18
+     iconColor: Colors.primaryStart,
+     route: 'FleetTracking',
+     target: 'stack',
+@@ -196,8 +196,8 @@ export const QUICK_ACTION_CATALOG: QuickActionDef[] = [
+     label: 'Desain Invoice',
+     desc: 'Layout struk & faktur',
+     icon: 'color-palette-outline',
+-    iconBg: '#DB277718',
+-    iconColor: '#DB2777',
++    iconBg: Colors.primaryStart + '18',  // WS-7: merah merek, dulu pink #DB277718
++    iconColor: Colors.primaryStart,  // WS-7: merah merek, dulu pink #DB2777
+     route: 'InvoiceLayout',
+     target: 'stack',
+     pageKey: 'invoice_layout',

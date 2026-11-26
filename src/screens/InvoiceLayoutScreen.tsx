@@ -17,7 +17,7 @@ import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../
 import { GlassCard, GradientButton } from '../components/ui';
 import api from '../services/api';
 import { API_ENDPOINTS, API_BASE_URL } from '../constants/api';
-import { useInvoiceLayoutStore, LayoutType, toServerInvoiceSettings } from '../stores/invoice-layout.store';
+import { useInvoiceLayoutStore, toServerInvoiceSettings } from '../stores/invoice-layout.store';
 import { AppToast } from '../utils/toast';
 
 const THERMAL_PRESETS = ['58mm', '80mm', '76mm', '57mm'];
@@ -802,7 +802,7 @@ export const InvoiceLayoutScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
   },
   header: {
     flexDirection: 'row',

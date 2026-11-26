@@ -149,6 +149,22 @@ export const authService = {
   },
 
   /**
+   * Perbarui user tersimpan (mis. habis ganti foto profil) tanpa login ulang.
+   * WS-9 (26 Nov 2026): dipakai ProfileScreen setelah upload/hapus avatar
+   * supaya avatarUrl baru tetap ada saat aplikasi dibuka offline.
+   */
+  async updateStoredUser(user: AuthUser): Promise<void> {
+    try {
+      await SecureStore.setItemAsync(
+        SECURE_STORE_KEYS.USER_DATA,
+        JSON.stringify(user)
+      );
+    } catch (error) {
+      console.warn('[AUTH] Gagal memperbarui user tersimpan:', error);
+    }
+  },
+
+  /**
    * Logout - clear all stored session data.
    */
   async logout(): Promise<void> {

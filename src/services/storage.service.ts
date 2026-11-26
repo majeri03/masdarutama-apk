@@ -43,8 +43,17 @@ export type StorageCleanupTarget =
 export interface StorageCleanupParams {
   target: StorageCleanupTarget;
   categoryId?: string;
-  olderThanDays?: number;
+  /**
+   * WAJIB diisi — backend menolak (400) permintaan cleanup tanpa
+   * olderThanDays. 0 = "semua umur": hapus semua file target tanpa batas
+   * umur (untuk tombol "Hapus Semua" / "Hapus Foto" per kategori).
+   * 1–365 = hanya file yang dibuat lebih dari N hari lalu.
+   */
+  olderThanDays: number;
 }
+
+/** olderThanDays = 0 → hapus semua umur (tanpa batas umur). */
+export const CLEANUP_ALL_DAYS = 0;
 
 export const storageService = {
   /**

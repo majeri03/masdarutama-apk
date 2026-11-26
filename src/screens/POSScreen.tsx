@@ -9,7 +9,6 @@ import {
   ScrollView,
   Modal,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   BackHandler,
@@ -1324,7 +1323,7 @@ export const POSScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',  // WS-6: tembus ke AppBackground app-wide
   },
   header: {
     padding: Spacing.lg,
@@ -1721,12 +1720,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  qtyText: {
-    paddingHorizontal: 12,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.bold,
-    fontSize: FontSize.md,
-  },
+  // WS-6: DIHAPUS — style qtyText tidak pernah dipakai (jumlah di keranjang
+  // memakai qtyInput, bukan Text qtyText).
   qtyInput: {
     paddingHorizontal: 8,
     paddingVertical: 0,

@@ -341,7 +341,7 @@ export const AppUpdateScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: 'transparent' },  // WS-6: tembus ke AppBackground app-wide
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -537,10 +537,8 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     lineHeight: 17,
   },
-  // re-use from DeviceSettings
-  border: {
-    borderColor: (Colors as any).border,
-  },
+  // WS-6: DIHAPUS — style border ("re-use from DeviceSettings") tidak
+  // pernah dipakai di layar ini.
 });
 
 export default AppUpdateScreen;

@@ -1,0 +1,431 @@
+diff --git a/src/screens/DeliveryScreen.tsx b/src/screens/DeliveryScreen.tsx
+index 673118b..ca92813 100644
+--- a/src/screens/DeliveryScreen.tsx
++++ b/src/screens/DeliveryScreen.tsx
+@@ -69,6 +69,36 @@ interface DeliveryOrder {
+   sale?: { id: string; invoiceNumber: string } | null;
+ }
+ 
++// ── WS-4 (26 Nov 2026): tempel nomor invoice & plat turunan sopir ────────
++/** Samakan format nomor invoice — huruf besar, '/' jadi '-'. */
++const normalizeInvoiceNumber = (v: string): string =>
++  v.trim().toUpperCase().replace(/\//g, '-');
++/** Bentuk nomor invoice lengkap, mis. INV/20261125-0002 atau INV-20261125-0002. */
++const INVOICE_NUMBER_PATTERN = /^INV[/-]\d{8}-\d+$/i;
++
++const normalizeDriverName = (v: string): string => v.trim().toLowerCase();
++/** Label kendaraan seperti yang selama ini disimpan di DO: "DD 1234 AB (Toyota)". */
++const vehicleDescOf = (f: any): string =>
++  f?.brand ? `${f.plateNumber} (${f.brand})` : f.plateNumber;
++/** Ambil plat dari label kendaraan: "DD 1234 AB (Toyota)" -> "DD 1234 AB". */
++const extractPlateNumber = (vehicle: string): string =>
++  vehicle.replace(/\s*\([^)]*\)\s*$/, '').trim();
++/** Kendaraan armada milik sopir (cocok nama, abaikan huruf besar/kecil + spasi). */
++const vehiclesForDriver = (fleet: any[], driverName: string): any[] =>
++  (fleet || []).filter(
++    (f: any) =>
++      f?.plateNumber &&
++      normalizeDriverName(f.driverName || '') === normalizeDriverName(driverName)
++  );
++/** Benar bila plat yang terisi adalah salah satu kendaraan sopir itu (atau plat ketikan manual). */
++const isDerivedVehicle = (fleet: any[], driverName: string, vehicleVal: string): boolean => {
++  const vs = vehiclesForDriver(fleet, driverName);
++  return (
++    vs.length > 0 &&
++    vs.some((f) => vehicleDescOf(f) === vehicleVal || f.plateNumber === vehicleVal)
++  );
++};
++
+ export const DeliveryScreen: React.FC = () => {
+   const navigation = useNavigation<any>();
+   const route = useRoute<any>();
+@@ -228,42 +258,73 @@ export const DeliveryScreen: React.FC = () => {
+     } else {
+       setDriver(driverName);
+     }
+-    if (driverName) {
+-      const match = fleetList.find(
+-        (f) => f.driverName?.toLowerCase().trim() === driverName.toLowerCase().trim()
+-      );
+-      if (match && match.plateNumber) {
+-        const vehicleDesc = match.brand
+-          ? `${match.plateNumber} (${match.brand})`
+-          : match.plateNumber;
+-        if (isEdit) {
+-          setEditVehicle(vehicleDesc);
+-        } else {
+-          setVehicle(vehicleDesc);
+-        }
++    // WS-4: plat adalah TURUNAN sopir, bukan pilihan bebas. 1 kendaraan:
++    // langsung terisi otomatis. >1 kendaraan: user pilih SATU dari
++    // kendaraan sopir itu. 0 kendaraan: plat dikosongkan + tampil pesan.
++    const vehicles = vehiclesForDriver(fleetList, driverName);
++    if (vehicles.length === 1) {
++      const desc = vehicleDescOf(vehicles[0]);
++      if (isEdit) {
++        setEditVehicle(desc);
++      } else {
++        setVehicle(desc);
++      }
++    } else {
++      if (isEdit) {
++        setEditVehicle('');
++      } else {
++        setVehicle('');
+       }
+     }
+   };
+ 
+-  const handleSelectVehicle = (plateVal: string, isEdit = false) => {
++  /** Pilih satu kendaraan milik sopir yang sudah dipilih (kasus sopir >1 kendaraan). */
++  const handleSelectDriverVehicle = (desc: string, isEdit = false) => {
+     if (isEdit) {
+-      setEditVehicle(plateVal);
++      setEditVehicle(desc);
+     } else {
+-      setVehicle(plateVal);
++      setVehicle(desc);
+     }
+-    if (plateVal) {
+-      const match = fleetList.find((f) => {
+-        const desc = f.brand ? `${f.plateNumber} (${f.brand})` : f.plateNumber;
+-        return f.plateNumber === plateVal || desc === plateVal;
+-      });
+-      if (match && match.driverName) {
+-        if (isEdit && !editDriver) {
+-          setEditDriver(match.driverName);
+-        } else if (!isEdit && !driver) {
+-          setDriver(match.driverName);
+-        }
++  };
++
++  /** Ketik nama sopir manual: kalau teks baru bukan lagi sopir armada, plat turunan ikut dihapus. */
++  const handleDriverTextChange = (text: string, isEdit = false) => {
++    if (isEdit) {
++      setEditDriver(text);
++      setEditDriverSearchQuery(text);
++      if (
++        isDerivedVehicle(fleetList, editDriver, editVehicle) &&
++        vehiclesForDriver(fleetList, text).length === 0
++      ) {
++        setEditVehicle('');
+       }
++    } else {
++      setDriver(text);
++      setDriverSearchQuery(text);
++      if (
++        isDerivedVehicle(fleetList, driver, vehicle) &&
++        vehiclesForDriver(fleetList, text).length === 0
++      ) {
++        setVehicle('');
++      }
++    }
++  };
++
++  /** Penjaga kirim: tolak pasangan sopir-plat yang tidak cocok (cermin validasi server). */
++  const checkDriverVehiclePair = (driverName: string, vehicleVal: string): string | null => {
++    const drv = driverName.trim();
++    if (!drv) return null;
++    const vehicles = vehiclesForDriver(fleetList, drv);
++    if (vehicles.length === 0) return null; // Sopir luar — plat manual dibolehkan.
++    if (!vehicleVal.trim()) {
++      return `Sopir ${drv} punya ${vehicles.length} kendaraan — pilih plat kendaraannya.`;
+     }
++    const plate = extractPlateNumber(vehicleVal);
++    const ok = vehicles.some((f) => f.plateNumber.trim().toUpperCase() === plate.toUpperCase());
++    if (!ok) {
++      return `Plat ${plate} bukan kendaraan sopir ${drv}.`;
++    }
++    return null;
+   };
+ 
+   // Add Item to DO form
+@@ -422,8 +483,14 @@ export const DeliveryScreen: React.FC = () => {
+     const seq = ++saleSearchSeqRef.current;
+     setIsLoadingSales(true);
+     try {
++      // WS-4: tempelan nomor invoice sering membawa spasi/enter dari
++      // clipboard. Kalau yang ditempel berbentuk nomor invoice lengkap
++      // (INV/... atau INV-...), buang semua spasi dulu; pencarian nama
++      // pelanggan tetap memakai teks asli.
++      const qNoSpace = q.replace(/\s+/g, '');
++      const lookupTerm = INVOICE_NUMBER_PATTERN.test(qNoSpace) ? qNoSpace : q;
+       const baseFilters: any = { limit: 30 };
+-      if (q) baseFilters.search = q;
++      if (q) baseFilters.search = lookupTerm;
+       if (d) {
+         baseFilters.dateFrom = toLocalDateStr(d);
+         baseFilters.dateTo = toLocalDateStr(d);
+@@ -442,6 +509,24 @@ export const DeliveryScreen: React.FC = () => {
+       });
+       sales.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+       setSalesList(sales);
++      // WS-4: tempel nomor invoice lengkap -> kalau cocok PERSIS satu
++      // transaksi, langsung tautkan (pelanggan + item terisi) tanpa
++      // menunggu ketukan pada baris hasil.
++      if (INVOICE_NUMBER_PATTERN.test(qNoSpace)) {
++        const normQ = normalizeInvoiceNumber(qNoSpace);
++        const exact = sales.find(
++          (s: any) => normalizeInvoiceNumber(String(s.invoiceNumber || '')) === normQ
++        );
++        if (exact) {
++          selectSale(exact);
++          AppToast.success('Ditemukan', `Invoice ${exact.invoiceNumber} terhubung — pelanggan & barang terisi otomatis.`);
++          return;
++        }
++        if (sales.length === 0) {
++          AppToast.info('Tidak Ditemukan', `Invoice ${qNoSpace} tidak ditemukan, atau sudah dibuatkan Surat Jalan.`);
++          return;
++        }
++      }
+       if (sales.length === 0) {
+         AppToast.info('Tidak Ditemukan', 'Tidak ada transaksi yang cocok.');
+       }
+@@ -469,6 +554,17 @@ export const DeliveryScreen: React.FC = () => {
+     }
+   }, [showCreateModal]);
+ 
++  // WS-4: modal Edit juga butuh daftar armada (turunan sopir -> plat).
++  // Dulu fleetList hanya dimuat saat modal Buat dibuka, jadi edit yang
++  // dibuka duluan tidak punya data sopir/kendaraan sama sekali.
++  useEffect(() => {
++    if (showEditModal && fleetList.length === 0) {
++      masterService.getFleetVehicles().then((res) => {
++        if (res.success && res.data) setFleetList(res.data);
++      }).catch((e) => console.warn('[DELIVERY] Error loading fleet for edit:', e));
++    }
++  }, [showEditModal]);
++
+   // ── FIX C1 (Nov 2026) ────────────────────────────────────────────────
+   // Tiga fungsi ini DIPANGGIL di layar (hasil cari sale, tombol "Tanpa POS",
+   // tombol Batal, dan setelah DO berhasil dibuat) tapi DEFINISINYA HILANG
+@@ -543,6 +639,12 @@ export const DeliveryScreen: React.FC = () => {
+       AppToast.error('Peringatan', 'Ada item dengan kuantitas tidak valid (harus > 0).');
+       return;
+     }
++    // WS-4: tolak pasangan sopir-plat yang tidak cocok sebelum kirim.
++    const pairError = checkDriverVehiclePair(driver, vehicle);
++    if (pairError) {
++      AppToast.error('Peringatan', pairError);
++      return;
++    }
+ 
+     setIsCreatingDO(true);
+     try {
+@@ -664,6 +766,12 @@ export const DeliveryScreen: React.FC = () => {
+       AppToast.error('Peringatan', 'Nama penerima wajib diisi saat status Diterima.');
+       return;
+     }
++    // WS-4: tolak pasangan sopir-plat yang tidak cocok sebelum kirim.
++    const editPairError = checkDriverVehiclePair(editDriver, editVehicle);
++    if (editPairError) {
++      AppToast.error('Peringatan', editPairError);
++      return;
++    }
+ 
+     setIsSavingEdit(true);
+     try {
+@@ -1013,6 +1121,12 @@ export const DeliveryScreen: React.FC = () => {
+ 
+   const activeProduct = selectedProduct;
+ 
++  // WS-4: kendaraan milik sopir yang sedang dipilih (plat turunan sopir).
++  const createDriverVehicles = vehiclesForDriver(fleetList, driver);
++  const createVehicleLocked = createDriverVehicles.length > 0;
++  const editDriverVehicles = vehiclesForDriver(fleetList, editDriver);
++  const editVehicleLocked = editDriverVehicles.length > 0;
++
+   return (
+     <SafeAreaView style={styles.container}>
+       {/* Header */}
+@@ -1547,6 +1661,8 @@ export const DeliveryScreen: React.FC = () => {
+                     value={saleSearch}
+                     onChangeText={setSaleSearch}
+                     onSubmitEditing={() => searchSales()}
++                    autoCapitalize="characters"
++                    autoCorrect={false}
+                   />
+                   <TouchableOpacity
+                     style={{ backgroundColor: Colors.primaryStart, paddingHorizontal: 14, borderRadius: 8, justifyContent: 'center' }}
+@@ -1570,7 +1686,10 @@ export const DeliveryScreen: React.FC = () => {
+ 
+                 {/* Hasil pencarian */}
+                 {salesList.length > 0 ? (
+-                  <View style={[styles.pickerContainer, { maxHeight: 260 }]}>
++                  <View style={styles.saleResultsContainer}>
++                    <Text style={{ fontSize: 11, color: Colors.textSecondary, paddingHorizontal: 10, paddingTop: 8 }}>
++                      Ditemukan {salesList.length} transaksi — ketuk untuk menghubungkan:
++                    </Text>
+                     <TouchableOpacity
+                       style={[styles.pickerOption, { alignSelf: 'stretch' }, selectedSaleId === '' && styles.pickerOptionActive]}
+                       onPress={resetToManual}
+@@ -1582,6 +1701,7 @@ export const DeliveryScreen: React.FC = () => {
+                     <FlatList
+                       data={salesList}
+                       keyExtractor={(item: any) => item.id}
++                      nestedScrollEnabled
+                       renderItem={({ item: sale }: any) => (
+                         <TouchableOpacity
+                           style={[styles.pickerOption, { alignSelf: 'stretch', marginVertical: 2 }, selectedSaleId === sale.id && styles.pickerOptionActive]}
+@@ -1622,10 +1742,7 @@ export const DeliveryScreen: React.FC = () => {
+                 <TextInput
+                   style={styles.textInput}
+                   value={driver}
+-                  onChangeText={(text) => {
+-                    setDriver(text);
+-                    setDriverSearchQuery(text);
+-                  }}
++                  onChangeText={(text) => handleDriverTextChange(text, false)}
+                   placeholder="Ketik nama sopir..."
+                   placeholderTextColor={Colors.textTertiary}
+                 />
+@@ -1653,13 +1770,31 @@ export const DeliveryScreen: React.FC = () => {
+                 })()}
+               </View>
+ 
++              {/* WS-4: plat TURUNAN sopir — terkunci & terisi otomatis. */}
+               <View style={styles.inputGroup}>
+                 <Text style={styles.inputLabel}>Plat Nomor / Kendaraan Armada</Text>
+-                {fleetList.length > 0 && (
++                {!driver.trim() ? (
++                  <Text style={{ fontSize: 11, color: Colors.textTertiary, marginBottom: 6 }}>
++                    Pilih sopir dulu — plat terisi otomatis dari kendaraan sopir.
++                  </Text>
++                ) : createDriverVehicles.length === 0 ? (
++                  <Text style={{ fontSize: 11, color: Colors.warning, marginBottom: 6 }}>
++                    Sopir "{driver.trim()}" tidak ada di data armada — isi plat manual (sopir luar/borongan).
++                  </Text>
++                ) : createDriverVehicles.length === 1 ? (
++                  <Text style={{ fontSize: 11, color: Colors.success, marginBottom: 6 }}>
++                    Plat terisi otomatis — sopir ini punya 1 kendaraan.
++                  </Text>
++                ) : (
++                  <Text style={{ fontSize: 11, color: Colors.textSecondary, marginBottom: 6 }}>
++                    Sopir ini punya {createDriverVehicles.length} kendaraan — pilih satu:
++                  </Text>
++                )}
++                {createDriverVehicles.length > 1 && (
+                   <View style={{ marginBottom: 6 }}>
+                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
+-                      {fleetList.filter((f) => f.plateNumber).map((f) => {
+-                        const label = f.brand ? `${f.plateNumber} (${f.brand})` : f.plateNumber;
++                      {createDriverVehicles.map((f) => {
++                        const label = vehicleDescOf(f);
+                         const isSelected = vehicle === f.plateNumber || vehicle === label;
+                         return (
+                           <TouchableOpacity
+@@ -1669,7 +1804,7 @@ export const DeliveryScreen: React.FC = () => {
+                               isSelected && styles.pickerOptionActive,
+                               { paddingHorizontal: 10, paddingVertical: 6 }
+                             ]}
+-                            onPress={() => handleSelectVehicle(label, false)}
++                            onPress={() => handleSelectDriverVehicle(label, false)}
+                           >
+                             <Text style={[styles.pickerOptionText, isSelected && styles.pickerOptionTextActive, { fontSize: 11 }]}>
+                               {label}
+@@ -1681,11 +1816,12 @@ export const DeliveryScreen: React.FC = () => {
+                   </View>
+                 )}
+                 <TextInput
+-                  style={styles.textInput}
++                  style={[styles.textInput, createVehicleLocked && { backgroundColor: Colors.glass, color: Colors.textSecondary }]}
+                   value={vehicle}
+                   onChangeText={setVehicle}
+-                  placeholder="Contoh: DD 1234 AB"
++                  placeholder={createVehicleLocked ? 'Plat terisi otomatis dari sopir' : 'Contoh: DD 1234 AB'}
+                   placeholderTextColor={Colors.textTertiary}
++                  editable={!createVehicleLocked}
+                 />
+               </View>
+ 
+@@ -1928,10 +2064,7 @@ export const DeliveryScreen: React.FC = () => {
+                   <TextInput
+                     style={styles.textInput}
+                     value={editDriver}
+-                    onChangeText={(text) => {
+-                      setEditDriver(text);
+-                      setEditDriverSearchQuery(text);
+-                    }}
++                    onChangeText={(text) => handleDriverTextChange(text, true)}
+                     placeholder="Nama sopir pengantar"
+                     placeholderTextColor={Colors.textTertiary}
+                   />
+@@ -1959,15 +2092,58 @@ export const DeliveryScreen: React.FC = () => {
+                   })()}
+                 </View>
+ 
+-                {/* Kendaraan */}
++                {/* Kendaraan — WS-4: plat TURUNAN sopir, terkunci & terisi otomatis. */}
+                 <View style={styles.inputGroup}>
+                   <Text style={styles.inputLabel}>Plat Nomor / Armada</Text>
++                  {!editDriver.trim() ? (
++                    <Text style={{ fontSize: 11, color: Colors.textTertiary, marginBottom: 6 }}>
++                      Pilih sopir dulu — plat terisi otomatis dari kendaraan sopir.
++                    </Text>
++                  ) : editDriverVehicles.length === 0 ? (
++                    <Text style={{ fontSize: 11, color: Colors.warning, marginBottom: 6 }}>
++                      Sopir "{editDriver.trim()}" tidak ada di data armada — isi plat manual (sopir luar/borongan).
++                    </Text>
++                  ) : editDriverVehicles.length === 1 ? (
++                    <Text style={{ fontSize: 11, color: Colors.success, marginBottom: 6 }}>
++                      Plat terisi otomatis — sopir ini punya 1 kendaraan.
++                    </Text>
++                  ) : (
++                    <Text style={{ fontSize: 11, color: Colors.textSecondary, marginBottom: 6 }}>
++                      Sopir ini punya {editDriverVehicles.length} kendaraan — pilih satu:
++                    </Text>
++                  )}
++                  {editDriverVehicles.length > 1 && (
++                    <View style={{ marginBottom: 6 }}>
++                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
++                        {editDriverVehicles.map((f) => {
++                          const label = vehicleDescOf(f);
++                          const isSelected = editVehicle === f.plateNumber || editVehicle === label;
++                          return (
++                            <TouchableOpacity
++                              key={f.id || f.plateNumber}
++                              style={[
++                                styles.pickerOption,
++                                isSelected && styles.pickerOptionActive,
++                                { paddingHorizontal: 10, paddingVertical: 6 }
++                              ]}
++                              onPress={() => handleSelectDriverVehicle(label, true)}
++                            >
++                              <Text style={[styles.pickerOptionText, isSelected && styles.pickerOptionTextActive, { fontSize: 11 }]}>
++                                {label}
++                              </Text>
++                            </TouchableOpacity>
++                          );
++                        })}
++                      </ScrollView>
++                    </View>
++                  )}
+                   <TextInput
+-                    style={styles.textInput}
++                    style={[styles.textInput, editVehicleLocked && { backgroundColor: Colors.glass, color: Colors.textSecondary }]}
+                     value={editVehicle}
+                     onChangeText={setEditVehicle}
+-                    placeholder="Contoh: DD 1234 AB"
++                    placeholder={editVehicleLocked ? 'Plat terisi otomatis dari sopir' : 'Contoh: DD 1234 AB'}
+                     placeholderTextColor={Colors.textTertiary}
++                    editable={!editVehicleLocked}
+                   />
+                 </View>
+ 
+@@ -2320,6 +2496,16 @@ const styles = StyleSheet.create({
+   pickerContainer: {
+     height: 40,
+   },
++  // WS-4: wadah hasil cari invoice — JANGAN pakai pickerContainer (height 40)
++  // karena daftar hasil jadi terpotong 40px dan barisnya tidak bisa diketuk.
++  saleResultsContainer: {
++    backgroundColor: Colors.glass,
++    borderWidth: 1,
++    borderColor: Colors.glassBorder,
++    borderRadius: BorderRadius.md,
++    maxHeight: 260,
++    overflow: 'hidden',
++  },
+   pickerScroll: {
+     gap: Spacing.sm,
+   },

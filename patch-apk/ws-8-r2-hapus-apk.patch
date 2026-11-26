@@ -1,0 +1,108 @@
+diff --git a/src/screens/StorageManagerScreen.tsx b/src/screens/StorageManagerScreen.tsx
+index ba5079e..c1cf09b 100644
+--- a/src/screens/StorageManagerScreen.tsx
++++ b/src/screens/StorageManagerScreen.tsx
+@@ -14,9 +14,22 @@ import { useNavigation } from '@react-navigation/native';
+ import { Ionicons } from '@expo/vector-icons';
+ import { Colors, BorderRadius, Spacing, FontSize, FontWeight, Shadow } from '../constants/theme';
+ import { GlassCard, GradientButton } from '../components/ui';
+-import { storageService, StorageStatsData, StorageCleanupTarget } from '../services/storage.service';
++import { storageService, StorageStatsData, StorageCleanupTarget, CLEANUP_ALL_DAYS } from '../services/storage.service';
+ import { AppToast } from '../utils/toast';
+ 
++/**
++ * Pesan validasi mentah dari backend (mis. "olderThanDays wajib diisi...")
++ * diterjemahkan ke bahasa yang dimengerti pengguna. Pesan lain yang sudah
++ * ramah (mis. "Hanya Admin / Super Admin...") diteruskan apa adanya.
++ */
++function humanizeCleanupError(error?: string): string {
++  if (!error) return 'Terjadi kesalahan saat menghapus gambar.';
++  if (error.includes('olderThanDays')) {
++    return 'Server menolak permintaan hapus ini. Pastikan aplikasi web (backend) sudah diperbarui ke versi terbaru, lalu coba lagi.';
++  }
++  return error;
++}
++
+ export const StorageManagerScreen: React.FC = () => {
+   const navigation = useNavigation<any>();
+   const [loading, setLoading] = useState(true);
+@@ -54,7 +67,9 @@ export const StorageManagerScreen: React.FC = () => {
+     message: string,
+     target: StorageCleanupTarget,
+     categoryId?: string,
+-    olderThanDays?: number,
++    // WAJIB diisi: backend menolak cleanup tanpa olderThanDays (400).
++    // 0 = semua umur (tombol "Hapus Semua"), 30 = lebih dari 30 hari.
++    olderThanDays: number,
+     keyIdentifier?: string
+   ) => {
+     Alert.alert(title, message, [
+@@ -75,7 +90,7 @@ export const StorageManagerScreen: React.FC = () => {
+               Alert.alert('Pembersihan Berhasil', res.data?.message || 'Gambar berhasil dihapus.');
+               loadData();
+             } else {
+-              Alert.alert('Gagal', res.error || 'Terjadi kesalahan saat menghapus gambar.');
++              Alert.alert('Gagal', humanizeCleanupError(res.error));
+             }
+           } catch (e: any) {
+             Alert.alert('Error', 'Gagal memproses pembersihan.');
+@@ -198,7 +213,7 @@ export const StorageManagerScreen: React.FC = () => {
+                           `Apakah Anda yakin ingin menghapus ${cat.imageCount} foto pada kategori "${cat.name}" dari Cloudflare R2? Data produk tidak akan terhapus.`,
+                           'PRODUCT_CATEGORY',
+                           cat.id,
+-                          undefined,
++                          CLEANUP_ALL_DAYS,
+                           `cat_${cat.id}`
+                         )
+                       }
+@@ -242,7 +257,7 @@ export const StorageManagerScreen: React.FC = () => {
+                   `Peringatan: Tindakan ini akan menghapus semua (${stats.totals.productImages}) foto produk dari Cloudflare R2. Anda yakin?`,
+                   'ALL_PRODUCTS',
+                   undefined,
+-                  undefined,
++                  CLEANUP_ALL_DAYS,
+                   'ALL_PRODUCTS'
+                 )
+               }
+@@ -310,7 +325,7 @@ export const StorageManagerScreen: React.FC = () => {
+                     `Hapus seluruh (${stats?.totals.deliveryProofs.total}) foto bukti kiriman dari Cloudflare R2?`,
+                     'DELIVERY_PROOFS',
+                     undefined,
+-                    undefined,
++                    CLEANUP_ALL_DAYS,
+                     'do_all'
+                   )
+                 }
+@@ -379,7 +394,7 @@ export const StorageManagerScreen: React.FC = () => {
+                     `Hapus seluruh (${stats?.totals.paymentProofs.total}) foto bukti transfer dari Cloudflare R2?`,
+                     'PAYMENT_PROOFS',
+                     undefined,
+-                    undefined,
++                    CLEANUP_ALL_DAYS,
+                     'pay_all'
+                   )
+                 }
+diff --git a/src/services/storage.service.ts b/src/services/storage.service.ts
+index 2a440d5..1e9c53e 100644
+--- a/src/services/storage.service.ts
++++ b/src/services/storage.service.ts
+@@ -43,9 +43,18 @@ export type StorageCleanupTarget =
+ export interface StorageCleanupParams {
+   target: StorageCleanupTarget;
+   categoryId?: string;
+-  olderThanDays?: number;
++  /**
++   * WAJIB diisi — backend menolak (400) permintaan cleanup tanpa
++   * olderThanDays. 0 = "semua umur": hapus semua file target tanpa batas
++   * umur (untuk tombol "Hapus Semua" / "Hapus Foto" per kategori).
++   * 1–365 = hanya file yang dibuat lebih dari N hari lalu.
++   */
++  olderThanDays: number;
+ }
+ 
++/** olderThanDays = 0 → hapus semua umur (tanpa batas umur). */
++export const CLEANUP_ALL_DAYS = 0;
++
+ export const storageService = {
+   /**
+    * Mengambil data statistik penyimpanan gambar Cloudflare R2

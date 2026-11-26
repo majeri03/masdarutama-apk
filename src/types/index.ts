@@ -35,6 +35,10 @@ export interface AuthUser {
   email: string;
   name: string;
   role: Role;
+  /** URL foto profil (R2, folder "avatars") — null kalau belum ada.
+   *  WS-9 (26 Nov 2026): diisi backend dari User.avatarUrl lewat login
+   *  dan /api/auth/session-check. */
+  avatarUrl?: string | null;
 }
 
 export interface LoginResponse {

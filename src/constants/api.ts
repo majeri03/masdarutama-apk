@@ -82,6 +82,10 @@ export const API_ENDPOINTS = {
   REPORT_INVENTORY: '/api/reports/inventory',
   REPORT_DEBTS: '/api/reports/debts',
 
+  // Profil (WS-9, 26 Nov 2026): upload/hapus foto profil.
+  // POST = upload/ganti (multipart { file }), DELETE = hapus foto.
+  PROFILE_AVATAR: '/api/profile/avatar',
+
   // Settings
   STORE_SETTINGS: '/api/settings',
 } as const;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity, Animated, Easing, Vibration, Image, LogBox } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing, Vibration, Image, LogBox } from 'react-native';
 import { NavigationContainer, DefaultTheme, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -40,10 +40,14 @@ import AppUpdateScreen from './src/screens/AppUpdateScreen';
 import { StorageManagerScreen } from './src/screens/StorageManagerScreen';
 import { SalesmenScreen } from './src/screens/SalesmenScreen';
 import { PointsScreen } from './src/screens/PointsScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
 
 // Import Sidebar Drawer
 import { SidebarDrawer } from './src/components/ui/SidebarDrawer';
 import { FloatingShortcut } from './src/components/ui/FloatingShortcut';
+// WS-6 (26 Nov 2026): background kaca app-wide — dipasang sekali di sini,
+// di belakang NavigationContainer; lihat src/components/ui/AppBackground.tsx.
+import { AppBackground } from './src/components/ui/AppBackground';
 
 // Design Theme
 import { Colors, FontWeight, FontSize } from './src/constants/theme';
@@ -87,11 +91,15 @@ const HeaderBackButton: React.FC = () => {
 };
 
 // Light Glassmorphism Theme for React Navigation (iOS/macOS style)
+// WS-6: background 'transparent' supaya AppBackground (gradien + blob kaca
+// di belakang NavigationContainer) terlihat di semua layar. Layar yang
+// container root-nya masih solid menutupi gradien ini — itu disengaja
+// sampai workstream pemilik layar itu ikut mengubahnya ke transparent.
 const appNavTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    background: Colors.background,
+    background: 'transparent',
     card: Colors.backgroundSecondary,
     text: Colors.textPrimary,
     border: Colors.border,
@@ -100,19 +108,9 @@ const appNavTheme = {
   },
 };
 
-// Logout button component for the header
-const HeaderLogoutButton: React.FC = () => {
-  const logout = useAuthStore((state) => state.logout);
-  return (
-    <TouchableOpacity
-      onPress={logout}
-      style={{ marginRight: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-    >
-      <Ionicons name="log-out-outline" size={20} color={Colors.error} />
-      <Text style={{ color: Colors.error, fontSize: FontSize.xs, fontWeight: FontWeight.semibold }}>Keluar</Text>
-    </TouchableOpacity>
-  );
-};
+// WS-6 (26 Nov 2026): DIHAPUS — HeaderLogoutButton tidak pernah dipakai
+// di mana pun (tidak ada header yang memanggilnya); tombol Keluar sudah
+// ada di SidebarDrawer. Menghapusnya supaya tidak ada komponen mati.
 
 // Notification button component for the header
 const HeaderNotificationButton: React.FC = () => {
@@ -184,8 +182,12 @@ const MainTabNavigator = () => {
         },
         tabBarActiveTintColor: Colors.primaryStart,
         tabBarInactiveTintColor: Colors.textTertiary,
+        // WS-6: scene transparan supaya AppBackground terlihat; tab bar &
+        // header putih TRANSLUCENT (0.88) — tetap terbaca, tapi gradien
+        // kaca di belakangnya samar-samar tembus (efek kaca, bukan solid).
+        sceneContainerStyle: { backgroundColor: 'transparent' },
         tabBarStyle: {
-          backgroundColor: Colors.surface,       // putih solid iOS
+          backgroundColor: 'rgba(255, 255, 255, 0.88)',  // WS-6: dulu Colors.surface solid
           borderTopWidth: 1,
           borderTopColor: Colors.border,
           height: 64,
@@ -199,7 +201,7 @@ const MainTabNavigator = () => {
           elevation: 8,
         },
         headerStyle: {
-          backgroundColor: Colors.surface,       // putih solid
+          backgroundColor: 'rgba(255, 255, 255, 0.88)',  // WS-6: dulu Colors.surface solid
           borderBottomWidth: 1,
           borderBottomColor: Colors.border,
           elevation: 0,
@@ -282,8 +284,8 @@ export default function App() {
   const textFadeAnim = React.useRef(new Animated.Value(0)).current;
   const textSlideAnim = useRef(new Animated.Value(20)).current;
 
-  // Track current route for global components visibility
-  const [currentRoute, setCurrentRoute] = useState<string | undefined>(undefined);
+  // WS-6 (26 Nov 2026): DIHAPUS — state currentRoute dulu hanya di-set di
+  // onStateChange tapi tidak pernah dibaca di mana pun.
   const splashFadeAnim = React.useRef(new Animated.Value(1)).current;
 
   const playChime = async () => {
@@ -425,15 +427,20 @@ export default function App() {
           PERNAH tampil bersamaan dengan logo splash saat fade (PKG-D,
           perbaikan 7 item #5: logo bentrok). */}
       {!showSplash && (
-      <NavigationContainer 
-        theme={appNavTheme} 
+      <View style={styles.appRoot}>
+      {/* WS-6: AppBackground dipasang sekali di sini, di belakang seluruh
+          navigator — jangan dipasang lagi di dalam tiap layar (nanti
+          background menumpuk 2 lapis seperti kasus WS-9). */}
+      <AppBackground />
+      <NavigationContainer
+        theme={appNavTheme}
         ref={navigationRef}
-        onStateChange={() => {
-          const current = navigationRef.getCurrentRoute()?.name;
-          setCurrentRoute(current);
-        }}
       >
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
+          {/* tsc-fix 26 Nov 2026: native-stack tidak mengenal `cardStyle`
+              (itu milik @react-navigation/stack). Yang benar di native-stack
+              adalah `contentStyle` — fungsinya sama: warna latar container
+              layar supaya background kaca (AppBackground) terlihat. */}
           {!isAuthenticated ? (
             <>
               <Stack.Screen name="Login" component={LoginScreen} />
@@ -452,7 +459,7 @@ export default function App() {
                 options={{
                   headerShown: true,
                   headerTitle: 'STOCK OPNAME',
-                  headerStyle: { backgroundColor: Colors.surface },
+                  headerStyle: { backgroundColor: 'rgba(255, 255, 255, 0.88)' },  // WS-6: dulu Colors.surface solid
                   headerTitleStyle: {
                     fontSize: FontSize.md,
                     fontWeight: FontWeight.bold,
@@ -533,10 +540,18 @@ export default function App() {
                 component={PointsScreen}
                 options={{ headerShown: false }}
               />
+              {/* WS-9 (26 Nov 2026): layar Profil Akun — dibuka dari kartu
+                  "Profil Akun" di SettingsScreen. */}
+              <Stack.Screen
+                name="Profile"
+                component={ProfileScreen}
+                options={{ headerShown: false }}
+              />
             </>
           )}
         </Stack.Navigator>
       </NavigationContainer>
+      </View>
       )}
 
       {isAuthenticated && <FloatingShortcut />}
@@ -546,17 +561,10 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
+  // WS-6: pembungkus NavigationContainer — AppBackground (absolute fill)
+  // duduk di belakang navigator di dalam View ini.
+  appRoot: {
     flex: 1,
-    backgroundColor: Colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    color: Colors.textSecondary,
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.medium,
   },
   splashContainer: {
     ...StyleSheet.absoluteFillObject,

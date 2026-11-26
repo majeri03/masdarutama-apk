@@ -1,4 +1,18 @@
-import React, { useState, useCallback } from 'react';
+/**
+ * CustomersScreen — halaman Daftar Pelanggan.
+ *
+ * WS-3 (26 Nov 2026, paket perbaikan APK ke-2) — samakan tampilan
+ * dengan TransactionHistoryScreen ("itu bagus dan keren"): baris tabel
+ * satu baris per customer (Pelanggan | Tipe | No. HP), teks singkat,
+ * zebra striping, dan info lengkap (alamat, poin, 5 transaksi terakhir,
+ * tombol Edit & Lihat Riwayat Lengkap) pindah ke modal detail layar
+ * penuh seperti detail history. Filter pencarian tetap (server,
+ * debounce 300ms); ditambah chip filter tipe (klien saja, seperti chip
+ * di Salesman & Poin) supaya bahasa visual ketiga layar sama.
+ * LOGIKA TIDAK BERUBAH: endpoint, CRUD, debounce, dan riwayat
+ * transaksi di modal sama seperti sebelumnya.
+ */
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, Modal, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,9 +21,14 @@ import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../constant
 import { GlassCard, GradientButton } from '../components/ui';
 import { masterService } from '../services/master.service';
 import { salesService } from '../services/sales.service';
-import type { Customer, Sale } from '../types';
+import type { Customer, CustomerType, Sale } from '../types';
 import { useDebouncedValue } from '../utils/debounce';
 import { AppToast } from '../utils/toast';
+
+// Aksen visual WS-3 — merah gelap, sama dengan Salesman & Poin.
+const ACCENT = '#7F1D1D';
+
+type TypeFilter = 'ALL' | CustomerType;
 
 export const CustomersScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -20,6 +39,8 @@ export const CustomersScreen: React.FC = () => {
   // QA fix m-24: pencarian di-debounce 300ms supaya tidak memanggil API
   // di setiap ketikan.
   const debouncedSearch = useDebouncedValue(search, 300);
+  // WS-3: filter tipe (klien saja — tidak mengubah data/API).
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL');
 
   // Modals state
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -55,6 +76,12 @@ export const CustomersScreen: React.FC = () => {
   );
 
   const onRefresh = () => loadData(true);
+
+  // Filter tipe di sisi klien (di atas hasil pencarian server).
+  const filteredCustomers = useMemo(() => {
+    if (typeFilter === 'ALL') return customers;
+    return customers.filter((c) => c.type === typeFilter);
+  }, [customers, typeFilter]);
 
   const getCustomerTypeColor = (type: string) => {
     switch (type) {
@@ -131,33 +158,33 @@ export const CustomersScreen: React.FC = () => {
     }
   };
 
-  const renderItem = ({ item }: { item: Customer }) => {
+  const typeChips: { key: TypeFilter; label: string }[] = [
+    { key: 'ALL', label: 'Semua Tipe' },
+    { key: 'UMUM', label: 'Umum' },
+    { key: 'REGULER', label: 'Reguler' },
+    { key: 'GROSIR', label: 'Grosir' },
+    { key: 'PROYEK', label: 'Proyek' },
+  ];
+
+  // Baris tabel ala History: satu baris, teks singkat, tap = detail.
+  // Alamat, poin & riwayat transaksi pindah ke modal detail (WS-3).
+  const renderItem = ({ item, index }: { item: Customer; index: number }) => {
     const typeColor = getCustomerTypeColor(item.type);
-    
+    const isEven = index % 2 === 0;
+
     return (
-      <TouchableOpacity onPress={() => openDetail(item)} activeOpacity={0.7}>
-        <GlassCard padding={16} style={styles.card}>
-          <View style={styles.cardTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.phone}>
-                <Ionicons name="call-outline" size={12} color={Colors.textTertiary} /> {item.phone || 'Belum ada No HP'}
-              </Text>
-            </View>
-            <View style={[styles.typeBadge, { backgroundColor: typeColor + '15', borderColor: typeColor }]}>
-              <Text style={[styles.typeText, { color: typeColor }]}>{item.type}</Text>
-            </View>
+      <TouchableOpacity
+        onPress={() => openDetail(item)}
+        activeOpacity={0.7}
+        style={[styles.tableRow, isEven && styles.tableRowEven]}
+      >
+        <Text style={[styles.tableCell, styles.colName, styles.nameText]} numberOfLines={1}>{item.name}</Text>
+        <View style={[styles.colType, styles.typeCellWrap]}>
+          <View style={[styles.typeBadgeSm, { backgroundColor: typeColor + '15' }]}>
+            <Text style={[styles.typeTextSm, { color: typeColor }]}>{item.type}</Text>
           </View>
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.cardBottom}>
-            <Text style={styles.address} numberOfLines={1}>
-              <Ionicons name="location-outline" size={12} color={Colors.textTertiary} /> {item.address || 'Alamat tidak diatur'}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.primaryStart} />
-          </View>
-        </GlassCard>
+        </View>
+        <Text style={[styles.tableCell, styles.colPhone]} numberOfLines={1}>{item.phone || '-'}</Text>
       </TouchableOpacity>
     );
   };
@@ -171,41 +198,73 @@ export const CustomersScreen: React.FC = () => {
         <Text style={styles.headerTitleText}>Daftar Pelanggan</Text>
       </View>
 
+      {/* Pencarian — pola History (bar pencarian + strip chip) */}
       <View style={styles.searchBar}>
-        <Ionicons name="search" size={20} color={Colors.textTertiary} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Cari nama atau telepon..."
-          placeholderTextColor={Colors.textTertiary}
-          value={search}
-          onChangeText={setSearch}
-          onSubmitEditing={() => loadData()}
-        />
-        {search ? (
-          <TouchableOpacity onPress={() => { setSearch(''); loadData(); }}>
-            <Ionicons name="close-circle" size={20} color={Colors.textTertiary} />
-          </TouchableOpacity>
-        ) : null}
+        <View style={styles.searchWrapper}>
+          <Ionicons name="search-outline" size={18} color={Colors.textTertiary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Cari nama atau telepon..."
+            placeholderTextColor={Colors.textTertiary}
+            value={search}
+            onChangeText={setSearch}
+            onSubmitEditing={() => loadData()}
+          />
+          {search ? (
+            <TouchableOpacity onPress={() => { setSearch(''); loadData(); }}>
+              <Ionicons name="close-circle" size={18} color={Colors.textTertiary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipStrip}>
+        <View style={styles.chipRow}>
+          {typeChips.map((chip) => (
+            <TouchableOpacity
+              key={chip.key}
+              onPress={() => setTypeFilter(chip.key)}
+              style={[styles.chip, typeFilter === chip.key && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, typeFilter === chip.key && styles.chipTextActive]}>{chip.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+      <Text style={styles.resultCount}>
+        Menampilkan {filteredCustomers.length} dari {customers.length} pelanggan
+      </Text>
 
       {loading ? (
         <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color={Colors.primaryStart} />
+          <ActivityIndicator size="large" color={ACCENT} />
         </View>
       ) : (
-        <FlatList
-          data={customers}
-          keyExtractor={item => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />}
-          ListEmptyComponent={
-            <View style={styles.centerBox}>
-              <Ionicons name="people-outline" size={48} color={Colors.textTertiary} style={{ marginBottom: 8 }} />
-              <Text style={styles.emptyText}>Pelanggan tidak ditemukan</Text>
-            </View>
-          }
-        />
+        <View style={styles.tableContainer}>
+          {/* Kepala tabel — sama seperti History */}
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, styles.colName]}>Pelanggan</Text>
+            <Text style={[styles.tableHeaderText, styles.colType, { textAlign: 'center' }]}>Tipe</Text>
+            <Text style={[styles.tableHeaderText, styles.colPhone]}>No. HP</Text>
+          </View>
+
+          <FlatList
+            data={filteredCustomers}
+            keyExtractor={item => item.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+            removeClippedSubviews={true}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            ListEmptyComponent={
+              <View style={styles.centerBox}>
+                <Ionicons name="people-outline" size={48} color={Colors.textTertiary} style={{ marginBottom: 8 }} />
+                <Text style={styles.emptyText}>Pelanggan tidak ditemukan</Text>
+              </View>
+            }
+          />
+        </View>
       )}
 
       {/* FAB Add */}
@@ -213,22 +272,28 @@ export const CustomersScreen: React.FC = () => {
         <Ionicons name="add" size={30} color="#FFF" />
       </TouchableOpacity>
 
-      {/* Detail Modal */}
-      <Modal visible={showDetail} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Detail Pelanggan</Text>
-              <TouchableOpacity onPress={() => setShowDetail(false)}>
-                <Ionicons name="close" size={24} color={Colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
+      {/* ── MODAL DETAIL (WS-3): layar penuh ala detail History.
+          Isi sama seperti sebelumnya (data, poin, 5 transaksi
+          terakhir, Edit, Lihat Riwayat Lengkap). ── */}
+      <Modal visible={showDetail} animationType="slide">
+        <SafeAreaView style={styles.detailContainer}>
+          <View style={styles.detailHeader}>
+            <TouchableOpacity onPress={() => setShowDetail(false)}>
+              <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.detailHeaderTitle}>Detail Pelanggan</Text>
+            <TouchableOpacity onPress={() => setShowDetail(false)}>
+              <Ionicons name="close" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
 
-            {selectedCustomer && (
-              <ScrollView style={{ padding: 16 }}>
+          {selectedCustomer && (
+            <ScrollView contentContainerStyle={styles.detailContent}>
+              <GlassCard padding={16} style={styles.detailSection}>
+                <Text style={styles.detailName}>{selectedCustomer.name}</Text>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Nama</Text>
-                  <Text style={styles.detailValue}>{selectedCustomer.name}</Text>
+                  <Text style={styles.detailLabel}>Kode</Text>
+                  <Text style={styles.detailValue}>{selectedCustomer.code}</Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>No HP</Text>
@@ -254,41 +319,41 @@ export const CustomersScreen: React.FC = () => {
                     {selectedCustomer.type === 'UMUM' ? ' (Umum tidak dapat poin)' : ''}
                   </Text>
                 </View>
+              </GlassCard>
 
-                <TouchableOpacity style={styles.editBtn} onPress={() => openEditForm(selectedCustomer)}>
-                  <Ionicons name="create-outline" size={16} color={Colors.primaryStart} />
-                  <Text style={styles.editBtnText}>Edit Data Pelanggan</Text>
-                </TouchableOpacity>
+              <TouchableOpacity style={styles.editBtn} onPress={() => openEditForm(selectedCustomer)}>
+                <Ionicons name="create-outline" size={16} color={ACCENT} />
+                <Text style={styles.editBtnText}>Edit Data Pelanggan</Text>
+              </TouchableOpacity>
 
-                <Text style={styles.sectionTitle}>5 Transaksi Terakhir</Text>
-                {loadingSales ? (
-                  <ActivityIndicator size="small" color={Colors.primaryStart} style={{ margin: 20 }} />
-                ) : recentSales.length > 0 ? (
-                  recentSales.map(sale => (
-                    <View key={sale.id} style={styles.recentSaleItem}>
-                      <View>
-                        <Text style={styles.saleInvoice}>{sale.invoiceNumber}</Text>
-                        <Text style={styles.saleDate}>{new Date(sale.createdAt || sale.saleDate).toLocaleDateString('id-ID')}</Text>
-                      </View>
-                      <Text style={styles.saleTotal}>Rp {sale.grandTotal.toLocaleString('id-ID')}</Text>
+              <Text style={styles.sectionTitle}>5 Transaksi Terakhir</Text>
+              {loadingSales ? (
+                <ActivityIndicator size="small" color={ACCENT} style={{ margin: 20 }} />
+              ) : recentSales.length > 0 ? (
+                recentSales.map(sale => (
+                  <View key={sale.id} style={styles.recentSaleItem}>
+                    <View>
+                      <Text style={styles.saleInvoice}>{sale.invoiceNumber}</Text>
+                      <Text style={styles.saleDate}>{new Date(sale.createdAt || sale.saleDate).toLocaleDateString('id-ID')}</Text>
                     </View>
-                  ))
-                ) : (
-                  <Text style={styles.emptyTextCenter}>Belum ada riwayat transaksi</Text>
-                )}
+                    <Text style={styles.saleTotal}>Rp {sale.grandTotal.toLocaleString('id-ID')}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.emptyTextCenter}>Belum ada riwayat transaksi</Text>
+              )}
 
-                <GradientButton
-                  title="Lihat Riwayat Lengkap"
-                  onPress={() => {
-                    setShowDetail(false);
-                    navigation.navigate('History', { customerId: selectedCustomer.id });
-                  }}
-                  style={{ marginTop: 24, marginBottom: 40 }}
-                />
-              </ScrollView>
-            )}
-          </View>
-        </View>
+              <GradientButton
+                title="Lihat Riwayat Lengkap"
+                onPress={() => {
+                  setShowDetail(false);
+                  navigation.navigate('History', { customerId: selectedCustomer.id });
+                }}
+                style={{ marginTop: 24, marginBottom: 40 }}
+              />
+            </ScrollView>
+          )}
+        </SafeAreaView>
       </Modal>
 
       {/* Form Modal */}
@@ -360,7 +425,8 @@ export const CustomersScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  // Koordinator (26 Nov 2026): container transparan supaya background kaca app-wide (AppBackground di App.tsx) terlihat di layar ini juga.
+  container: { flex: 1, backgroundColor: 'transparent' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -371,32 +437,90 @@ const styles = StyleSheet.create({
   },
   backButton: { marginRight: 16 },
   headerTitleText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    margin: 16,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    height: 44,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  searchInput: { flex: 1, marginLeft: 8, color: Colors.textPrimary },
-  listContainer: { padding: 16, paddingBottom: 100, gap: 12 },
-  card: { marginBottom: 0 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  name: { fontSize: FontSize.md, fontWeight: 'bold', color: Colors.textPrimary },
-  phone: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 4 },
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: BorderRadius.sm, borderWidth: 1 },
-  typeText: { fontSize: 10, fontWeight: 'bold' },
-  divider: { height: 1, backgroundColor: Colors.border, marginVertical: 12 },
-  cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  address: { fontSize: FontSize.xs, color: Colors.textTertiary, flex: 1, marginRight: 8 },
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 48 },
   emptyText: { color: Colors.textSecondary, fontSize: FontSize.sm },
   emptyTextCenter: { color: Colors.textTertiary, fontSize: FontSize.sm, textAlign: 'center', marginVertical: 16 },
+  // Pencarian + chip filter — pola History.
+  searchBar: {
+    flexDirection: 'row',
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+  },
+  searchWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    height: 44,
+    gap: Spacing.sm,
+  },
+  searchInput: { flex: 1, color: Colors.textPrimary, fontSize: FontSize.sm },
+  chipStrip: {
+    backgroundColor: Colors.surfaceLight,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 8,
+  },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 },
+  chip: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: BorderRadius.full,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', backgroundColor: Colors.surface,
+  },
+  chipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
+  chipText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  chipTextActive: { color: '#FFFFFF' },
+  resultCount: { fontSize: FontSize.xs, color: Colors.textTertiary, paddingHorizontal: 12, paddingVertical: 8 },
+  // Tabel — disalin dari TransactionHistoryScreen (zebra, sel 12px).
+  tableContainer: { flex: 1 },
+  listContent: { paddingBottom: Spacing.xl },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  tableHeaderText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderColor: Colors.border + '80',
+  },
+  tableRowEven: { backgroundColor: Colors.surface },
+  tableCell: { fontSize: 12, color: Colors.textPrimary },
+  colName: { flex: 2.4 },
+  colType: { flex: 1.1 },
+  colPhone: { flex: 1.6 },
+  nameText: { fontWeight: FontWeight.bold },
+  typeCellWrap: { alignItems: 'center', justifyContent: 'center' },
+  typeBadgeSm: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  typeTextSm: { fontSize: 9, fontWeight: 'bold' },
+  typeBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: BorderRadius.sm, borderWidth: 1 },
+  typeText: { fontSize: 10, fontWeight: 'bold' },
   fab: {
     position: 'absolute',
     bottom: 24,
@@ -404,15 +528,63 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: Colors.primaryStart,
+    backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 4,
-    shadowColor: Colors.primaryStart,
+    shadowColor: ACCENT,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
+  // Modal detail layar penuh — pola TransactionHistoryScreen.
+  detailContainer: { flex: 1, backgroundColor: Colors.background },
+  detailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 64,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.lg,
+  },
+  detailHeaderTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  detailContent: { padding: Spacing.lg, gap: Spacing.md },
+  detailSection: { gap: 8 },
+  detailName: { fontSize: FontSize.xl, fontWeight: FontWeight.extrabold, color: Colors.textPrimary },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  detailLabel: { fontSize: FontSize.sm, color: Colors.textTertiary },
+  detailValue: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: '500' },
+  editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: ACCENT + '15',
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  editBtnText: { color: ACCENT, fontWeight: 'bold', fontSize: FontSize.sm },
+  sectionTitle: { fontSize: FontSize.md, fontWeight: 'bold', color: Colors.textSecondary, marginBottom: 12 },
+  recentSaleItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+  },
+  saleInvoice: { fontSize: FontSize.sm, fontWeight: 'bold', color: Colors.textPrimary },
+  saleDate: { fontSize: FontSize.xs, color: Colors.textTertiary, marginTop: 2 },
+  saleTotal: { fontSize: FontSize.sm, fontWeight: 'bold', color: ACCENT },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -434,33 +606,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   modalTitle: { fontSize: FontSize.lg, fontWeight: 'bold', color: Colors.textPrimary },
-  detailRow: { marginBottom: 16 },
-  detailLabel: { fontSize: FontSize.xs, color: Colors.textTertiary, marginBottom: 4 },
-  detailValue: { fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: '500' },
-  editBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Colors.primaryStart + '15',
-    paddingVertical: 12,
-    borderRadius: BorderRadius.md,
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  editBtnText: { color: Colors.primaryStart, fontWeight: 'bold', fontSize: FontSize.sm },
-  sectionTitle: { fontSize: FontSize.md, fontWeight: 'bold', color: Colors.textSecondary, marginBottom: 12 },
-  recentSaleItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderColor: Colors.border,
-  },
-  saleInvoice: { fontSize: FontSize.sm, fontWeight: 'bold', color: Colors.textPrimary },
-  saleDate: { fontSize: FontSize.xs, color: Colors.textTertiary, marginTop: 2 },
-  saleTotal: { fontSize: FontSize.sm, fontWeight: 'bold', color: Colors.primaryStart },
   inputLabel: { fontSize: FontSize.sm, color: Colors.textSecondary, marginBottom: 6, marginTop: 12, fontWeight: '500' },
   input: {
     backgroundColor: Colors.surface,
@@ -481,9 +626,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   typeBtnActive: {
-    backgroundColor: Colors.primaryStart + '15',
-    borderColor: Colors.primaryStart,
+    backgroundColor: ACCENT + '15',
+    borderColor: ACCENT,
   },
   typeBtnText: { fontSize: 11, color: Colors.textSecondary, fontWeight: '500' },
-  typeBtnTextActive: { color: Colors.primaryStart, fontWeight: 'bold' },
+  typeBtnTextActive: { color: ACCENT, fontWeight: 'bold' },
 });

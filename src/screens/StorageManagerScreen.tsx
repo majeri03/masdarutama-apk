@@ -14,8 +14,21 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight, Shadow } from '../constants/theme';
 import { GlassCard, GradientButton } from '../components/ui';
-import { storageService, StorageStatsData, StorageCleanupTarget } from '../services/storage.service';
+import { storageService, StorageStatsData, StorageCleanupTarget, CLEANUP_ALL_DAYS } from '../services/storage.service';
 import { AppToast } from '../utils/toast';
+
+/**
+ * Pesan validasi mentah dari backend (mis. "olderThanDays wajib diisi...")
+ * diterjemahkan ke bahasa yang dimengerti pengguna. Pesan lain yang sudah
+ * ramah (mis. "Hanya Admin / Super Admin...") diteruskan apa adanya.
+ */
+function humanizeCleanupError(error?: string): string {
+  if (!error) return 'Terjadi kesalahan saat menghapus gambar.';
+  if (error.includes('olderThanDays')) {
+    return 'Server menolak permintaan hapus ini. Pastikan aplikasi web (backend) sudah diperbarui ke versi terbaru, lalu coba lagi.';
+  }
+  return error;
+}
 
 export const StorageManagerScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -53,8 +66,15 @@ export const StorageManagerScreen: React.FC = () => {
     title: string,
     message: string,
     target: StorageCleanupTarget,
-    categoryId?: string,
-    olderThanDays?: number,
+    // tsc-fix 26 Nov 2026: parameter ini WAJIB bertipe `string | undefined`
+    // (bukan opsional `categoryId?: string`) — TypeScript melarang parameter
+    // wajib (`olderThanDays`) mengikuti parameter opsional (TS1016). Semua
+    // 6 pemanggil sudah mengirim `cat.id` atau `undefined` secara eksplisit,
+    // jadi tidak ada perubahan di pemanggil.
+    categoryId: string | undefined,
+    // WAJIB diisi: backend menolak cleanup tanpa olderThanDays (400).
+    // 0 = semua umur (tombol "Hapus Semua"), 30 = lebih dari 30 hari.
+    olderThanDays: number,
     keyIdentifier?: string
   ) => {
     Alert.alert(title, message, [
@@ -75,7 +95,7 @@ export const StorageManagerScreen: React.FC = () => {
               Alert.alert('Pembersihan Berhasil', res.data?.message || 'Gambar berhasil dihapus.');
               loadData();
             } else {
-              Alert.alert('Gagal', res.error || 'Terjadi kesalahan saat menghapus gambar.');
+              Alert.alert('Gagal', humanizeCleanupError(res.error));
             }
           } catch (e: any) {
             Alert.alert('Error', 'Gagal memproses pembersihan.');
@@ -198,7 +218,7 @@ export const StorageManagerScreen: React.FC = () => {
                           `Apakah Anda yakin ingin menghapus ${cat.imageCount} foto pada kategori "${cat.name}" dari Cloudflare R2? Data produk tidak akan terhapus.`,
                           'PRODUCT_CATEGORY',
                           cat.id,
-                          undefined,
+                          CLEANUP_ALL_DAYS,
                           `cat_${cat.id}`
                         )
                       }
@@ -242,7 +262,7 @@ export const StorageManagerScreen: React.FC = () => {
                   `Peringatan: Tindakan ini akan menghapus semua (${stats.totals.productImages}) foto produk dari Cloudflare R2. Anda yakin?`,
                   'ALL_PRODUCTS',
                   undefined,
-                  undefined,
+                  CLEANUP_ALL_DAYS,
                   'ALL_PRODUCTS'
                 )
               }
@@ -310,7 +330,7 @@ export const StorageManagerScreen: React.FC = () => {
                     `Hapus seluruh (${stats?.totals.deliveryProofs.total}) foto bukti kiriman dari Cloudflare R2?`,
                     'DELIVERY_PROOFS',
                     undefined,
-                    undefined,
+                    CLEANUP_ALL_DAYS,
                     'do_all'
                   )
                 }
@@ -379,7 +399,7 @@ export const StorageManagerScreen: React.FC = () => {
                     `Hapus seluruh (${stats?.totals.paymentProofs.total}) foto bukti transfer dari Cloudflare R2?`,
                     'PAYMENT_PROOFS',
                     undefined,
-                    undefined,
+                    CLEANUP_ALL_DAYS,
                     'pay_all'
                   )
                 }
@@ -398,9 +418,10 @@ export const StorageManagerScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  // Koordinator (26 Nov 2026): container transparan supaya background kaca app-wide (AppBackground di App.tsx) terlihat di layar ini juga.
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',
   },
   centerContainer: {
     flex: 1,
