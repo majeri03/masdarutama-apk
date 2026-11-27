@@ -425,21 +425,48 @@ export const PurchaseScreen: React.FC = () => {
     );
   };
 
+  // WS-1 (paket ke-5): reset form supplier lalu buka modal Kelola Supplier.
+  const openSupplierModal = () => {
+    setSuppId('');
+    setSuppName('');
+    setSuppCode('');
+    setSuppPhone('');
+    setSuppAddress('');
+    setShowSupplierModal(true);
+  };
+
+  // WS-1 (paket ke-5): isi form dari supplier yang dipilih, untuk diubah.
+  const handleEditSupplier = (supp: Supplier) => {
+    setSuppId(supp.id);
+    setSuppName(supp.name);
+    setSuppCode(supp.code);
+    setSuppPhone(supp.phone || '');
+    setSuppAddress(supp.address || '');
+  };
+
   const handleSaveSupplier = async () => {
-    if (!suppName || !suppCode) {
-      AppToast.error('Gagal', 'Nama dan Kode Supplier wajib diisi.');
+    // WS-1 (paket ke-5): validasi disamakan dengan backend — skema server
+    // (supplierServerSchema) mewajibkan nama + telepon; kode dibuat otomatis
+    // server (SUP-xxx) bila dikosongkan. Validasi lama (nama + kode) salah
+    // arah: kode tidak wajib, telepon yang wajib — tanpa telepon, server
+    // menolak dengan error zod yang sulit dibaca.
+    const name = suppName.trim();
+    const phone = suppPhone.trim();
+    if (!name || !phone) {
+      AppToast.error('Gagal', 'Nama dan Nomor Telepon wajib diisi.');
       return;
     }
     setSavingSupplier(true);
     try {
       const payload = {
-        name: suppName,
-        code: suppCode,
-        phone: suppPhone || undefined,
-        address: suppAddress || undefined,
+        name,
+        code: suppCode.trim() || undefined,
+        phone,
+        address: suppAddress.trim() || undefined,
       };
-      
+
       let res;
+      const isCreate = !suppId;
       if (suppId) {
         res = await masterService.updateSupplier(suppId, payload);
       } else {
@@ -453,7 +480,12 @@ export const PurchaseScreen: React.FC = () => {
         setSuppCode('');
         setSuppPhone('');
         setSuppAddress('');
-        loadMasterData(); // Refresh supplier list
+        await loadMasterData(); // Refresh supplier list
+        // WS-1 (paket ke-5): supplier baru langsung terpilih di form PO.
+        if (isCreate && res.data?.id) {
+          setSelectedSupplierId(res.data.id);
+        }
+        setShowSupplierModal(false);
       } else {
         AppToast.error('Gagal', res.error || 'Gagal menyimpan supplier');
       }
@@ -798,7 +830,7 @@ export const PurchaseScreen: React.FC = () => {
               <View style={styles.inputGroup}>
                 <View style={styles.rowBetween}>
                   <Text style={styles.inputLabel}>Pilih Supplier *</Text>
-                  <TouchableOpacity onPress={() => setShowSupplierModal(true)}>
+                  <TouchableOpacity onPress={openSupplierModal}>
                     <Text style={{ fontSize: FontSize.xs, color: Colors.primaryStart, fontWeight: 'bold' }}>+ Kelola Supplier</Text>
                   </TouchableOpacity>
                 </View>
@@ -1105,6 +1137,157 @@ export const PurchaseScreen: React.FC = () => {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* ─── WS-1 (paket ke-5): KELOLA SUPPLIER MODAL ─── */}
+      {/* Dibuka dari tombol "+ Kelola Supplier" di modal Buat PO. Sebelumnya
+          tombol itu hanya mengubah state showSupplierModal tanpa ada modal
+          yang dirender, jadi tidak terjadi apa-apa. Modal ini modal layar
+          penuh (pola yang sama dengan modal Detail & Buat PO): latar solid,
+          bisa di-scroll sampai bawah, tombol tidak terpotong. */}
+      <Modal visible={showSupplierModal} animationType="slide" onRequestClose={() => setShowSupplierModal(false)}>
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowSupplierModal(false)} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>Kelola Supplier</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled" style={styles.modalScroll} contentContainerStyle={styles.modalContent}>
+            {/* Daftar supplier — ketuk untuk memilih di form PO */}
+            <Text style={styles.modalSectionTitle}>Pilih Supplier</Text>
+            <GlassCard padding={16} style={styles.createCard}>
+              {suppliers.length === 0 ? (
+                <Text style={styles.emptyItemsText}>Belum ada supplier. Tambahkan di bawah.</Text>
+              ) : (
+                suppliers.map((supp, index) => (
+                  <View key={supp.id}>
+                    {index > 0 && <View style={styles.divider} />}
+                    <View style={styles.rowBetween}>
+                      <TouchableOpacity
+                        style={{ flex: 1 }}
+                        onPress={() => {
+                          setSelectedSupplierId(supp.id);
+                          setShowSupplierModal(false);
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.itemName, selectedSupplierId === supp.id && { color: Colors.primaryStart }]}>
+                              {supp.name}
+                            </Text>
+                            <Text style={styles.itemCode}>
+                              {supp.code}{supp.phone ? ` • ${supp.phone}` : ''}
+                            </Text>
+                          </View>
+                          {selectedSupplierId === supp.id && (
+                            <Ionicons name="checkmark-circle" size={22} color={Colors.primaryStart} />
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: Spacing.sm }}>
+                        <TouchableOpacity onPress={() => handleEditSupplier(supp)} style={styles.suppIconBtn}>
+                          <Ionicons name="create-outline" size={20} color={Colors.primaryStart} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleDeleteSupplier(supp.id)} style={styles.suppIconBtn}>
+                          <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ))
+              )}
+            </GlassCard>
+
+            {/* Form tambah / ubah supplier */}
+            <Text style={styles.modalSectionTitle}>{suppId ? 'Ubah Supplier' : 'Tambah Supplier Baru'}</Text>
+            <GlassCard padding={16} style={styles.createCard}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Nama Supplier *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={suppName}
+                  onChangeText={setSuppName}
+                  placeholder="Contoh: CV. Maju Bersama"
+                  placeholderTextColor={Colors.textTertiary}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Kode Supplier</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={suppCode}
+                  onChangeText={setSuppCode}
+                  placeholder="Kosongkan = dibuat otomatis (SUP-xxx)"
+                  placeholderTextColor={Colors.textTertiary}
+                  autoCapitalize="characters"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Nomor Telepon *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={suppPhone}
+                  onChangeText={setSuppPhone}
+                  placeholder="Contoh: 081234567890"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Alamat</Text>
+                <TextInput
+                  style={[styles.textInput, { height: 60, textAlignVertical: 'top', paddingTop: 8 }]}
+                  value={suppAddress}
+                  onChangeText={setSuppAddress}
+                  placeholder="Contoh: Jl. Contoh No. 123"
+                  placeholderTextColor={Colors.textTertiary}
+                  multiline
+                />
+              </View>
+
+              <View style={{ gap: Spacing.md, marginTop: Spacing.md }}>
+                <GradientButton
+                  title={savingSupplier ? 'Menyimpan...' : suppId ? 'Simpan Perubahan' : 'Simpan Supplier'}
+                  onPress={handleSaveSupplier}
+                  variant="success"
+                  fullWidth
+                  loading={savingSupplier}
+                  disabled={savingSupplier}
+                />
+                {suppId ? (
+                  <GradientButton
+                    title="Batal Ubah"
+                    onPress={() => {
+                      setSuppId('');
+                      setSuppName('');
+                      setSuppCode('');
+                      setSuppPhone('');
+                      setSuppAddress('');
+                    }}
+                    variant="outline"
+                    fullWidth
+                  />
+                ) : (
+                  <GradientButton
+                    title="Tutup"
+                    onPress={() => setShowSupplierModal(false)}
+                    variant="outline"
+                    fullWidth
+                  />
+                )}
+              </View>
+            </GlassCard>
+
+            {/* Ruang bawah supaya tombol tidak terpotong */}
+            <View style={{ height: Spacing['3xl'] }} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1280,6 +1463,8 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     padding: Spacing.lg,
+    flexGrow: 1,
+    paddingBottom: Spacing.xl,
   },
   detailsCard: {
     backgroundColor: '#FFFFFF',
@@ -1423,6 +1608,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: Colors.border,
     paddingHorizontal: Spacing.lg,
+  },
+  // WS-1 (paket ke-5): tombol ikon ubah/hapus di tiap baris supplier.
+  suppIconBtn: {
+    padding: 6,
   },
 });
 

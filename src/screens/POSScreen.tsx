@@ -461,6 +461,7 @@ export const POSScreen: React.FC = () => {
       <View style={{ flexGrow: 0, paddingVertical: 12 }}>
         <ScrollView
           horizontal
+          nestedScrollEnabled
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoriesScroll}
         >
@@ -518,7 +519,7 @@ export const POSScreen: React.FC = () => {
             const imageUrl = item.productImages && item.productImages.length > 0 ? item.productImages[0].imageUrl : null;
             return (
               <View style={styles.productCardWrapper}>
-                <GlassCard padding={12} style={styles.productCard}>
+                <GlassCard padding={12} blur={false} style={styles.productCard}>
                   <View style={styles.productIconBg}>
                     {imageUrl ? (
                       <Image
@@ -617,12 +618,12 @@ export const POSScreen: React.FC = () => {
       {/* --- UNIT SELECTION MODAL --- */}
       <Modal visible={showUnitModal} transparent animationType="fade" onRequestClose={() => { setShowUnitModal(false); setActiveProductForUnit(null); }}>
         <View style={styles.modalOverlay}>
-          <GlassCard padding={24} style={styles.unitModalCard}>
+          <GlassCard padding={24} intensity={70} style={styles.unitModalCard}>
             <Text style={styles.modalTitle}>Pilih Satuan</Text>
             <Text style={styles.modalSubtitle}>
               Pilih satuan penjualan untuk produk {activeProductForUnit?.name}
             </Text>
-            <View style={styles.unitList}>
+            <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ flexGrow: 1 }}>
               {activeProductForUnit?.productUnits?.map((pu) => (
                 <TouchableOpacity
                   key={pu.id}
@@ -635,7 +636,7 @@ export const POSScreen: React.FC = () => {
                   </Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
             <GradientButton
               title="Batal"
               onPress={() => {
@@ -663,7 +664,7 @@ export const POSScreen: React.FC = () => {
               <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView style={{ padding: 16 }}>
+            <ScrollView style={{ flex: 1, padding: 16 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}>
               {heldCarts.length === 0 ? (
                 <View style={{ alignItems: 'center', marginTop: 40 }}>
                   <Ionicons name="cube-outline" size={48} color={Colors.textTertiary} />
@@ -678,7 +679,7 @@ export const POSScreen: React.FC = () => {
                   const grandTotal = hc.items.reduce((acc, item) => acc + (item.unitPrice * item.quantity) - item.discount, 0) - hc.discount;
 
                   return (
-                    <GlassCard key={hc.id} padding={16} style={{ marginBottom: 12 }}>
+                    <GlassCard key={hc.id} padding={16} blur={false} style={{ marginBottom: 12 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontSize: FontSize.sm, fontWeight: 'bold', color: Colors.textPrimary }}>
@@ -838,11 +839,16 @@ export const POSScreen: React.FC = () => {
 
           {/* Cart Items List */}
           <FlatList
+            removeClippedSubviews={true}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
             data={items}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.cartList}
+            style={{ flex: 1 }}
+            contentContainerStyle={[styles.cartList, { flexGrow: 1 }]}
             renderItem={({ item }) => (
-              <GlassCard padding={12} style={styles.cartCardItem}>
+              <GlassCard padding={12} blur={false} style={styles.cartCardItem}>
                 <View style={styles.cartItemTop}>
                   <View style={styles.cartItemHeader}>
                     <Text style={styles.cartItemName}>{item.productName}</Text>
@@ -1006,7 +1012,7 @@ export const POSScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={styles.checkoutContent}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.checkoutContent, { flexGrow: 1 }]}>
             {/* Total Summary */}
             <GlassCard padding={20} style={styles.paymentSummary}>
               <Text style={styles.summaryLabel}>GRAND TOTAL</Text>
@@ -1075,9 +1081,12 @@ export const POSScreen: React.FC = () => {
 
                 {/* Quick money buttons */}
                 <View style={styles.quickCashContainer}>
-                  {[calculation.grandTotal, 50000, 100000, 200000].map((cash) => (
+                  {/* WS-2 (paket ke-5): key memakai indeks — sebelumnya key =
+                      nilai uangnya, jadi duplikat saat grandTotal sama dengan
+                      50rb/100rb/200rb (peringatan React + rekonsiliasi salah). */}
+                  {[calculation.grandTotal, 50000, 100000, 200000].map((cash, idx) => (
                     <TouchableOpacity
-                      key={cash}
+                      key={`cash-${idx}-${cash}`}
                       style={styles.quickCashBtn}
                       onPress={() => setPaidAmount(String(cash))}
                     >
@@ -1115,9 +1124,11 @@ export const POSScreen: React.FC = () => {
 
                 {/* Quick DP buttons */}
                 <View style={styles.quickCashContainer}>
-                  {[0, Math.floor(calculation.grandTotal * 0.1), Math.floor(calculation.grandTotal * 0.25), Math.floor(calculation.grandTotal * 0.5)].map((cash) => (
+                  {/* WS-2 (paket ke-5): key memakai indeks — nilai DP bisa
+                      sama (mis. grandTotal kecil → 10%/25%/50% sama dengan 0). */}
+                  {[0, Math.floor(calculation.grandTotal * 0.1), Math.floor(calculation.grandTotal * 0.25), Math.floor(calculation.grandTotal * 0.5)].map((cash, idx) => (
                     <TouchableOpacity
-                      key={cash}
+                      key={`dp-${idx}-${cash}`}
                       style={styles.quickCashBtn}
                       onPress={() => setPaidAmount(String(cash))}
                     >
@@ -1190,7 +1201,7 @@ export const POSScreen: React.FC = () => {
       {/* --- ADD CUSTOMER MODAL --- */}
       <Modal visible={showAddCustomer} transparent animationType="fade" onRequestClose={() => setShowAddCustomer(false)}>
         <View style={styles.modalOverlay}>
-          <GlassCard padding={24} style={styles.unitModalCard}>
+          <GlassCard padding={24} intensity={70} style={styles.unitModalCard}>
             <Text style={styles.modalTitle}>Tambah Pelanggan</Text>
             
             <View style={{marginTop: Spacing.xl, gap: Spacing.md}}>

@@ -85,7 +85,9 @@ export const storageService = {
    */
   async cleanupStorage(
     params: StorageCleanupParams
-  ): Promise<ApiResponse<{ deletedCount: number; message: string }>> {
+  ): Promise<
+    ApiResponse<{ deletedCount: number; failedCount: number; skippedCount: number; message: string }>
+  > {
     try {
       const response = await api.post<any>('/api/storage/cleanup', params);
       if (response.data?.success) {
@@ -93,6 +95,12 @@ export const storageService = {
           success: true,
           data: {
             deletedCount: response.data.deletedCount || 0,
+            // WS-2 (27 Nov 2026): dulu angka gagal dibuang di sini, jadi UI
+            // selalu bilang "Berhasil" walau tidak ada file yang benar-benar
+            // terhapus dari R2. Sekarang diteruskan supaya layar bisa
+            // menampilkan peringatan yang jujur.
+            failedCount: response.data.failedCount || 0,
+            skippedCount: response.data.skippedCount || 0,
             message: response.data.message || 'Gambar berhasil dibersihkan',
           },
         };

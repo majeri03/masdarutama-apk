@@ -300,7 +300,7 @@ export const StockOpnameScreen: React.FC = () => {
         </View>
 
         <View style={styles.filterRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingRight: 12 }}>
             <TouchableOpacity
               style={[styles.typeFilterChip, selectedType === '' && styles.typeFilterChipActive]}
               onPress={() => setSelectedType('')}
@@ -339,6 +339,10 @@ export const StockOpnameScreen: React.FC = () => {
           </View>
 
           <FlatList
+            removeClippedSubviews={true}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
             data={movements}
             keyExtractor={(item) => item.id}
             renderItem={renderMovementCard}
@@ -406,7 +410,7 @@ export const StockOpnameScreen: React.FC = () => {
               </View>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={styles.formContent}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.formContent, { flexGrow: 1 }]}>
               {/* Product selector */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Cari Produk *</Text>
@@ -420,6 +424,11 @@ export const StockOpnameScreen: React.FC = () => {
                       setSearchProductQuery(text);
                       if (text.length > 1) {
                         loadProducts(text);
+                      } else {
+                        // WS-3 (paket ke-5): query <= 1 huruf tidak memuat —
+                        // tanpa ini, hasil cari query lama tetap tampil di
+                        // bawah query baru yang tidak cocok.
+                        setProducts([]);
                       }
                     }}
                   />

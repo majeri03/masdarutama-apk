@@ -54,10 +54,23 @@ export const FloatingShortcut: React.FC = () => {
 
   const toggleExpand = () => setExpanded(!expanded);
 
+  // WS-4 (27 Nov 2026): 'POS', 'Products' & 'History' adalah TAB di dalam
+  // MainTabNavigator — navigate('POS') langsung dari navigationRef (root
+  // stack) TIDAK ditangani navigator mana pun ("not handled by any
+  // navigator"), jadi 3 tombol shortcut ini diam saja saat diketuk.
+  // Tab HARUS lewat navigate('Main', { screen }) — sama seperti
+  // SidebarDrawer.handleNavigate dan navigateToScreen di usePushNotifications.
+  // 'Delivery' adalah stack screen, navigate langsung sudah benar.
+  const TAB_SCREENS = ['Dashboard', 'POS', 'Products', 'History', 'Reports', 'Settings'];
+
   const navigateTo = (screen: string) => {
     setExpanded(false);
     if (navigationRef.isReady()) {
-      (navigationRef as any).navigate(screen);
+      if (TAB_SCREENS.includes(screen)) {
+        (navigationRef as any).navigate('Main', { screen });
+      } else {
+        (navigationRef as any).navigate(screen);
+      }
     }
   };
 
@@ -137,7 +150,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: Colors.overlay, // WS-4: samakan dengan dim modal lain (0.60, dulu 0.40)
     justifyContent: 'center',
     alignItems: 'center',
   },

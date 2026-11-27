@@ -18,6 +18,7 @@ import {
   RefreshControl,
   Animated,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -303,7 +304,7 @@ const VehicleFormModal: React.FC<{
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={fmStyles.form} showsVerticalScrollIndicator={false}>
+          <ScrollView style={fmStyles.form} contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
             {/* Plate Number */}
             <Text style={fmStyles.label}>Nomor Plat *</Text>
             <TextInput
@@ -507,7 +508,12 @@ export const FleetTrackingScreen: React.FC = () => {
           'Untuk menghubungkan lokasi otomatis ketika aplikasi ditutup atau di latar belakang, mohon pilih opsi "Izinkan Sepanjang Waktu" (Allow all the time) di pengaturan HP Anda.',
           [
             { text: 'Nanti Saja', style: 'cancel' },
-            { text: 'Buka Pengaturan', onPress: () => Location.getForegroundPermissionsAsync() },
+            // WS-4 (27 Nov 2026): dulu onPress ini memanggil
+            // Location.getForegroundPermissionsAsync() — itu hanya MEMBACA
+            // status izin, TIDAK membuka pengaturan, jadi tombol
+            // "Buka Pengaturan" tidak melakukan apa-apa. Yang benar:
+            // Linking.openSettings() membuka Pengaturan Aplikasi.
+            { text: 'Buka Pengaturan', onPress: () => Linking.openSettings() },
           ]
         );
       }
@@ -949,6 +955,10 @@ export const FleetTrackingScreen: React.FC = () => {
       {/* List View */}
       {activeTab === 'list' && (
         <FlatList
+            removeClippedSubviews={true}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
           data={vehicles}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -1537,6 +1547,7 @@ const fmStyles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   form: {
+    flex: 1,
     padding: Spacing.xl,
   },
   label: {

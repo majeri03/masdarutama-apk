@@ -48,7 +48,11 @@ export const Colors = {
   border: 'rgba(0, 0, 0, 0.08)',
   borderLight: 'rgba(0, 0, 0, 0.04)',
 
-  overlay: 'rgba(0, 0, 0, 0.40)',
+  // WS-6 (27 Nov 2026, kaca modal): dim di belakang modal dinaikkan 0.40
+  // -> 0.60. Dipakai SEMUA overlay modal (POS, Produk, Delivery, Dashboard,
+  // Riwayat, Fleet). Dengan dim 0.40, isi di belakang modal (mis. kartu
+  // produk) masih terlalu jelas sehingga teks modal bercampur dengannya.
+  overlay: 'rgba(0, 0, 0, 0.60)',
   overlayLight: 'rgba(0, 0, 0, 0.15)',
 } as const;
 

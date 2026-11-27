@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  FlatList,
   TouchableOpacity,
   Switch,
   Alert,
@@ -13,6 +12,7 @@ import {
   RefreshControl,
   Image,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadow } from '../constants/theme';
 import { useAuthStore } from '../stores/auth.store';
@@ -20,6 +20,7 @@ import { GlassCard, GradientButton } from '../components/ui';
 import { useNavigation } from '@react-navigation/native';
 import api from '../services/api';
 import { API_ENDPOINTS } from '../constants/api';
+import { AppToast } from '../utils/toast';
 import type { StoreSetting } from '../types';
 import { CURRENT_VERSION, CURRENT_VERSION_CODE } from '../services/update.service';
 
@@ -33,14 +34,17 @@ export const SettingsScreen: React.FC = () => {
   const [storeSettings, setStoreSettings] = useState<StoreSetting | null>(null);
 
   // Fetch store settings
-  const fetchSettings = useCallback(async () => {
+  const fetchSettings = useCallback(async (): Promise<boolean> => {
     try {
       const res = await api.get(API_ENDPOINTS.STORE_SETTINGS);
       if (res.data?.success && res.data?.data) {
         setStoreSettings(res.data.data);
+        return true;
       }
+      return false;
     } catch (e) {
       console.warn('[SETTINGS] Error fetching settings:', e);
+      return false;
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -49,7 +53,32 @@ export const SettingsScreen: React.FC = () => {
 
   useEffect(() => {
     fetchSettings();
+    // WS-4 (27 Nov 2026): pulihkan posisi toggle printer dari AsyncStorage.
+    // Dulu kedua toggle hanya useState (default true) — dimatikan lalu
+    // buka layar lagi, keduanya kembali ON, dan tidak ada layar lain yang
+    // membaca nilai ini. Sekarang posisinya tersimpan; alur cetak POS yang
+    // memakai nilai ini masih perlu dikerjakan pemilik POS (lihat NOTES).
+    (async () => {
+      try {
+        const [printer, receipt] = await Promise.all([
+          AsyncStorage.getItem('settings_use_printer'),
+          AsyncStorage.getItem('settings_print_receipt'),
+        ]);
+        if (printer !== null) setUsePrinter(printer === 'true');
+        if (receipt !== null) setPrintReceipt(receipt === 'true');
+      } catch {}
+    })();
   }, []);
+
+  const toggleUsePrinter = (value: boolean) => {
+    setUsePrinter(value);
+    AsyncStorage.setItem('settings_use_printer', String(value)).catch(() => {});
+  };
+
+  const togglePrintReceipt = (value: boolean) => {
+    setPrintReceipt(value);
+    AsyncStorage.setItem('settings_print_receipt', String(value)).catch(() => {});
+  };
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -63,13 +92,22 @@ export const SettingsScreen: React.FC = () => {
   const handleSync = () => {
     Alert.alert(
       'Sinkronisasi Data',
-      'Data akan disinkronkan dengan server. Proses ini membutuhkan koneksi internet.',
+      'Perbarui info toko dari server?',
       [
         { text: 'Batal', style: 'cancel' },
         {
           text: 'Sinkronkan',
-          onPress: () => {
-            Alert.alert('Sinkronisasi', 'Data sedang disinkronisasi dengan server...', [{ text: 'OK' }]);
+          // WS-4 (27 Nov 2026): dulu onPress ini hanya menampilkan Alert
+          // "Data sedang disinkronisasi..." tanpa memanggil API apa pun —
+          // tombol yang berpura-pura sinkron. Sekarang benar-benar
+          // mengambil ulang info toko dari server dan melaporkan hasilnya.
+          onPress: async () => {
+            const ok = await fetchSettings();
+            if (ok) {
+              AppToast.success('Sinkronisasi', 'Info toko berhasil diperbarui dari server.');
+            } else {
+              AppToast.error('Gagal', 'Tidak dapat terhubung ke server. Coba lagi nanti.');
+            }
           },
         },
       ]
@@ -176,7 +214,7 @@ export const SettingsScreen: React.FC = () => {
               </View>
               <Switch
                 value={usePrinter}
-                onValueChange={setUsePrinter}
+                onValueChange={toggleUsePrinter}
                 trackColor={{ false: Colors.border, true: Colors.primaryStart }}
                 thumbColor="#fff"
               />
@@ -196,7 +234,7 @@ export const SettingsScreen: React.FC = () => {
               </View>
               <Switch
                 value={printReceipt}
-                onValueChange={setPrintReceipt}
+                onValueChange={togglePrintReceipt}
                 trackColor={{ false: Colors.border, true: Colors.success }}
                 thumbColor="#fff"
               />
@@ -211,7 +249,7 @@ export const SettingsScreen: React.FC = () => {
                 </View>
                 <View>
                   <Text style={styles.settingLabel}>Sinkronisasi Data</Text>
-                  <Text style={styles.settingDesc}>Perbarui data produk dan kategori</Text>
+                  <Text style={styles.settingDesc}>Perbarui info toko dari server</Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />

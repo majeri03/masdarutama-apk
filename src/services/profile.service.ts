@@ -78,9 +78,12 @@ export const profileService = {
         type: 'image/jpeg',
       });
 
-      const response = await api.post<any>(API_ENDPOINTS.PROFILE_AVATAR, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      // WS-1 (27 Nov 2026): JANGAN set header Content-Type manual.
+      // Axios + React Native harus yang memasang
+      // `multipart/form-data; boundary=...` sendiri. Header manual tanpa
+      // boundary membuat Next.js gagal mem-parse multipart
+      // (request.formData() melempar 500) sehingga upload SELALU gagal.
+      const response = await api.post<any>(API_ENDPOINTS.PROFILE_AVATAR, formData);
 
       if (response.data?.success && response.data?.data?.avatarUrl) {
         return { success: true, data: { avatarUrl: response.data.data.avatarUrl } };
@@ -90,9 +93,21 @@ export const profileService = {
         error: response.data?.error || 'Gagal mengunggah foto profil.',
       };
     } catch (error: any) {
+      // WS-1: tampilkan penyebab yang jelas, bukan sekadar "gagal".
+      const status = error.response?.status as number | undefined;
+      const serverError = error.response?.data?.error as string | undefined;
+      if (status === 401) {
+        return { success: false, error: 'Sesi Anda sudah habis. Silakan login ulang, lalu coba lagi.' };
+      }
+      if (status === 413) {
+        return { success: false, error: 'Foto terlalu besar untuk server. Pilih foto yang lebih kecil.' };
+      }
+      if (status === 400 && serverError) {
+        return { success: false, error: serverError };
+      }
       return {
         success: false,
-        error: error.response?.data?.error || 'Gagal terhubung ke server.',
+        error: serverError || 'Gagal terhubung ke server.',
       };
     }
   },

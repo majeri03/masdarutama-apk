@@ -136,11 +136,11 @@ export const productService = {
         type,
       });
 
-      const response = await api.post<any>('/api/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      // WS-1 (27 Nov 2026): JANGAN set header Content-Type manual —
+      // boundary multipart harus dipasang axios/React Native sendiri
+      // (lihat profile.service.ts). Header manual tanpa boundary membuat
+      // Next.js gagal mem-parse multipart (500).
+      const response = await api.post<any>('/api/upload', formData);
 
       if (response.data.success) {
         return {

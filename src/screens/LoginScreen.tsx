@@ -102,8 +102,12 @@ export const LoginScreen: React.FC = () => {
       });
 
       if (result.success) {
-        if (targetEmail && targetPassword) {
-          const loginResult = await login(targetEmail, targetPassword);
+        // WS-4 (27 Nov 2026): email di-trim — spasi di akhir (mudah
+        // terjadi dari keyboard HP) membuat login gagal padahal password
+        // benar, tanpa penjelasan yang jelas.
+        const cleanEmail = (targetEmail || '').trim();
+        if (cleanEmail && targetPassword) {
+          const loginResult = await login(cleanEmail, targetPassword);
           if (!loginResult.success) {
             if (loginResult.code === 'unverified') setIsUnverified(true);
             AppToast.error('Login Gagal', loginResult.error || 'Terjadi kesalahan saat masuk.');
@@ -116,16 +120,20 @@ export const LoginScreen: React.FC = () => {
   };
 
   const handleLogin = async () => {
-    if (!email || !password) {
+    // WS-4 (27 Nov 2026): email di-trim sebelum login & disimpan — spasi
+    // di akhir (mudah terjadi dari keyboard HP) membuat login gagal
+    // padahal password benar; email tersimpan pun harus yang bersih.
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
       AppToast.info('Perhatian', 'Email dan password wajib diisi.');
       return;
     }
 
     setIsUnverified(false);
-    const result = await login(email, password);
+    const result = await login(cleanEmail, password);
     if (result.success) {
       const SecureStore = require('expo-secure-store');
-      await SecureStore.setItemAsync('saved_email', email);
+      await SecureStore.setItemAsync('saved_email', cleanEmail);
       await SecureStore.setItemAsync('saved_password', password);
       await SecureStore.setItemAsync('saved_remember', 'true');
     } else {

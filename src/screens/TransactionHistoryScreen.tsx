@@ -15,7 +15,6 @@ import {
   ActivityIndicator,
   RefreshControl,
   Share,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -146,8 +145,6 @@ export const TransactionHistoryScreen: React.FC = () => {
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
-  const [showZoomModal, setShowZoomModal] = useState(false);
   const [updatingProof, setUpdatingProof] = useState(false);
 
   const handleUpdateProof = async (saleId: string, newUrl: string | null) => {
@@ -494,7 +491,7 @@ export const TransactionHistoryScreen: React.FC = () => {
       {/* ── FILTER MODAL ── */}
       <Modal visible={showFilter} animationType="slide" transparent>
         <View style={styles.filterOverlay}>
-          <GlassCard padding={0} style={styles.filterSheet}>
+          <GlassCard padding={0} intensity={70} style={styles.filterSheet}>
             <View style={styles.filterHeader}>
               <Text style={styles.filterTitle}>Filter Transaksi</Text>
               <TouchableOpacity onPress={() => setShowFilter(false)}>
@@ -502,7 +499,7 @@ export const TransactionHistoryScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.filterContent}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.filterContent, { flexGrow: 1 }]}>
               {/* Status */}
               <Text style={styles.filterLabel}>Status Transaksi</Text>
               <View style={styles.filterChips}>
@@ -635,7 +632,7 @@ export const TransactionHistoryScreen: React.FC = () => {
               <ActivityIndicator size="large" color={Colors.primaryStart} />
             </View>
           ) : selectedSale ? (
-            <ScrollView contentContainerStyle={styles.detailContent}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.detailContent, { flexGrow: 1 }]}>
               {/* Invoice Info */}
               <GlassCard padding={20} style={styles.invoiceCard} tinted>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, width: '100%' }}>
@@ -837,30 +834,6 @@ export const TransactionHistoryScreen: React.FC = () => {
             </ScrollView>
           ) : null}
         </SafeAreaView>
-      </Modal>
-
-      {/* ── FULLSCREEN ZOOM MODAL ── */}
-      <Modal
-        visible={showZoomModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowZoomModal(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center' }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 40, paddingBottom: 10 }}>
-            <Text style={{ fontSize: FontSize.md, fontWeight: FontWeight.bold, color: '#FFFFFF' }}>
-              Bukti Transfer / Pembayaran
-            </Text>
-            <TouchableOpacity onPress={() => setShowZoomModal(false)} style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 }}>
-              <Ionicons name="close" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-          {zoomImageUrl ? (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 10 }}>
-              <Image source={{ uri: zoomImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
-            </View>
-          ) : null}
-        </View>
       </Modal>
     </View>
   );

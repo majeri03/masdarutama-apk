@@ -196,10 +196,21 @@ export const DebtScreen: React.FC = () => {
       });
       if (res.success && res.data) {
         const items = res.data as any[];
-        const accumulated = [...debts, ...items];
+        // WS-3 (paket ke-5): sama seperti DO — backend mengabaikan
+        // page/limit, jadi kalau total tagihan pas 30, halaman berikut
+        // mengembalikan 30 baris YANG SAMA dan daftar jadi ganda tanpa
+        // henti tiap scroll. Saring id yang sudah tampil; kalau tidak ada
+        // yang baru, berarti sudah habis.
+        const seenIds = new Set(debts.map((d: any) => d.id));
+        const freshItems = items.filter((d: any) => !seenIds.has(d.id));
+        if (freshItems.length === 0) {
+          setDebtHasMore(false);
+          return;
+        }
+        const accumulated = [...debts, ...freshItems];
         setDebts(applyDebtFilterAndTotals(accumulated));
         debtPageRef.current += 1;
-        setDebtHasMore(items.length === DEBT_PAGE_SIZE);
+        setDebtHasMore(freshItems.length === DEBT_PAGE_SIZE);
       }
     } catch (e) {
       console.warn('[DEBT] Error loading more debts:', e);
@@ -266,7 +277,10 @@ export const DebtScreen: React.FC = () => {
 
   const handlePaySubmit = async () => {
     const amountNum = Number(payAmount || 0);
-    if (!payAmount || amountNum <= 0) {
+    // WS-3 (paket ke-5): Number('abc') = NaN, dan NaN <= 0 bernilai false —
+    // tanpa cek isNaN, ketikan huruf lolos validasi lalu terkirim sebagai
+    // amount null (JSON.stringify(NaN) = null) dan backend menolaknya.
+    if (!payAmount || isNaN(amountNum) || amountNum <= 0) {
       AppToast.info('Perhatian', 'Masukkan jumlah pembayaran yang valid.');
       return;
     }
@@ -457,7 +471,7 @@ export const DebtScreen: React.FC = () => {
           </View>
         </View>
         
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusScroll} contentContainerStyle={styles.statusContent}>
+        <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={styles.statusScroll} contentContainerStyle={styles.statusContent}>
           {[
             { value: '', label: 'Semua' },
             { value: 'UNPAID', label: 'Belum Lunas' },
@@ -500,6 +514,10 @@ export const DebtScreen: React.FC = () => {
           </View>
 
           <FlatList
+            removeClippedSubviews={true}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
             data={debts}
             keyExtractor={(item) => item.id}
             renderItem={renderDebtRow}
@@ -547,7 +565,7 @@ export const DebtScreen: React.FC = () => {
           </View>
 
           {detailDebt ? (
-            <ScrollView contentContainerStyle={styles.detailContent}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.detailContent, { flexGrow: 1 }]}>
               {/* Nomor tagihan + tanggal + status + no. dokumen */}
               <GlassCard padding={20} style={styles.detailDebtCard} tinted>
                 <Text style={styles.detailDebtNo}>{detailDebt.debtNumber}</Text>
@@ -699,7 +717,7 @@ export const DebtScreen: React.FC = () => {
       {/* Repayment Payment Modal */}
       <Modal visible={showPayModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <GlassCard padding={24} style={styles.paySheet}>
+          <GlassCard padding={24} intensity={70} style={styles.paySheet}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Catat Pembayaran</Text>
               <TouchableOpacity onPress={() => setShowPayModal(false)}>
@@ -708,7 +726,7 @@ export const DebtScreen: React.FC = () => {
             </View>
 
             {selectedDebt && (
-              <ScrollView contentContainerStyle={styles.modalScroll}>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.modalScroll, { flexGrow: 1 }]}>
                 <View style={styles.modalSummary}>
                   <Text style={styles.modalSumLabel}>Sisa Tagihan Saat Ini</Text>
                   <Text style={styles.modalSumVal}>
@@ -890,8 +908,8 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   filterChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
@@ -1056,7 +1074,7 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor: Colors.overlay,
   },
   paySheet: {
     borderTopLeftRadius: BorderRadius['2xl'],

@@ -34,7 +34,7 @@ interface EditItem {
 export const EditTransactionScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { saleId } = route.params;
+  const { saleId } = route.params ?? {};
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -63,7 +63,12 @@ export const EditTransactionScreen = () => {
         productService.getProducts({ limit: 500, isActive: true })
       ]);
 
-      const loadedCustomers = custRes.data?.success ? custRes.data.data : [];
+      // WS-2 (paket ke-5): /api/customers bisa mengembalikan array polos
+      // ATAU { customers: [...] } (masterService.getCustomers menormalisasi
+      // kedua bentuk itu). Tanpa normalisasi di sini, customers jadi objek
+      // dan customers.filter/find di bawah melempar TypeError → layar crash.
+      const rawCustomers = custRes.data?.success ? custRes.data.data : [];
+      const loadedCustomers = Array.isArray(rawCustomers) ? rawCustomers : rawCustomers?.customers || [];
       const loadedProducts = prodRes.success && prodRes.data?.products ? prodRes.data.products : [];
 
       setCustomers(loadedCustomers);
@@ -151,13 +156,19 @@ export const EditTransactionScreen = () => {
   const updateItemUnit = (index: number, pu: any) => {
     setItems(prev => {
       const updated = [...prev];
+      const newPrice = Number(pu.sellPrice) || updated[index].unitPrice;
+      // WS-2 (paket ke-5): batasi diskon ke harga baru (pola QA M-30 di
+      // cart.store) supaya subtotal tidak negatif saat pindah ke satuan
+      // yang lebih murah.
+      const discount = Math.min(updated[index].discount, updated[index].quantity * newPrice);
       updated[index] = {
         ...updated[index],
         productUnitId: pu.id,
         unitId: pu.unitId,
         unitName: pu.unit?.name ?? '',
-        unitPrice: Number(pu.sellPrice) || updated[index].unitPrice,
-        subtotal: updated[index].quantity * (Number(pu.sellPrice) || updated[index].unitPrice) - updated[index].discount,
+        unitPrice: newPrice,
+        discount,
+        subtotal: Math.max(0, updated[index].quantity * newPrice - discount),
       };
       return updated;
     });
@@ -168,6 +179,11 @@ export const EditTransactionScreen = () => {
     setItems(prev => {
       const updated = [...prev];
       const item = { ...updated[index], [field]: value };
+      // WS-2 (paket ke-5): batasi diskon 0..(qty x harga) seperti QA M-30
+      // di cart.store — tanpa batas ini subtotal bisa negatif. Diterapkan
+      // untuk semua field (qty/harga turun pun bisa membuat diskon lama
+      // melebihi total baris).
+      item.discount = Math.max(0, Math.min(item.discount, item.quantity * item.unitPrice));
       item.subtotal = Math.max(0, item.quantity * item.unitPrice - item.discount);
       updated[index] = item;
       return updated;
@@ -181,6 +197,25 @@ export const EditTransactionScreen = () => {
   const handleSubmit = async () => {
     if (!selectedCustomerId) return AppToast.error('Peringatan', 'Pilih customer terlebih dahulu');
     if (items.length === 0) return AppToast.error('Peringatan', 'Tambahkan minimal 1 barang');
+
+    // WS-2 (paket ke-5): tolak barang dengan qty < 1 (mis. field qty
+    // dikosongkan saat mengetik). POS menolak qty < 1; tanpa validasi ini
+    // transaksi tersimpan dengan item qty 0.
+    const badQty = items.find(i => !i.quantity || i.quantity < 1);
+    if (badQty) {
+      return AppToast.error('Peringatan', `Qty "${badQty.productName}" harus minimal 1`);
+    }
+
+    // WS-2 (paket ke-5): Piutang (CREDIT) tidak boleh untuk pelanggan UMUM
+    // — aturan yang sama seperti QA M-29 di POS. Tanpa penjaga ini, edit
+    // bisa mengubah transaksi tunai menjadi piutang tanpa identitas.
+    if (paymentMethod === 'CREDIT') {
+      const cust = customers.find(c => c.id === selectedCustomerId);
+      const isUmum = (cust?.type || '').toUpperCase() === 'UMUM' || (cust?.name || '').toUpperCase() === 'UMUM';
+      if (isUmum) {
+        return AppToast.error('Peringatan', 'Piutang tidak bisa untuk pelanggan UMUM. Pilih pelanggan terdaftar dulu, atau ubah ke Tunai.');
+      }
+    }
 
     const missingUnit = items.find(i => !i.productUnitId);
     if (missingUnit) {
@@ -381,6 +416,7 @@ export const EditTransactionScreen = () => {
               value={paidAmount}
               onChangeText={setPaidAmount}
               placeholder="0"
+              placeholderTextColor={Colors.textTertiary}
             />
           </View>
         </View>
@@ -393,6 +429,7 @@ export const EditTransactionScreen = () => {
             value={notes}
             onChangeText={setNotes}
             placeholder="Catatan tambahan..."
+            placeholderTextColor={Colors.textTertiary}
             multiline
           />
         </View>
@@ -451,12 +488,13 @@ export const EditTransactionScreen = () => {
             <TextInput
               style={styles.searchInput}
               placeholder="Cari nama / kode produk..."
+              placeholderTextColor={Colors.textTertiary}
               value={productSearch}
               onChangeText={setProductSearch}
               autoFocus
             />
           </View>
-          <ScrollView>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}>
             {filteredProducts.map(p => (
               <TouchableOpacity
                 key={p.id}
@@ -492,12 +530,13 @@ export const EditTransactionScreen = () => {
             <TextInput
               style={styles.searchInput}
               placeholder="Cari nama customer..."
+              placeholderTextColor={Colors.textTertiary}
               value={customerSearch}
               onChangeText={setCustomerSearch}
               autoFocus
             />
           </View>
-          <ScrollView>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}>
             {filteredCustomers.map(c => (
               <TouchableOpacity
                 key={c.id}

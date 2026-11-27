@@ -29,7 +29,8 @@ import { uploadService } from '../services/upload.service';
 import { AppToast } from '../utils/toast';
 import { useDebouncedValue } from '../utils/debounce';
 import { toLocalDateString } from '../utils/dates';
-import { generateInvoiceHtml, getStoreSettings } from '../utils/invoicePdf';
+import { generateInvoiceHtml, getInvoicePdfPageSize, getStoreSettings } from '../utils/invoicePdf';
+import { useInvoiceLayoutStore } from '../stores/invoice-layout.store';
 import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
 import { useAuthStore } from '../stores/auth.store';
 import { useNotificationCenterStore } from '../stores/notificationCenter.store';
@@ -173,9 +174,21 @@ export const DeliveryScreen: React.FC = () => {
       });
       if (res.success && res.data) {
         const items = res.data as DeliveryOrder[];
-        setDeliveryOrders((prev) => [...prev, ...items]);
+        // WS-3 (paket ke-5): backend saat ini MENGABAIKAN page/limit, jadi
+        // kalau total DO pas 30 (= DO_PAGE_SIZE), halaman 1 mengembalikan
+        // 30 item dan hasMore=true, lalu halaman 2 mengembalikan 30 item
+        // YANG SAMA — tanpa dedupe, daftar jadi ganda dan terus bertambah
+        // tiap scroll (30 -> 60 -> 90 ...). Saring id yang sudah tampil;
+        // kalau tidak ada item baru, berarti sudah habis.
+        const seenIds = new Set(deliveryOrders.map((d) => d.id));
+        const freshItems = items.filter((d) => !seenIds.has(d.id));
+        if (freshItems.length === 0) {
+          setDoHasMore(false);
+          return;
+        }
+        setDeliveryOrders((prev) => [...prev, ...freshItems]);
         doPageRef.current += 1;
-        setDoHasMore(items.length === DO_PAGE_SIZE);
+        setDoHasMore(freshItems.length === DO_PAGE_SIZE);
       }
     } catch (e) {
       console.warn('[DELIVERY] Error loading more DOs:', e);
@@ -370,6 +383,10 @@ export const DeliveryScreen: React.FC = () => {
   useEffect(() => {
     if (debouncedSearchProductQuery.length > 1) {
       loadSearchProducts(debouncedSearchProductQuery);
+    } else {
+      // WS-3 (paket ke-5): query <= 1 huruf tidak memuat — tanpa ini, hasil
+      // cari query lama tetap tampil di bawah query baru yang tidak cocok.
+      setProducts([]);
     }
   }, [debouncedSearchProductQuery]);
 
@@ -838,13 +855,20 @@ export const DeliveryScreen: React.FC = () => {
           onPress: async () => {
             // Hapus foto dari Cloudflare R2 jika ada (sinkronisasi)
             const doItem = deliveryOrders.find((d) => d.id === id);
-            if (doItem?.notes) {
-              const proofMatch = doItem.notes.match(/\[BUKTI_KIRIM\]:\s*([^\s\]\n]+)/);
-              const fotoMatch = doItem.notes.match(/\[FOTO_LOKASI\]:\s*([^\s\]\n]+)/);
+            // WS-3 (paket ke-5): dulu hanya jalan kalau notes terisi — DO yang
+            // fotonya hanya di kolom proofImage (tanpa marker di notes) tidak
+            // pernah dibersihkan dari R2, padahal konfirmasi hapus menjanjikan
+            // semua foto bukti dihapus.
+            if (doItem && (doItem.notes || doItem.proofImage)) {
+              const proofMatch = doItem.notes?.match(/\[BUKTI_KIRIM\]:\s*([^\s\]\n]+)/);
+              const fotoMatch = doItem.notes?.match(/\[FOTO_LOKASI\]:\s*([^\s\]\n]+)/);
               // Hapus semua foto terkait dari Cloudflare
               const urlsToDelete: string[] = [];
               if (proofMatch?.[1]) urlsToDelete.push(proofMatch[1]);
               if (fotoMatch?.[1]) urlsToDelete.push(fotoMatch[1]);
+              if (doItem.proofImage && !urlsToDelete.includes(doItem.proofImage)) {
+                urlsToDelete.push(doItem.proofImage);
+              }
 
               for (const imgUrl of urlsToDelete) {
                 try {
@@ -928,7 +952,10 @@ export const DeliveryScreen: React.FC = () => {
       const store = await getStoreSettings();
 
       const html = generateInvoiceHtml(mockSale, store, { layoutType: 'SURAT_JALAN' });
-      await Print.printAsync({ html });
+      // WS-4: ukuran halaman eksplisit A4 (dari invoicePaperSize) — tanpa
+      // ini expo-print memakai default US Letter 612x792.
+      const layout = useInvoiceLayoutStore.getState();
+      await Print.printAsync({ html, ...getInvoicePdfPageSize('SURAT_JALAN', layout.paperSize, layout.invoicePaperSize) });
     } catch (error) {
       AppToast.error('Gagal Cetak', 'Gagal memproses cetak surat jalan.');
     } finally {
@@ -989,7 +1016,9 @@ export const DeliveryScreen: React.FC = () => {
       const store = await getStoreSettings();
 
       const html = generateInvoiceHtml(mockSale, store, { layoutType: 'SURAT_JALAN' });
-      const { uri } = await Print.printToFileAsync({ html });
+      // WS-4: ukuran halaman eksplisit A4 (dari invoicePaperSize).
+      const layout = useInvoiceLayoutStore.getState();
+      const { uri } = await Print.printToFileAsync({ html, ...getInvoicePdfPageSize('SURAT_JALAN', layout.paperSize, layout.invoicePaperSize) });
       
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
@@ -1193,7 +1222,7 @@ export const DeliveryScreen: React.FC = () => {
            </TouchableOpacity>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusFilters}>
+        <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusFilters}>
           <TouchableOpacity
             style={[styles.filterBadge, statusFilter === '' && styles.filterBadgeActive]}
             onPress={() => setStatusFilter('')}
@@ -1231,6 +1260,10 @@ export const DeliveryScreen: React.FC = () => {
           </View>
 
           <FlatList
+            removeClippedSubviews={true}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
             data={deliveryOrders}
             keyExtractor={(item) => item.id}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryStart} />}
@@ -1522,7 +1555,12 @@ export const DeliveryScreen: React.FC = () => {
       {/* ─── UPDATE STATUS MODAL ─── */}
       <Modal visible={showStatusModal} transparent animationType="fade" onRequestClose={() => setShowStatusModal(false)}>
         <View style={styles.statusOverlay}>
-          <GlassCard padding={24} style={styles.statusModalCard}>
+          <GlassCard padding={24} intensity={70} style={styles.statusModalCard}>
+            {/* WS-4 (27 Nov 2026): isi dibungkus ScrollView — saat status
+                DELIVERED konten membesar (input penerima + foto bukti) dan
+                keyboard bisa menutup tombol Simpan/Batal; tanpa scroll
+                tombol bawah tidak terjangkau di layar kecil. */}
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: 8 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.statusModalTitle}>Ubah Status Surat Jalan</Text>
             
             <View style={styles.statusOptions}>
@@ -1566,6 +1604,7 @@ export const DeliveryScreen: React.FC = () => {
               <GradientButton title="Simpan Status Baru" onPress={handleUpdateStatus} loading={updatingStatusId === selectedDO?.id} variant="primary" fullWidth />
               <GradientButton title="Batal" onPress={() => setShowStatusModal(false)} variant="outline" fullWidth />
             </View>
+            </ScrollView>
           </GlassCard>
         </View>
       </Modal>
@@ -2370,6 +2409,8 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     padding: Spacing.lg,
+    flexGrow: 1,
+    paddingBottom: Spacing.xl,
   },
   detailsCard: {
     backgroundColor: '#FFFFFF',
@@ -2431,6 +2472,7 @@ const styles = StyleSheet.create({
   statusModalCard: {
     width: '100%',
     maxWidth: 380,
+    maxHeight: '85%',
     backgroundColor: '#FFFFFF',
   },
   statusModalTitle: {

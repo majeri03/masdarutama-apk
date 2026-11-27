@@ -10,13 +10,8 @@ import { GlassCard } from '../components/ui';
 import { navigateToScreen, sendTestNotification, getPushTokenStatus } from '../hooks/usePushNotifications';
 
 /**
- * Tab screen names in Main tab navigator — navigasi ke sini butuh
- * navigate('Main', { screen: 'NamaTab' }).
- * Stack screens: navigate langsung.
+ * Kategori filter notifikasi
  */
-const TAB_SCREENS = new Set(['Dashboard', 'POS', 'Products', 'History', 'Reports', 'Settings']);
-
-// Kategori filter notifikasi
 const CATEGORIES = [
   { key: '', label: 'Semua', icon: 'notifications-outline' as const, color: Colors.primaryStart },
   { key: 'unread', label: 'Belum dibaca', icon: 'mail-unread-outline' as const, color: Colors.primaryStart },
@@ -109,7 +104,6 @@ export const NotificationCenterScreen: React.FC = () => {
     markAllAsRead,
     deleteNotification,
     clearReadNotifications,
-    clearAll,
     cleanupOldNotifications,
     fetchRemoteNotifications,
   } = useNotificationCenterStore();
@@ -349,6 +343,10 @@ export const NotificationCenterScreen: React.FC = () => {
       </TouchableOpacity>
 
       <FlatList
+            removeClippedSubviews={true}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
         data={filteredNotifications}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}

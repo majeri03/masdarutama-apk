@@ -91,6 +91,66 @@ const getStoreDisplay = (store: any) => ({
   storeTagline: (store.tagline || '').trim(),
 });
 
+// WS-4 (perbaikan ke-4, 27 Nov 2026): watermark DIHAPUS TOTAL dari semua
+// format invoice/faktur/struk/surat jalan APK — user tidak mau pakai
+// watermark sama sekali. Variabel isPaid/watermarkText/showWatermark dan
+// keempat blok <div> watermark (struk, surat jalan, faktur NCR, invoice A4)
+// sudah dibuang; yang tersisa hanya baris jumlah "Bayar/Paid" (angka, bukan
+// watermark) dan label status di layar riwayat (bukan di dokumen).
+
+// WS-4: ukuran halaman PDF/cetak (pt, 1 pt = 1/72 inci) untuk expo-print.
+// Sebelumnya printToFileAsync/printAsync dipanggil tanpa width/height,
+// sehingga expo-print memakai default US Letter 612x792 — struk thermal
+// jadi halaman selebar A4/Letter dengan isi sempit di tengah, dan invoice
+// A4 tidak sama persis dengan ukuran @page di template.
+const MM_TO_PT = 72 / 25.4;
+const parsePaperMm = (paperSize: string | undefined, fallbackMm: number): number => {
+  const m = /(\d+(?:[.,]\d+)?)\s*mm/i.exec(paperSize || '');
+  const mm = m ? parseFloat(m[1].replace(',', '.')) : NaN;
+  return Number.isFinite(mm) && mm > 0 ? mm : fallbackMm;
+};
+const DOC_PAPER_PT: Record<string, { width: number; height: number }> = {
+  A4: { width: 595, height: 842 },
+  A5: { width: 420, height: 595 },
+  LETTER: { width: 612, height: 792 },
+  LEGAL: { width: 612, height: 1008 },
+  // F4/Folio 215x330mm; HVS bukan ukuran — samakan A4.
+  F4: { width: 609, height: 935 },
+  HVS: { width: 595, height: 842 },
+};
+
+/**
+ * Ukuran halaman (pt) untuk Print.printAsync / Print.printToFileAsync
+ * sesuai layout yang sedang dipakai. Struk: lebar = lebar kertas thermal
+ * yang dipilih (default 58mm); tinggi dibiarkan 792 agar struk panjang
+ * mengalir ke halaman berikut, bukan terpotong oleh tinggi yang dipatok.
+ * Dokumen (A4/NCR/Surat Jalan): dari invoicePaperSize, dukung preset
+ * maupun custom "210mm x 297mm".
+ */
+export const getInvoicePdfPageSize = (
+  layoutType: string,
+  paperSize: string,
+  invoicePaperSize: string,
+): { width: number; height: number } => {
+  if (layoutType === 'STRUK_KECIL') {
+    return { width: Math.round(parsePaperMm(paperSize, 58) * MM_TO_PT * 10) / 10, height: 792 };
+  }
+  const preset = DOC_PAPER_PT[(invoicePaperSize || '').trim().toUpperCase()];
+  if (preset) return preset;
+  const dims = (invoicePaperSize || '').split('x').map((p) => parsePaperMm(p, NaN));
+  if (dims.length === 2 && Number.isFinite(dims[0]) && Number.isFinite(dims[1])) {
+    return { width: Math.round(dims[0] * MM_TO_PT), height: Math.round(dims[1] * MM_TO_PT) };
+  }
+  return DOC_PAPER_PT.A4;
+};
+
+/** Lebar kontainer struk (CSS px @96dpi) mengikuti kertas yang dipilih
+ *  (58mm default) dikurangi padding body — sebelumnya selalu 300px
+ *  (≈80mm) walau kertas diset 58mm, sehingga isi bisa meluber/terpotong
+ *  di tepi saat dicetak ke PDF sempit. */
+const strukContainerPx = (paperSize: string): number =>
+  Math.max(150, Math.round(parsePaperMm(paperSize, 58) * (96 / 25.4)) - 20);
+
 export const generateInvoiceHtml = (
   sale: Sale,
   store: any,
@@ -111,14 +171,6 @@ export const generateInvoiceHtml = (
     hour: '2-digit',
     minute: '2-digit',
   });
-
-  const isPaid = sale.paymentMethod !== 'CREDIT' || Number(sale.paidAmount) >= Number(sale.grandTotal);
-  const watermarkText = isPaid ? 'PAID' : 'UNPAID';
-  const watermarkColor = '#9CA3AF';
-  // Hapus watermark khusus di PO dan Surat Jalan
-  const showWatermark = layout.layoutType !== 'SURAT_JALAN' && 
-                        !sale.invoiceNumber?.startsWith('PO-') && 
-                        !sale.invoiceNumber?.startsWith('DO-');
 
   const items = sale.saleItems || [];
 
@@ -153,13 +205,15 @@ export const generateInvoiceHtml = (
             margin: 0;
             padding: 10px;
             background: #ffffff;
+            color-scheme: light;
             line-height: 1.3;
           }
           .container {
-            max-width: 300px;
+            /* WS-4: lebar mengikuti kertas thermal yang dipilih (58mm
+               default ≈ 199px), bukan selalu 300px (≈80mm). */
+            max-width: ${strukContainerPx(layout.paperSize)}px;
             margin: 0 auto;
             position: relative;
-            overflow: hidden;
           }
           .divider {
             border-top: 1px dashed #000000;
@@ -185,11 +239,6 @@ export const generateInvoiceHtml = (
       </head>
       <body>
         <div class="container">
-          ${showWatermark ? `
-          <div style="position: absolute; top: 40%; left: 0; right: 0; text-align: center; opacity: 0.08; transform: rotate(-25deg); font-size: 44px; font-weight: 900; z-index: 1000; color: ${watermarkColor}; pointer-events: none; white-space: nowrap; font-family: sans-serif; letter-spacing: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
-            ${watermarkText}
-          </div>
-          ` : ''}
           ${layout.showHeader ? `
             <div class="center">
               <div style="font-size: ${16 * scale}px; font-weight: bold;">${escapeHtml(storeName)}</div>
@@ -285,6 +334,8 @@ export const generateInvoiceHtml = (
             color: #000000;
             margin: 0;
             padding: 30px;
+            background: #ffffff;
+            color-scheme: light;
             font-size: ${12 * scale}px;
             line-height: 1.4;
           }
@@ -293,7 +344,6 @@ export const generateInvoiceHtml = (
             max-width: 800px;
             margin: 0 auto;
             position: relative;
-            overflow: hidden;
           }
           .header-box {
             display: flex;
@@ -324,15 +374,15 @@ export const generateInvoiceHtml = (
           }
           .info-card {
             border: 1px solid #000000;
-            padding: 10px;
-            margin-bottom: 20px;
+            padding: 8px 10px;
+            margin-bottom: 12px;
           }
           .info-card-title {
             font-weight: bold;
             text-transform: uppercase;
             border-bottom: 1px solid #000000;
-            padding-bottom: 4px;
-            margin-bottom: 6px;
+            padding-bottom: 2px;
+            margin-bottom: 4px;
             font-size: ${11 * scale}px;
           }
           .product-table {
@@ -366,11 +416,6 @@ export const generateInvoiceHtml = (
       </head>
       <body>
         <div class="container">
-          ${showWatermark ? `
-          <div style="position: absolute; top: 35%; left: 0; right: 0; text-align: center; opacity: 0.08; transform: rotate(-30deg); font-size: 110px; font-weight: 900; z-index: 1000; color: ${watermarkColor}; pointer-events: none; white-space: nowrap; font-family: sans-serif; letter-spacing: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
-            ${watermarkText}
-          </div>
-          ` : ''}
           <div class="header-box">
             <div>
               <div class="store-title">${escapeHtml(storeName)}</div>
@@ -380,7 +425,7 @@ export const generateInvoiceHtml = (
             </div>
             <div>
               <div class="do-title">SURAT JALAN</div>
-              <table style="font-size: 11px; margin-top: 5px;">
+              <table style="font-size: 11px; margin-top: 5px; white-space: nowrap;">
                 <tr><td>No. Dokumen</td><td>: <b>DO-${escapeHtml(sale.invoiceNumber)}</b></td></tr>
                 <tr><td>No. Ref POS</td><td>: #${escapeHtml(sale.invoiceNumber)}</td></tr>
                 <tr><td>Tanggal</td><td>: ${dateStr}</td></tr>
@@ -494,6 +539,8 @@ export const generateInvoiceHtml = (
             color: #000000;
             margin: 0;
             padding: 24px;
+            background: #ffffff;
+            color-scheme: light;
             font-size: ${12 * scale}px;
             line-height: 1.4;
           }
@@ -503,7 +550,6 @@ export const generateInvoiceHtml = (
             margin: 0 auto;
             background: #ffffff;
             position: relative;
-            overflow: hidden;
           }
           .header-box {
             display: flex;
@@ -541,6 +587,8 @@ export const generateInvoiceHtml = (
           }
           .meta-table td {
             padding: 3px 6px;
+            /* WS-4: nomor invoice tidak boleh patah di tengah (mis. setelah "/"). */
+            white-space: nowrap;
           }
           .meta-label {
             font-weight: bold;
@@ -548,17 +596,18 @@ export const generateInvoiceHtml = (
           }
           .card-box {
             /* WS-6 Faktur NCR web: tanpa kotak/border, lebar 50% */
+            /* WS-4: blok info customer dirapatkan (hemat kertas). */
             border: none;
             padding: 0;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             width: 50%;
           }
           .card-box-title {
             font-weight: bold;
             text-transform: uppercase;
             border-bottom: none;
-            padding-bottom: 4px;
-            margin-bottom: 8px;
+            padding-bottom: 2px;
+            margin-bottom: 4px;
             font-size: ${11 * scale}px;
           }
           .data-table {
@@ -646,11 +695,6 @@ export const generateInvoiceHtml = (
       </head>
       <body>
         <div class="container">
-          ${showWatermark ? `
-          <div style="position: absolute; top: 35%; left: 0; right: 0; text-align: center; opacity: 0.08; transform: rotate(-30deg); font-size: 110px; font-weight: 900; z-index: 1000; color: ${watermarkColor}; pointer-events: none; white-space: nowrap; font-family: sans-serif; letter-spacing: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
-            ${watermarkText}
-          </div>
-          ` : ''}
           <!-- ─── HEADER ─── -->
           ${layout.showHeader ? `
           <div class="header-box" style="align-items: center;">
@@ -842,6 +886,8 @@ export const generateInvoiceHtml = (
             color: #000000;
             margin: 0;
             padding: 24px;
+            background: #ffffff;
+            color-scheme: light;
             font-size: ${12 * scale}px;
             line-height: 1.4;
           }
@@ -851,7 +897,6 @@ export const generateInvoiceHtml = (
             margin: 0 auto;
             background: #ffffff;
             position: relative;
-            overflow: hidden;
           }
           .header-box {
             display: flex;
@@ -889,23 +934,26 @@ export const generateInvoiceHtml = (
           }
           .meta-table td {
             padding: 3px 6px;
+            /* WS-4: nomor invoice tidak boleh patah di tengah (mis. setelah "/"). */
+            white-space: nowrap;
           }
           .meta-label {
             font-weight: bold;
             color: #000000;
           }
           .card-box {
+            /* WS-4: blok info customer dirapatkan (hemat kertas). */
             border: 1px solid #000000;
-            padding: 10px 12px;
-            margin-bottom: 14px;
+            padding: 6px 10px;
+            margin-bottom: 8px;
             width: 50%;
           }
           .card-box-title {
             font-weight: bold;
             text-transform: uppercase;
             border-bottom: 1px solid #000000;
-            padding-bottom: 4px;
-            margin-bottom: 8px;
+            padding-bottom: 2px;
+            margin-bottom: 4px;
             font-size: ${11 * scale}px;
           }
           .data-table {
@@ -993,11 +1041,6 @@ export const generateInvoiceHtml = (
       </head>
       <body>
         <div class="container">
-          ${showWatermark ? `
-          <div style="position: absolute; top: 35%; left: 0; right: 0; text-align: center; opacity: 0.08; transform: rotate(-30deg); font-size: 110px; font-weight: 900; z-index: 1000; color: ${watermarkColor}; pointer-events: none; white-space: nowrap; font-family: sans-serif; letter-spacing: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
-            ${watermarkText}
-          </div>
-          ` : ''}
           <!-- ─── HEADER ─── -->
           ${layout.showHeader ? `
           <div class="header-box" style="align-items: center;">
@@ -1232,7 +1275,10 @@ export const printInvoice = async (sale: Sale) => {
     } else {
       // Fallback Print via System (Wi-Fi, A4, PDF)
       const html = generateInvoiceHtml(sale, store);
-      await Print.printAsync({ html });
+      // WS-4: ukuran halaman eksplisit — struk sempit sesuai kertas thermal,
+      // dokumen A4/NCR sesuai invoicePaperSize (bukan default US Letter).
+      const pageSize = getInvoicePdfPageSize(layout.layoutType, layout.paperSize, layout.invoicePaperSize);
+      await Print.printAsync({ html, ...pageSize });
     }
   } catch (error) {
     console.error('[PRINT_INVOICE] Error:', error);
@@ -1247,7 +1293,11 @@ export const shareInvoicePdf = async (sale: Sale) => {
   try {
     const store = await getStoreSettings();
     const html = generateInvoiceHtml(sale, store);
-    const { uri } = await Print.printToFileAsync({ html });
+    const layout = useInvoiceLayoutStore.getState();
+    // WS-4: ukuran halaman eksplisit (lihat getInvoicePdfPageSize) — tanpa
+    // ini PDF struk jadi halaman US Letter selebar A4.
+    const pageSize = getInvoicePdfPageSize(layout.layoutType, layout.paperSize, layout.invoicePaperSize);
+    const { uri } = await Print.printToFileAsync({ html, ...pageSize });
     await Sharing.shareAsync(uri, {
       mimeType: 'application/pdf',
       dialogTitle: `Share Invoice ${sale.invoiceNumber}`,

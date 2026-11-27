@@ -74,10 +74,11 @@ export const uploadService = {
       formData.append('folder', folder);
 
       // 4. Unggah via API
+      // WS-1 (27 Nov 2026): JANGAN set header Content-Type manual —
+      // boundary multipart harus dipasang axios/React Native sendiri
+      // (lihat profile.service.ts). Header manual tanpa boundary membuat
+      // Next.js gagal mem-parse multipart (500).
       const response = await api.post<any>('/api/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
         onUploadProgress: (progressEvent) => {
           if (progressEvent.total && onProgress) {
             const current = Math.round((progressEvent.loaded * 50) / progressEvent.total);

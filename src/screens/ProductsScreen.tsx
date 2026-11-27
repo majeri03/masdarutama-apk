@@ -28,7 +28,7 @@ import { productService } from '../services/product.service';
 import { masterService } from '../services/master.service';
 import { useAuthStore } from '../stores/auth.store';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight, Shadow } from '../constants/theme';
-import { GlassCard, StatusBadge, GradientButton } from '../components/ui';
+import { GlassCard, GradientButton } from '../components/ui';
 import type { Product, Category, Unit, SubCategory } from '../types';
 
 export const ProductsScreen: React.FC = () => {
@@ -739,7 +739,7 @@ export const ProductsScreen: React.FC = () => {
 
             return (
               <TouchableOpacity onPress={() => handleViewDetail(item)}>
-                <GlassCard padding={16} style={styles.productCard}>
+                <GlassCard padding={16} blur={false} style={styles.productCard}>
                   <View style={styles.cardHeader}>
                     <View style={styles.cardHeaderLeft}>
                       <View style={styles.iconBg}>
@@ -757,7 +757,15 @@ export const ProductsScreen: React.FC = () => {
                         <Text style={styles.productCode}>{item.code}</Text>
                       </View>
                     </View>
-                    <StatusBadge status={item.isActive ? 'RECEIVED' : 'CANCELLED'} />
+                    {/* WS-3 (paket ke-5): JANGAN pakai StatusBadge di sini — komponen itu
+                        hanya mengenal RECEIVED='Diterima' / CANCELLED='Dibatalkan'
+                        (status penjualan), jadi produk aktif tampil 'Diterima' dan
+                        produk nonaktif tampil 'Dibatalkan'. Badge kecil khusus produk: */}
+                    <View style={[styles.activeBadge, item.isActive ? styles.activeBadgeOn : styles.activeBadgeOff]}>
+                      <Text style={[styles.activeBadgeText, item.isActive ? styles.activeBadgeTextOn : styles.activeBadgeTextOff]}>
+                        {item.isActive ? 'Aktif' : 'Nonaktif'}
+                      </Text>
+                    </View>
                   </View>
 
                   <View style={styles.cardInfoRow}>
@@ -1245,7 +1253,13 @@ export const ProductsScreen: React.FC = () => {
         {/* --- ADD UNIT INNER MODAL --- */}
         <Modal visible={showAddUnitForm} transparent animationType="fade">
           <View style={styles.modalOverlay}>
-            <GlassCard padding={24} style={styles.addUnitModalCard}>
+            <GlassCard padding={24} intensity={70} style={styles.addUnitModalCard}>
+              {/* WS-4 (27 Nov 2026): isi dibungkus ScrollView — 5 grup input +
+                  switch + 2 tombol (±660px); saat keyboard terbuka tombol
+                  "Tambahkan" di bawah tidak terjangkau tanpa scroll. Gap antar
+                  isi pindah ke contentContainerStyle karena GlassCard kini
+                  hanya punya satu anak (ScrollView). */}
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, gap: Spacing.md, paddingBottom: 8 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.modalTitle}>Tambah Satuan Penjualan</Text>
 
               <View style={styles.inputGroup}>
@@ -1335,6 +1349,7 @@ export const ProductsScreen: React.FC = () => {
                   fullWidth
                 />
               </View>
+              </ScrollView>
             </GlassCard>
           </View>
         </Modal>
@@ -1342,7 +1357,7 @@ export const ProductsScreen: React.FC = () => {
         {/* --- ADD CATEGORY MODAL --- */}
         <Modal visible={showAddCategoryModal} transparent animationType="fade">
           <View style={styles.modalOverlay}>
-            <GlassCard padding={24} style={styles.addUnitModalCard}>
+            <GlassCard padding={24} intensity={70} style={styles.addUnitModalCard}>
               <Text style={styles.modalTitle}>Tambah Kategori Baru</Text>
 
               <View style={styles.inputGroup}>
@@ -1393,7 +1408,7 @@ export const ProductsScreen: React.FC = () => {
         {/* --- ADD SUB-CATEGORY MODAL --- */}
         <Modal visible={showAddSubCategoryModal} transparent animationType="fade">
           <View style={styles.modalOverlay}>
-            <GlassCard padding={24} style={styles.addUnitModalCard}>
+            <GlassCard padding={24} intensity={70} style={styles.addUnitModalCard}>
               <Text style={styles.modalTitle}>Tambah Sub-Kategori</Text>
 
               {(() => {
@@ -1444,7 +1459,7 @@ export const ProductsScreen: React.FC = () => {
         {/* --- QUICK ADD UNIT MODAL --- */}
         <Modal visible={showAddUnitMasterModal} transparent animationType="fade">
           <View style={styles.modalOverlay}>
-            <GlassCard padding={24} style={styles.addUnitModalCard}>
+            <GlassCard padding={24} intensity={70} style={styles.addUnitModalCard}>
               <Text style={styles.modalTitle}>Buat Master Satuan Baru</Text>
 
               <View style={styles.inputGroup}>
@@ -1613,6 +1628,30 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     marginTop: 2,
   },
+  activeBadge: {
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+  },
+  activeBadgeOn: {
+    backgroundColor: Colors.successLight,
+    borderColor: Colors.success,
+  },
+  activeBadgeOff: {
+    backgroundColor: 'rgba(107, 114, 128, 0.15)',
+    borderColor: '#9CA3AF',
+  },
+  activeBadgeText: {
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  activeBadgeTextOn: {
+    color: Colors.success,
+  },
+  activeBadgeTextOff: {
+    color: '#9CA3AF',
+  },
   cardInfoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1758,6 +1797,7 @@ const styles = StyleSheet.create({
   formContent: {
     padding: Spacing.lg,
     gap: Spacing.md,
+    flexGrow: 1,
   },
   inputGroup: {
     gap: 6,
@@ -1885,6 +1925,7 @@ const styles = StyleSheet.create({
   addUnitModalCard: {
     width: '100%',
     maxWidth: 360,
+    maxHeight: '85%',
     gap: Spacing.md,
   },
   scannerOverlay: {

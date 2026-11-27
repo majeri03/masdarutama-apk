@@ -306,7 +306,7 @@ export const PointsScreen: React.FC = () => {
           ) : null}
         </View>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipStrip}>
+      <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={styles.chipStrip}>
         <View style={styles.chipRow}>
           {typeChips.map((chip) => (
             <TouchableOpacity
@@ -384,6 +384,7 @@ export const PointsScreen: React.FC = () => {
               value={pointsRate}
               onChangeText={setPointsRate}
               placeholder="10000"
+              placeholderTextColor={Colors.textTertiary}
               keyboardType="number-pad"
               editable={isSuperAdmin}
             />
@@ -451,7 +452,7 @@ export const PointsScreen: React.FC = () => {
           </View>
 
           {detailCustomer && (
-            <ScrollView contentContainerStyle={styles.detailContent}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.detailContent, { flexGrow: 1 }]}>
               <GlassCard padding={16} style={styles.detailSection}>
                 <Text style={styles.detailName}>{detailCustomer.name}</Text>
                 <View style={styles.detailRow}>
@@ -494,6 +495,7 @@ export const PointsScreen: React.FC = () => {
                       value={adjustInputs[detailCustomer.id] || ''}
                       onChangeText={(t) => setAdjustInputs((v) => ({ ...v, [detailCustomer.id]: t }))}
                       placeholder="0"
+                      placeholderTextColor={Colors.textTertiary}
                       keyboardType="number-pad"
                     />
                     <TouchableOpacity
@@ -594,13 +596,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     paddingVertical: 8,
   },
-  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12 },
   chip: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: BorderRadius.full,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: BorderRadius.full,
     borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', backgroundColor: Colors.surface,
   },
   chipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  chipText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  chipText: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
   chipTextActive: { color: '#FFFFFF' },
   chipDivider: { width: 1, height: 24, backgroundColor: 'rgba(0,0,0,0.12)', marginHorizontal: 2 },
   resultCount: { fontSize: FontSize.xs, color: Colors.textTertiary, paddingHorizontal: 12, paddingVertical: 8 },

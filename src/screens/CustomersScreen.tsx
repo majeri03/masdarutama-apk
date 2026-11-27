@@ -217,7 +217,7 @@ export const CustomersScreen: React.FC = () => {
           ) : null}
         </View>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipStrip}>
+      <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={styles.chipStrip}>
         <View style={styles.chipRow}>
           {typeChips.map((chip) => (
             <TouchableOpacity
@@ -288,7 +288,7 @@ export const CustomersScreen: React.FC = () => {
           </View>
 
           {selectedCustomer && (
-            <ScrollView contentContainerStyle={styles.detailContent}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.detailContent, { flexGrow: 1 }]}>
               <GlassCard padding={16} style={styles.detailSection}>
                 <Text style={styles.detailName}>{selectedCustomer.name}</Text>
                 <View style={styles.detailRow}>
@@ -367,13 +367,14 @@ export const CustomersScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ padding: 16 }}>
+            <ScrollView style={{ flex: 1, padding: 16 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}>
               <Text style={styles.inputLabel}>Nama Pelanggan <Text style={{color: Colors.error}}>*</Text></Text>
               <TextInput
                 style={styles.input}
                 value={formData.name || ''}
                 onChangeText={(t) => setFormData(p => ({ ...p, name: t }))}
                 placeholder="Masukkan nama"
+                placeholderTextColor={Colors.textTertiary}
               />
 
               <Text style={styles.inputLabel}>Tipe Pelanggan</Text>
@@ -397,6 +398,7 @@ export const CustomersScreen: React.FC = () => {
                 value={formData.phone || ''}
                 onChangeText={(t) => setFormData(p => ({ ...p, phone: t }))}
                 placeholder="Contoh: 0812345678"
+                placeholderTextColor={Colors.textTertiary}
                 keyboardType="phone-pad"
               />
 
@@ -406,6 +408,7 @@ export const CustomersScreen: React.FC = () => {
                 value={formData.address || ''}
                 onChangeText={(t) => setFormData(p => ({ ...p, address: t }))}
                 placeholder="Alamat lengkap"
+                placeholderTextColor={Colors.textTertiary}
                 multiline
               />
 
@@ -468,13 +471,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     paddingVertical: 8,
   },
-  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12 },
   chip: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: BorderRadius.full,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: BorderRadius.full,
     borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', backgroundColor: Colors.surface,
   },
   chipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  chipText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  chipText: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
   chipTextActive: { color: '#FFFFFF' },
   resultCount: { fontSize: FontSize.xs, color: Colors.textTertiary, paddingHorizontal: 12, paddingVertical: 8 },
   // Tabel — disalin dari TransactionHistoryScreen (zebra, sel 12px).
@@ -587,7 +590,7 @@ const styles = StyleSheet.create({
   saleTotal: { fontSize: FontSize.sm, fontWeight: 'bold', color: ACCENT },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: Colors.overlay,
     justifyContent: 'flex-end',
   },
   modalContent: {

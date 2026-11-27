@@ -468,6 +468,7 @@ export const SalesmenScreen: React.FC = () => {
                 keyboardType="number-pad"
                 maxLength={3}
                 placeholder="2"
+                placeholderTextColor={Colors.textTertiary}
               />
             </View>
             <AccentButton
@@ -506,7 +507,7 @@ export const SalesmenScreen: React.FC = () => {
           ) : null}
         </View>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipStrip}>
+      <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={styles.chipStrip}>
         <View style={styles.chipRow}>
           {statusChips.map((chip) => (
             <TouchableOpacity
@@ -617,7 +618,7 @@ export const SalesmenScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={styles.detailContent}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.detailContent, { flexGrow: 1 }]}>
             {detailSalesman && (
               <GlassCard padding={16} style={styles.detailSection}>
                 <Text style={styles.detailName}>{detailSalesman.name}</Text>
@@ -728,6 +729,7 @@ export const SalesmenScreen: React.FC = () => {
                                 keyboardType="number-pad"
                                 maxLength={3}
                                 placeholder={`${detail.feeSetting.percent}%`}
+                                placeholderTextColor={Colors.textTertiary}
                                 editable={savingSaleId !== row.id}
                               />
                               <TouchableOpacity
@@ -784,13 +786,14 @@ export const SalesmenScreen: React.FC = () => {
                 <Ionicons name="close" size={24} color={Colors.textPrimary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={{ padding: 16 }}>
+            <ScrollView style={{ flex: 1, padding: 16 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}>
               <Text style={styles.inputLabel}>Nama Salesman <Text style={{ color: Colors.error }}>*</Text></Text>
               <TextInput
                 style={styles.input}
                 value={formData.name || ''}
                 onChangeText={(t) => setFormData((p) => ({ ...p, name: t }))}
                 placeholder="Nama salesman"
+                placeholderTextColor={Colors.textTertiary}
                 maxLength={100}
               />
               <Text style={styles.inputLabel}>No. HP (opsional)</Text>
@@ -799,6 +802,7 @@ export const SalesmenScreen: React.FC = () => {
                 value={formData.phone || ''}
                 onChangeText={(t) => setFormData((p) => ({ ...p, phone: t }))}
                 placeholder="08xxxxxxxxxx"
+                placeholderTextColor={Colors.textTertiary}
                 keyboardType="phone-pad"
                 maxLength={30}
               />
@@ -873,13 +877,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     paddingVertical: 8,
   },
-  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12 },
   chip: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: BorderRadius.full,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: BorderRadius.full,
     borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', backgroundColor: Colors.surface,
   },
   chipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  chipText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  chipText: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
   chipTextActive: { color: '#FFFFFF' },
   chipDivider: { width: 1, height: 24, backgroundColor: 'rgba(0,0,0,0.12)', marginHorizontal: 2 },
   resultCount: { fontSize: FontSize.xs, color: Colors.textTertiary, paddingHorizontal: 12, paddingVertical: 8 },
@@ -965,7 +969,7 @@ const styles = StyleSheet.create({
   overridePercentRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   percentSaveBtn: { backgroundColor: ACCENT, borderRadius: BorderRadius.md, paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   percentSaveText: { color: '#FFFFFF', fontSize: FontSize.md, fontWeight: FontWeight.bold },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'flex-end' },
   modalContent: { backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
   modalTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },

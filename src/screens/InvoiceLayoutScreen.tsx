@@ -44,8 +44,16 @@ export const InvoiceLayoutScreen: React.FC = () => {
   const [docMode, setDocMode] = React.useState<'preset' | 'custom'>(
     DOCUMENT_PRESETS.includes(layout.invoicePaperSize) ? 'preset' : 'custom'
   );
-  const [docCustomW, setDocCustomW] = React.useState('210');
-  const [docCustomH, setDocCustomH] = React.useState('297');
+  // WS-2 (paket ke-5): pulihkan W/H custom dari nilai tersimpan
+  // ("210mm x 297mm"), bukan hardcode 210/297 — sebelumnya ukuran custom
+  // yang sudah disimpan selalu tampil sebagai 210×297 saat layar dibuka.
+  const parseDocCustom = (size: string): [string, string] => {
+    const m = /(\d+(?:[.,]\d+)?)\s*mm\s*x\s*(\d+(?:[.,]\d+)?)\s*mm/i.exec(size || '');
+    return m ? [m[1].replace(',', '.'), m[2].replace(',', '.')] : ['210', '297'];
+  };
+  const [initialDocW, initialDocH] = parseDocCustom(layout.invoicePaperSize);
+  const [docCustomW, setDocCustomW] = React.useState(initialDocW);
+  const [docCustomH, setDocCustomH] = React.useState(initialDocH);
 
   React.useEffect(() => {
     const fetchStore = async () => {
@@ -87,7 +95,14 @@ export const InvoiceLayoutScreen: React.FC = () => {
   // lain tetap tersimpan lokal, dengan penjelasan lewat toast.
   const handleSave = async () => {
     try {
-      await api.put(API_ENDPOINTS.STORE_SETTINGS, toServerInvoiceSettings(layout));
+      const res = await api.put(API_ENDPOINTS.STORE_SETTINGS, toServerInvoiceSettings(layout));
+      // WS-2 (paket ke-5): jangan toast sukses bila server menjawab 200
+      // dengan success:false — sebelumnya selalu "berhasil disimpan"
+      // meski server menolak.
+      if (res.data?.success === false) {
+        AppToast.error('Gagal', res.data?.error || 'Server menolak menyimpan pengaturan.');
+        return;
+      }
       AppToast.success('Sukses', 'Pengaturan desain & layout invoice berhasil disimpan dan tersinkron ke web!');
     } catch (e: any) {
       if (e?.response?.status === 403) {
@@ -648,6 +663,25 @@ export const InvoiceLayoutScreen: React.FC = () => {
             <Switch
               value={layout.showHeader}
               onValueChange={(val) => layout.updateLayout({ showHeader: val })}
+              trackColor={{ false: Colors.border, true: Colors.primaryStart }}
+              thumbColor="#fff"
+            />
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* WS-2 (paket ke-5): saklar Logo selama ini TIDAK ADA di layar
+              ini, padahal store (showLogo), preview Invoice A4, sync server
+              dan PDF semuanya memakai nilai itu — pengguna APK tidak bisa
+              mengubahnya sama sekali. */}
+          <View style={styles.switchRow}>
+            <View>
+              <Text style={styles.switchLabel}>Tampilkan Logo Toko</Text>
+              <Text style={styles.switchDesc}>Logo di header invoice (bila sudah diunggah di web)</Text>
+            </View>
+            <Switch
+              value={layout.showLogo}
+              onValueChange={(val) => layout.updateLayout({ showLogo: val })}
               trackColor={{ false: Colors.border, true: Colors.primaryStart }}
               thumbColor="#fff"
             />

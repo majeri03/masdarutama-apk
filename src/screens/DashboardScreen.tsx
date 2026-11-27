@@ -516,7 +516,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
             <Text style={styles.pickerNote}>
               Hanya fitur yang boleh diakses akun ini yang tampil. Ketuk + untuk menambahkan.
             </Text>
-            <ScrollView>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}>
               {QUICK_ACTION_CATALOG.filter((def) =>
                 resolveQuickActions([def.id], quickActionGate).length > 0,
               ).map((def) => {

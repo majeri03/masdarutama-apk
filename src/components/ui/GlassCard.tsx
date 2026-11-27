@@ -21,6 +21,14 @@ interface GlassCardProps {
   padding?: number;
   noBorder?: boolean;
   tinted?: boolean; // Tinted merah merek lembut untuk highlight — WS-9 (dulu ungu)
+  /**
+   * WS-3 (27 Nov 2026): `blur={false}` = kartu kaca TANPA BlurView
+   * (latar putih translusen solid saja). Dipakai untuk BARIS DAFTAR yang
+   * di-scroll: satu BlurView per baris membuat Android ngelag parah
+   * (blur dihitung ulang tiap frame saat scroll). Secara visual hampir
+   * sama dengan kaca blur di atas background terang aplikasi.
+   */
+  blur?: boolean;
 }
 
 const splitStyles = (style: ViewStyle | any) => {
@@ -63,8 +71,28 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   padding = Spacing.lg,
   noBorder = false,
   tinted = false,
+  blur = true,
 }) => {
   const { containerStyle, contentStyle } = splitStyles(style);
+
+  // WS-3: jalur ringan tanpa BlurView/LinearGradient untuk baris daftar.
+  if (!blur) {
+    return (
+      <View style={[styles.container, Shadow.card, containerStyle]}>
+        <View
+          style={[
+            styles.flatContent,
+            tinted && styles.flatTinted,
+            { padding },
+            !noBorder && styles.border,
+            contentStyle,
+          ]}
+        >
+          {children}
+        </View>
+      </View>
+    );
+  }
 
   // Gradien glass iOS: putih 82% → 60%
   const glassColors = tinted
@@ -128,6 +156,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.glass,  // rgba(255,255,255,0.72)
     borderRadius: BorderRadius.lg,
     flexGrow: 1,
+  },
+  // WS-3: isi kartu tanpa blur (dipakai blur={false} di baris daftar).
+  flatContent: {
+    backgroundColor: 'rgba(255, 255, 255, 0.82)',
+    borderRadius: BorderRadius.lg,
+    flexGrow: 1,
+  },
+  flatTinted: {
+    backgroundColor: 'rgba(127, 29, 29, 0.06)',
   },
   border: {
     borderWidth: 1,

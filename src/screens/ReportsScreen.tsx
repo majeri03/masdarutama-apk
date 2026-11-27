@@ -17,6 +17,7 @@ import { Colors, BorderRadius, Spacing, FontSize, FontWeight } from '../constant
 import { GlassCard, StatusBadge, StatCard } from '../components/ui';
 import type { Sale, FinancialReport } from '../types';
 import { acquirePrintLock, releasePrintLock } from '../utils/printLock';
+import { toLocalDateString } from '../utils/dates';
 
 export const ReportsScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -27,10 +28,39 @@ export const ReportsScreen: React.FC = () => {
   const [isPrinting, setIsPrinting] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
 
+  // WS-3 (paket ke-5): daftar transaksi HARUS mengikuti periode yang dipilih.
+  // Dulu getSales dipanggil TANPA dateFrom/dateTo untuk Harian/Mingguan/
+  // Bulanan (hanya Tahunan yang punya range), jadi daftar 'Riwayat Transaksi
+  // Terbaru' — dan tabel yang sama di PDF laporan — menampilkan 10 transaksi
+  // terakhir dari tanggal berapa pun, padahal kop PDF-nya 'Periode: Hari Ini'.
+  // Range dihitung dari kalender lokal; minggu = Senin–Minggu (konvensi
+  // Indonesia). Kalau definisi minggu backend ternyata berbeda (mis.
+  // Minggu–Sabtu), yang meleset hanya batas tepi minggu.
+  const getSalesRangeForPeriod = (activePeriod: 'daily' | 'weekly' | 'monthly' | 'yearly') => {
+    const now = new Date();
+    if (activePeriod === 'daily') {
+      const today = toLocalDateString(now);
+      return { dateFrom: today, dateTo: today };
+    }
+    if (activePeriod === 'weekly') {
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      return { dateFrom: toLocalDateString(monday), dateTo: toLocalDateString(sunday) };
+    }
+    if (activePeriod === 'monthly') {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { dateFrom: toLocalDateString(first), dateTo: toLocalDateString(last) };
+    }
+    return {};
+  };
+
   const fetchData = async (activePeriod = period) => {
     try {
       let params: any = { period: activePeriod };
-      
+
       // If yearly, send dateFrom and dateTo for the current year
       // This is efficient and automatic for the next year
       if (activePeriod === 'yearly') {
@@ -41,9 +71,15 @@ export const ReportsScreen: React.FC = () => {
         };
       }
 
+      // Tahunan sudah punya range tahun penuh di params; periode lain pakai
+      // range kalender di atas supaya daftar transaksi = transaksi periode itu.
+      const salesRange = activePeriod === 'yearly'
+        ? { dateFrom: params.dateFrom, dateTo: params.dateTo }
+        : getSalesRangeForPeriod(activePeriod);
+
       const [finRes, salesRes] = await Promise.all([
         reportService.getFinancialReport(params),
-        salesService.getSales({ limit: activePeriod === 'yearly' ? 50 : 10, dateFrom: params.dateFrom, dateTo: params.dateTo }),
+        salesService.getSales({ limit: activePeriod === 'yearly' ? 50 : 10, ...salesRange }),
       ]);
 
       if (finRes.success && finRes.data) {

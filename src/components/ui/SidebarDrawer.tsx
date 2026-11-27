@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)', // Dark blue-slate overlay
+    backgroundColor: Colors.overlay, // WS-4: samakan dengan dim modal lain (0.60, dulu 0.40)
   },
   drawerPanel: {
     width: DRAWER_WIDTH,

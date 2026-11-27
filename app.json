@@ -14,7 +14,7 @@
       "checkAutomatically": "ON_LOAD"
     },
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "icon": "./assets/logomasdarutama.png",
     "splash": {
       "resizeMode": "contain",

@@ -92,7 +92,24 @@ export const StorageManagerScreen: React.FC = () => {
             });
 
             if (res.success) {
-              Alert.alert('Pembersihan Berhasil', res.data?.message || 'Gambar berhasil dihapus.');
+              // WS-2 (27 Nov 2026): backend mengembalikan success:true walau
+              // ada yang gagal — jangan tampilkan "Berhasil" kalau tidak ada
+              // satu pun file yang benar-benar terhapus dari R2.
+              const failed = res.data?.failedCount || 0;
+              const deleted = res.data?.deletedCount || 0;
+              if (deleted === 0 && failed > 0) {
+                Alert.alert(
+                  'Gagal Menghapus',
+                  `${failed} gambar gagal dihapus dari Cloudflare R2 dan masih ada. Periksa koneksi/server lalu coba lagi.`
+                );
+              } else if (failed > 0) {
+                Alert.alert(
+                  'Sebagian Berhasil',
+                  `${deleted} gambar terhapus. ${failed} gambar gagal dihapus dari R2 dan masih ada — lihat statusnya di halaman Penyimpanan web.`
+                );
+              } else {
+                Alert.alert('Pembersihan Berhasil', res.data?.message || 'Gambar berhasil dihapus.');
+              }
               loadData();
             } else {
               Alert.alert('Gagal', humanizeCleanupError(res.error));
@@ -177,7 +194,7 @@ export const StorageManagerScreen: React.FC = () => {
 
           <View style={styles.quotaFooter}>
             <Text style={styles.quotaFootText}>
-              Total Gambar Terdeteksi: <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>{quota.totalImages}</Text>
+              Total Gambar Terdeteksi: <Text style={{ color: Colors.textPrimary, fontWeight: 'bold' }}>{quota.totalImages}</Text>
             </Text>
             <Text style={styles.quotaSafeText}>Status: Aman (Free Tier 10GB)</Text>
           </View>
